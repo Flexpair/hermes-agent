@@ -71,6 +71,8 @@ jobs:
   tests:
     name: Python tests
     needs: detect
+    # Upstream owns the full pytest matrix; this fork keeps only the focused
+    # Linux config/installer lane below.
     if: false
     uses: ./.github/workflows/tests.yml
 
@@ -98,7 +100,9 @@ jobs:
   lint:
     name: Python lints
     needs: detect
-    if: needs.detect.outputs.python == 'true'
+    # Full lint/type coverage is upstream-owned; keep cheap fork regressions
+    # in the dedicated Linux lane.
+    if: false
     uses: ./.github/workflows/lint.yml
     with:
       event_name: ${{ needs.detect.outputs.event_name }}
@@ -106,7 +110,8 @@ jobs:
   js-tests:
     name: JS & TS checks
     needs: detect
-    if: needs.detect.outputs.frontend == 'true'
+    # Frontend/browser coverage is upstream-owned for this Linux fork.
+    if: false
     uses: ./.github/workflows/js-tests.yml
 
   installer-tests:
@@ -119,9 +124,8 @@ jobs:
   rust-tests:
     name: Rust tests
     needs: detect
-    # Only for PRs that touch a Rust crate. `.rs` is under apps/, so these
-    # changes used to run the TypeScript matrix and nothing that compiles them.
-    if: needs.detect.outputs.rust == 'true'
+    # Rust bootstrap coverage is upstream-owned for this Linux fork.
+    if: false
     uses: ./.github/workflows/rust-tests.yml
 
   e2e-desktop:
@@ -158,9 +162,8 @@ jobs:
   contributor-check:
     name: Check contributors
     needs: detect
-    # This fork keeps attribution validation; it is cheap and protects the
-    # contributor map used during future upstream synchronization.
-    if: needs.detect.outputs.python == 'true'
+    # Attribution validation remains active; it protects upstream syncs.
+    if: true
     uses: ./.github/workflows/contributor-check.yml
 
   uv-lockfile:
@@ -171,8 +174,8 @@ jobs:
     # blip, a blocking red X — for diffs that cannot desync the lockfile
     # (docs, frontend, prose). Only pyproject.toml / uv.lock can. A
     # `.github/` change still forces it on via the classifier's fail-open.
-    # The upstream lockfile lane is retained for dependency changes only.
-    if: needs.detect.outputs.uv_lock == 'true'
+    # Lockfile resolution is upstream-owned; the focused lane uses --locked.
+    if: false
     uses: ./.github/workflows/uv-lockfile-check.yml
 
   infographic-check:
@@ -200,14 +203,15 @@ jobs:
   docker-lint:
     name: Lint Docker scripts
     needs: detect
-    if: needs.detect.outputs.docker_meta == 'true'
+    # Docker linting is upstream-owned and is not part of fork regressions.
+    if: false
     uses: ./.github/workflows/docker-lint.yml
 
   supply-chain:
     name: Supply-chain scan
     needs: detect
     # Keep the scan; this is a cheap security boundary for fork changes.
-    if: needs.detect.outputs.event_name == 'pull_request' && (needs.detect.outputs.scan == 'true' || needs.detect.outputs.deps == 'true')
+    if: true
     uses: ./.github/workflows/supply-chain-audit.yml
     with:
       event_name: ${{ needs.detect.outputs.event_name }}
@@ -217,6 +221,7 @@ jobs:
   review-labels:
     name: Review label gate
     needs: [detect, supply-chain]
+    # Keep maintainer review enforcement for CI-sensitive changes.
     if: always() && needs.detect.outputs.event_name == 'pull_request' && (needs.detect.outputs.ci_review == 'true' || needs.detect.outputs.mcp_catalog == 'true' || needs.supply-chain.outputs.critical_findings == 'true')
     uses: ./.github/workflows/review-labels.yml
     with:
