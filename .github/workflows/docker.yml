@@ -9,7 +9,6 @@ on:
   #
   # Trusted main pushes resolve the environment-scoped Docker Hub secrets in
   # this same workflow, never across a workflow boundary.
-  pull_request:
   push:
     branches: [main]
   release:
