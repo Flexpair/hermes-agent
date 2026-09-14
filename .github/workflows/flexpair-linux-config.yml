@@ -43,11 +43,16 @@ jobs:
 
       - name: Run Linux configuration and installer regressions
         run: |
-          uv run --no-sync python -m pytest -q \
-            tests/hermes_cli/test_config.py::TestLoadConfigDefaults::test_returns_defaults_when_no_file \
-            tests/hermes_cli/test_config.py::TestEmptyConfigSections::test_null_section_keeps_defaults_in_load_config \
-            tests/hermes_cli/test_config_validation.py::TestVoiceSubmitModeValidation::test_default_is_direct \
-            tests/scripts/install/test_install_sh_repository_defaults.py
+          uv run --no-sync scripts/run_tests.sh \
+            tests/hermes_cli/test_config.py \
+            -k 'test_returns_defaults_when_no_file or test_null_section_keeps_defaults_in_load_config'
+          uv run --no-sync scripts/run_tests.sh \
+            tests/hermes_cli/test_config_validation.py \
+            -k test_default_is_direct
+          uv run --no-sync scripts/run_tests.sh \
+            tests/scripts/install/test_install_sh_*.py \
+            tests/scripts/install/test_install_diverged_update.py \
+            tests/ci/test_fork_ci_policy.py
         env:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
