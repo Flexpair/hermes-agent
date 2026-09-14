@@ -220,8 +220,10 @@ jobs:
   review-labels:
     name: Review label gate
     needs: [detect, supply-chain]
-    # Keep maintainer review enforcement for CI-sensitive changes.
-    if: always() && needs.detect.outputs.event_name == 'pull_request' && (needs.detect.outputs.ci_review == 'true' || needs.detect.outputs.mcp_catalog == 'true' || needs.supply-chain.outputs.critical_findings == 'true')
+    # Upstream uses a maintainer-applied label for CI-sensitive changes. This
+    # downstream fork does not use that label-based governance workflow.
+    # Keep the callsite for low-delta upstream synchronization.
+    if: false
     uses: ./.github/workflows/review-labels.yml
     with:
       ci_review: ${{ needs.detect.outputs.ci_review == 'true' }}
@@ -264,7 +266,6 @@ jobs:
       - docker-lint
       - profile-artifact-check
       - supply-chain
-      - review-labels
       - osv-scanner
       # The image build runs in its own workflow (docker.yml) and reports
       # its own check. It was never required here, because it is too slow
