@@ -16,6 +16,7 @@ def test_supply_chain_gate_fails_critical_findings_and_uses_explicit_shas() -> N
     assert "head_sha:" in text
     assert 'BASE="${{ inputs.base_sha }}"' in text
     assert 'HEAD="${{ inputs.head_sha }}"' in text
+    assert "scripts/ci/scan_supply_chain.py" in text
     assert "Fail on critical findings" in text
     assert "if: steps.scan.outputs.found == 'true'" in text
     assert "exit 1" in text
