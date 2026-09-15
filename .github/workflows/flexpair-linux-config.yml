@@ -1,0 +1,54 @@
+name: Flexpair Linux config regression tests
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flexpair-linux-config-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: All affordable Linux Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        with:
+          version: "0.9.28"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python 3.11
+        uses: ./.github/actions/retry
+        with:
+          command: uv python install 3.11
+
+      - name: Install Linux test dependencies
+        uses: ./.github/actions/retry
+        with:
+          command: uv sync --locked --python 3.11 --extra all --extra dev
+
+      - name: Check Linux installer syntax
+        run: bash -n scripts/install.sh
+
+      - name: Report Linux test scope
+        continue-on-error: true
+        run: uv run --no-sync python scripts/ci/report_linux_test_scope.py
+
+      - name: Run all non-integration Linux-compatible tests
+        run: uv run --no-sync scripts/run_tests.sh
+        env:
+          HERMES_TEST_WORKERS: "8"
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""
