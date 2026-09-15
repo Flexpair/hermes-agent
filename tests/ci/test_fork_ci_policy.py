@@ -26,6 +26,7 @@ def test_fork_orchestrator_keeps_linux_lane_and_supply_chain_gate() -> None:
     gate = jobs["all-checks-pass"]
     assert "supply-chain" in gate["needs"]
     assert "osv-scanner" not in gate["needs"]
+    assert gate["steps"][0]["uses"].startswith("actions/checkout@")
 
 
 def test_supply_chain_receives_explicit_pr_and_push_shas() -> None:
