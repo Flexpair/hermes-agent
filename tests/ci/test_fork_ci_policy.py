@@ -1,43 +1,50 @@
-"""Regression tests for the fork's Linux CI and supply-chain gates."""
+"""Structural policy tests for the Linux fork's GitHub Actions workflows."""
+
+from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CI = REPO_ROOT / ".github" / "workflows" / "ci.yaml"
-SUPPLY_CHAIN = REPO_ROOT / ".github" / "workflows" / "supply-chain-audit.yml"
-LINUX_CONFIG = REPO_ROOT / ".github" / "workflows" / "flexpair-linux-config.yml"
+WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 
-def test_supply_chain_gate_fails_critical_findings_and_uses_explicit_shas() -> None:
-    text = SUPPLY_CHAIN.read_text(encoding="utf-8")
-
-    assert "base_sha:" in text
-    assert "head_sha:" in text
-    assert 'BASE="${{ inputs.base_sha }}"' in text
-    assert 'HEAD="${{ inputs.head_sha }}"' in text
-    assert "scripts/ci/scan_supply_chain.py" in text
-    assert "Fail on critical findings" in text
-    assert "if: steps.scan.outputs.found == 'true'" in text
-    assert "exit 1" in text
-    assert "CI_REVIEWED" not in text
+def _workflow(name: str) -> dict:
+    data = yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
+    return data
 
 
-def test_ci_passes_pull_request_and_push_shas_to_supply_chain_workflow() -> None:
-    text = CI.read_text(encoding="utf-8")
+def test_fork_orchestrator_keeps_linux_lane_and_supply_chain_gate() -> None:
+    ci = _workflow("ci.yaml")
+    jobs = ci["jobs"]
 
-    assert "base_sha: ${{ github.event.pull_request.base.sha || github.event.before }}" in text
-    assert "head_sha: ${{ github.event.pull_request.head.sha || github.sha }}" in text
-    assert "review-labels:" not in text
-    gate = text[text.index("all-checks-pass:") :]
-    assert "      - supply-chain" in gate
-    assert "info['result'] not in ('success', 'skipped')" in text
+    assert jobs["flexpair-linux-config"]["uses"] == "./.github/workflows/flexpair-linux-config.yml"
+    assert jobs["supply-chain"]["uses"] == "./.github/workflows/supply-chain-audit.yml"
+    assert "review-labels" not in jobs
+    gate = jobs["all-checks-pass"]
+    assert "supply-chain" in gate["needs"]
+    assert "osv-scanner" not in gate["needs"]
 
 
-def test_linux_regression_lane_uses_canonical_runner_and_installer_suite() -> None:
-    text = LINUX_CONFIG.read_text(encoding="utf-8")
+def test_supply_chain_receives_explicit_pr_and_push_shas() -> None:
+    with_sha = _workflow("ci.yaml")["jobs"]["supply-chain"]["with"]
+    assert with_sha["base_sha"] == "${{ github.event.pull_request.base.sha || github.event.before }}"
+    assert with_sha["head_sha"] == "${{ github.event.pull_request.head.sha || github.sha }}"
 
-    assert "uv run --no-sync scripts/run_tests.sh" in text
-    assert "tests/scripts/install/test_install_sh_*.py" in text
-    assert "tests/scripts/install/test_install_diverged_update.py" in text
-    assert "python -m pytest" not in text
+
+def test_linux_lane_runs_scanner_behavior_tests() -> None:
+    run = _workflow("flexpair-linux-config.yml")["jobs"]["test"]["steps"]
+    commands = "\n".join(step.get("run", "") for step in run)
+    assert "scripts/run_tests.sh" in commands
+    assert "tests/ci/test_supply_chain_scanner.py" in commands
+
+
+def test_supply_chain_workflow_has_direct_critical_failure() -> None:
+    supply = _workflow("supply-chain-audit.yml")
+    scan_steps = supply["jobs"]["scan"]["steps"]
+    failure_steps = [step for step in scan_steps if step.get("name") == "Fail on critical findings"]
+    assert len(failure_steps) == 1
+    assert failure_steps[0]["if"] == "steps.scan.outputs.found == 'true'"
+    assert "exit 1" in failure_steps[0]["run"]

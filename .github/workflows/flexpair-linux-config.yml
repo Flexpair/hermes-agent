@@ -53,6 +53,7 @@ jobs:
             tests/scripts/install/test_install_sh_*.py \
             tests/scripts/install/test_install_diverged_update.py \
             tests/ci/test_supply_chain_scanner.py \
+            tests/ci/test_evaluate_required_checks.py \
             tests/ci/test_fork_ci_policy.py
         env:
           OPENROUTER_API_KEY: ""
