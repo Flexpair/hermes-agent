@@ -65,29 +65,25 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────
   # Lane-gated sub-workflows. Each runs in parallel after detect finishes.
-  # Skipped workflows (if condition is false) don't spin up runners.
+  # The Linux Python lane runs all affordable, non-integration tests. Jobs
+  # requiring a dedicated OS or an explicitly large runner stay outside this
+  # Linux-only fork gate.
   # ─────────────────────────────────────────────────────────────────────
   tests:
-    name: Python tests
+    name: Linux Python tests
     needs: detect
-    # Upstream owns the full pytest matrix; this fork keeps only the focused
-    # Linux config/installer lane below.
-    if: false
-    uses: ./.github/workflows/tests.yml
-
-  # Small Linux-only lane for fork-owned configuration and installer changes.
-  # The full upstream matrix above remains in the tree for synchronization,
-  # but is intentionally not called by this fork.
-  flexpair-linux-config:
-    name: Linux config regression tests
-    needs: detect
+    # Run the complete affordable Linux Python suite: explicit linux_only
+    # tests plus unmarked shared tests. conftest skips explicit
+    # macos_only/windows_only items on Linux.
     if: needs.detect.outputs.python == 'true'
     uses: ./.github/workflows/flexpair-linux-config.yml
+
 
   tests-os:
     name: OS-specific tests
     needs: detect
-    # The Flexpair fork is Linux-only; upstream owns this OS matrix.
+    # The Linux fork uses the host's real platform gate; these dedicated OS
+    # tests are not part of the Linux PR path.
     if: false
     uses: ./.github/workflows/tests-os.yml
     with:
@@ -238,7 +234,6 @@ jobs:
     needs:
       - detect
       - tests
-      - flexpair-linux-config
       - tests-os
       - lint
       - js-tests

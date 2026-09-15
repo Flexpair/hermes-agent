@@ -20,7 +20,7 @@ def test_fork_orchestrator_keeps_linux_lane_and_supply_chain_gate() -> None:
     ci = _workflow("ci.yaml")
     jobs = ci["jobs"]
 
-    assert jobs["flexpair-linux-config"]["uses"] == "./.github/workflows/flexpair-linux-config.yml"
+    assert jobs["tests"]["uses"] == "./.github/workflows/flexpair-linux-config.yml"
     assert jobs["supply-chain"]["uses"] == "./.github/workflows/supply-chain-audit.yml"
     assert "review-labels" not in jobs
     gate = jobs["all-checks-pass"]
@@ -39,7 +39,9 @@ def test_linux_lane_runs_scanner_behavior_tests() -> None:
     run = _workflow("flexpair-linux-config.yml")["jobs"]["test"]["steps"]
     commands = "\n".join(step.get("run", "") for step in run)
     assert "scripts/run_tests.sh" in commands
-    assert "tests/ci/test_supply_chain_scanner.py" in commands
+    assert "report_linux_test_scope.py" in commands
+    report_step = next(step for step in run if step.get("name") == "Report Linux test scope")
+    assert report_step["continue-on-error"] is True
 
 
 def test_supply_chain_workflow_has_direct_critical_failure() -> None:

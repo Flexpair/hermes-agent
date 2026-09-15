@@ -12,9 +12,9 @@ concurrency:
 
 jobs:
   test:
-    name: Linux config and installer regressions
+    name: All affordable Linux Python tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -33,29 +33,22 @@ jobs:
         with:
           command: uv python install 3.11
 
-      - name: Install focused test dependencies
+      - name: Install Linux test dependencies
         uses: ./.github/actions/retry
         with:
-          command: uv sync --locked --python 3.11 --extra dev
+          command: uv sync --locked --python 3.11 --extra all --extra dev
 
       - name: Check Linux installer syntax
         run: bash -n scripts/install.sh
 
-      - name: Run Linux configuration and installer regressions
-        run: |
-          uv run --no-sync scripts/run_tests.sh \
-            tests/hermes_cli/test_config.py \
-            -k 'test_returns_defaults_when_no_file or test_null_section_keeps_defaults_in_load_config'
-          uv run --no-sync scripts/run_tests.sh \
-            tests/hermes_cli/test_config_validation.py \
-            -k test_default_is_direct
-          uv run --no-sync scripts/run_tests.sh \
-            tests/scripts/install/test_install_sh_*.py \
-            tests/scripts/install/test_install_diverged_update.py \
-            tests/ci/test_supply_chain_scanner.py \
-            tests/ci/test_evaluate_required_checks.py \
-            tests/ci/test_fork_ci_policy.py
+      - name: Report Linux test scope
+        continue-on-error: true
+        run: uv run --no-sync python scripts/ci/report_linux_test_scope.py
+
+      - name: Run all non-integration Linux-compatible tests
+        run: uv run --no-sync scripts/run_tests.sh
         env:
+          HERMES_TEST_WORKERS: "8"
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""
