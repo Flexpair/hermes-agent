@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCANNER = REPO_ROOT / "scripts" / "ci" / "scan_supply_chain.py"
@@ -34,7 +36,34 @@ def _run_scanner(repo: Path, base: str, head: str, findings: Path) -> subprocess
     )
 
 
-def test_scanner_reports_critical_patterns_from_added_lines(tmp_path: Path) -> None:
+def _base64_exec_source() -> str:
+    decoder = "base64" + ".b64decode"
+    executor = "exec(" + decoder + '("cGF5bG9hZA=="))'
+    return "import base64; " + executor + "\n"
+
+
+def _obfuscated_subprocess_source() -> str:
+    process = "subprocess" + ".run"
+    obfuscated = "chr" + "(99)"
+    return f'{process}(["sh", "-c", {obfuscated}])\n'
+
+
+@pytest.mark.parametrize(
+    ("filename", "content", "expected"),
+    [
+        ("payload.pth", "import site\n", ".pth file added or modified"),
+        ("module.py", _base64_exec_source(), "base64 decode + exec/eval combo"),
+        (
+            "module.py",
+            _obfuscated_subprocess_source(),
+            "subprocess with encoded/obfuscated command",
+        ),
+        ("setup.py", "from setuptools import setup\n", "Install-hook file added or modified"),
+    ],
+)
+def test_scanner_reports_each_critical_detector(
+    tmp_path: Path, filename: str, content: str, expected: str
+) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -43,14 +72,9 @@ def test_scanner_reports_critical_patterns_from_added_lines(tmp_path: Path) -> N
     _git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "base")
     base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
 
-    # Build the representative payload from pieces so this test itself does
-    # not match the scanner's added-line heuristic in the parent repository.
-    decoder = "base64" + ".b64decode"
-    executor = "exec(" + decoder + '("cGF5bG9hZA=="))'
-    (repo / "module.py").write_text(
-        "import base64; " + executor + "\n",
-        encoding="utf-8",
-    )
+    target = repo / filename
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
     _git(repo, "add", ".")
     _git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "critical")
     head = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
@@ -60,10 +84,10 @@ def test_scanner_reports_critical_patterns_from_added_lines(tmp_path: Path) -> N
 
     assert result.returncode == 0
     assert "found=true" in result.stdout
-    assert "base64 decode + exec/eval combo" in findings.read_text(encoding="utf-8")
+    assert expected in findings.read_text(encoding="utf-8")
 
 
-def test_scanner_ignores_unrelated_added_code(tmp_path: Path) -> None:
+def test_scanner_ignores_lockfiles_and_nested_install_hooks(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -73,6 +97,10 @@ def test_scanner_ignores_unrelated_added_code(tmp_path: Path) -> None:
     base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
 
     (repo / "module.py").write_text("value = 2\n", encoding="utf-8")
+    (repo / "uv.lock").write_text(_base64_exec_source(), encoding="utf-8")
+    nested = repo / "nested" / "setup.py"
+    nested.parent.mkdir()
+    nested.write_text("from setuptools import setup\n", encoding="utf-8")
     _git(repo, "add", ".")
     _git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "ordinary")
     head = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
