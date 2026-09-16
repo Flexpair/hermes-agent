@@ -29,6 +29,12 @@ def test_fork_orchestrator_keeps_linux_lane_and_supply_chain_gate() -> None:
     assert gate["steps"][0]["uses"].startswith("actions/checkout@")
 
 
+def test_change_detection_allows_for_slow_repository_checkout() -> None:
+    detect = _workflow("ci.yaml")["jobs"]["detect"]
+
+    assert detect["timeout-minutes"] >= 5
+
+
 def test_supply_chain_receives_explicit_pr_and_push_shas() -> None:
     with_sha = _workflow("ci.yaml")["jobs"]["supply-chain"]["with"]
     assert with_sha["base_sha"] == "${{ github.event.pull_request.base.sha || github.event.before }}"

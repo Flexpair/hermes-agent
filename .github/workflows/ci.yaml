@@ -37,7 +37,10 @@ jobs:
   detect:
     name: Detect affected areas
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    # Checkout can take close to a minute on GitHub's network before the
+    # classifier itself starts. Keep this bounded without cancelling healthy
+    # runs during repository fetch.
+    timeout-minutes: 5
     outputs:
       python: ${{ steps.classify.outputs.python }}
       python_prod: ${{ steps.classify.outputs.python_prod }}
