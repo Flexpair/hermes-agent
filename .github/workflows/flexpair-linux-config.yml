@@ -12,9 +12,9 @@ concurrency:
 
 jobs:
   test:
-    name: All affordable Linux Python tests
+    name: Config, installer, and CI tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -45,8 +45,24 @@ jobs:
         continue-on-error: true
         run: uv run --no-sync python scripts/ci/report_linux_test_scope.py
 
-      - name: Run all non-integration Linux-compatible tests
-        run: uv run --no-sync scripts/run_tests.sh
+      - name: Run focused fork regressions
+        run: |
+          config_tests=()
+          while IFS= read -r test_file; do
+            config_tests+=("$test_file")
+          done < <(
+            find tests/hermes_cli -maxdepth 1 -type f \
+              \( -name 'test_*config*.py' -o -name 'test_*validation*.py' \) \
+              -print | sort
+          )
+          if (( ${#config_tests[@]} == 0 )); then
+            echo "::error::No CLI configuration tests found"
+            exit 1
+          fi
+          uv run --no-sync scripts/run_tests.sh \
+            "${config_tests[@]}" \
+            tests/scripts/install \
+            tests/ci
         env:
           HERMES_TEST_WORKERS: "8"
           OPENROUTER_API_KEY: ""

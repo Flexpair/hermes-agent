@@ -65,16 +65,16 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────
   # Lane-gated sub-workflows. Each runs in parallel after detect finishes.
-  # The Linux Python lane runs all affordable, non-integration tests. Jobs
-  # requiring a dedicated OS or an explicitly large runner stay outside this
-  # Linux-only fork gate.
+  # The required Linux lane targets the configuration, installer, and CI
+  # surfaces maintained by this fork. The complete affordable Linux suite is
+  # split across normal runners in flexpair-linux-full.yml and runs weekly or
+  # on demand instead of blocking every configuration PR.
   # ─────────────────────────────────────────────────────────────────────
   tests:
     name: Linux Python tests
     needs: detect
-    # Run the complete affordable Linux Python suite: explicit linux_only
-    # tests plus unmarked shared tests. conftest skips explicit
-    # macos_only/windows_only items on Linux.
+    # Focused regressions for the fork's maintained surfaces. Explicit
+    # macos_only/windows_only items are skipped by conftest on Linux.
     if: needs.detect.outputs.python == 'true'
     uses: ./.github/workflows/flexpair-linux-config.yml
 

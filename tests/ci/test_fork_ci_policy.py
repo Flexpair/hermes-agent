@@ -35,13 +35,36 @@ def test_supply_chain_receives_explicit_pr_and_push_shas() -> None:
     assert with_sha["head_sha"] == "${{ github.event.pull_request.head.sha || github.sha }}"
 
 
-def test_linux_lane_runs_scanner_behavior_tests() -> None:
-    run = _workflow("flexpair-linux-config.yml")["jobs"]["test"]["steps"]
+def test_linux_lane_runs_focused_fork_regressions() -> None:
+    job = _workflow("flexpair-linux-config.yml")["jobs"]["test"]
+    run = job["steps"]
     commands = "\n".join(step.get("run", "") for step in run)
+
+    assert job["name"] == "Config, installer, and CI tests"
     assert "scripts/run_tests.sh" in commands
+    assert "test_*config*.py" in commands
+    assert "test_*validation*.py" in commands
+    assert "No CLI configuration tests found" in commands
+    assert "tests/scripts/install" in commands
+    assert "tests/ci" in commands
     assert "report_linux_test_scope.py" in commands
     report_step = next(step for step in run if step.get("name") == "Report Linux test scope")
     assert report_step["continue-on-error"] is True
+
+
+def test_full_linux_suite_is_weekly_manual_and_four_way_sliced() -> None:
+    workflow_path = WORKFLOWS / "flexpair-linux-full.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    workflow = _workflow("flexpair-linux-full.yml")
+    job = workflow["jobs"]["test"]
+
+    assert "workflow_dispatch:" in workflow_text
+    assert "schedule:" in workflow_text
+    assert job["strategy"]["matrix"]["slice"] == [1, 2, 3, 4]
+    assert job["runs-on"] == "ubuntu-latest"
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "scripts/run_tests.sh" in commands
+    assert job["env"]["HERMES_TEST_SLICE"] == "${{ matrix.slice }}/4"
 
 
 def test_supply_chain_workflow_has_direct_critical_failure() -> None:
