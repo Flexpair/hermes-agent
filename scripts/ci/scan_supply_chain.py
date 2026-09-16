@@ -34,11 +34,18 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _added_lines(diff: str) -> list[str]:
-    return [
-        line
-        for line in diff.splitlines()
-        if line.startswith("+") and not line.startswith("+++")
-    ]
+    added: list[str] = []
+    in_hunk = False
+    for line in diff.splitlines():
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if line.startswith("diff --git "):
+            in_hunk = False
+            continue
+        if in_hunk and line.startswith("+"):
+            added.append(line)
+    return added
 
 
 def _section(title: str, explanation: str, label: str, matches: str) -> str:

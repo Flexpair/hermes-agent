@@ -21,6 +21,44 @@ from pathlib import Path
 _MARKER_NAMES = ("linux_only", "macos_only", "windows_only")
 
 
+def _marker_aliases(tree: ast.AST) -> dict[str, str]:
+    """Map simple local aliases to their pytest OS marker names."""
+    aliases: dict[str, str] = {}
+    body = tree.body if isinstance(tree, ast.Module) else []
+    for node in body:
+        if not isinstance(node, ast.Assign):
+            continue
+        marker = ""
+        value = node.value
+        if (
+            isinstance(value, ast.Attribute)
+            and value.attr in _MARKER_NAMES
+            and isinstance(value.value, ast.Attribute)
+            and value.value.attr == "mark"
+            and isinstance(value.value.value, ast.Name)
+            and value.value.value.id == "pytest"
+        ):
+            marker = value.attr
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                if marker:
+                    aliases[target.id] = marker
+                else:
+                    aliases.pop(target.id, None)
+    return aliases
+
+
+def _decorator_name(node: ast.AST, aliases: dict[str, str]) -> str:
+    """Return the canonical marker name for an OS-marker decorator."""
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Call):
+        return _decorator_name(node.func, aliases)
+    if isinstance(node, ast.Name):
+        return aliases.get(node.id, node.id)
+    return ""
+
+
 def _run_collect(root: Path, args: list[str]) -> tuple[int, list[str], str]:
     """Run canonical discovery; its output is the affordable file inventory."""
     proc = subprocess.run(
@@ -118,13 +156,7 @@ def _read_marker_scope(root: Path, files: list[str]) -> dict[str, set[str]]:
         except (OSError, SyntaxError):
             continue
 
-        def decorator_name(node: ast.AST) -> str:
-            if isinstance(node, ast.Attribute):
-                return node.attr
-            if isinstance(node, ast.Call):
-                return decorator_name(node.func)
-            return ""
-
+        marker_aliases = _marker_aliases(tree)
         module_marks = _module_marker_names(tree)
 
         def visit(node: ast.AST, inherited: set[str], parents: tuple[str, ...]) -> None:
@@ -132,7 +164,7 @@ def _read_marker_scope(root: Path, files: list[str]) -> dict[str, set[str]]:
             if isinstance(node, ast.Module):
                 marks.update(module_marks)
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                marks.update(decorator_name(d) for d in node.decorator_list)
+                marks.update(_decorator_name(d, marker_aliases) for d in node.decorator_list)
             next_parents = parents
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 next_parents = parents + (node.name,)
@@ -190,20 +222,14 @@ def _eligible_linux_nodes(root: Path, files: list[str]) -> list[str]:
         except (OSError, SyntaxError):
             continue
         module_marks = _module_marker_names(tree)
-
-        def decorator_name(node: ast.AST) -> str:
-            if isinstance(node, ast.Attribute):
-                return node.attr
-            if isinstance(node, ast.Call):
-                return decorator_name(node.func)
-            return ""
+        marker_aliases = _marker_aliases(tree)
 
         def visit(node: ast.AST, inherited: set[str], parents: tuple[str, ...]) -> None:
             marks = set(inherited)
             if isinstance(node, ast.Module):
                 marks.update(module_marks)
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                marks.update(decorator_name(d) for d in node.decorator_list)
+                marks.update(_decorator_name(d, marker_aliases) for d in node.decorator_list)
             next_parents = parents
             if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
                 next_parents = parents + (node.name,)

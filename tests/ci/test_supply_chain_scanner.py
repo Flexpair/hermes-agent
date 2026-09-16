@@ -111,3 +111,49 @@ def test_scanner_ignores_lockfiles_and_nested_install_hooks(tmp_path: Path) -> N
     assert result.returncode == 0
     assert "found=false" in result.stdout
     assert findings.read_text(encoding="utf-8") == ""
+
+
+def test_scanner_does_not_treat_added_double_plus_source_as_diff_header(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "module.py").write_text("value = 1\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(
+        repo,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-qm",
+        "base",
+    )
+    base = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+    (repo / "module.py").write_text("++" + _base64_exec_source(), encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(
+        repo,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "-qm",
+        "critical",
+    )
+    head = subprocess.check_output(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+    findings = tmp_path / "findings.md"
+    result = _run_scanner(repo, base, head, findings)
+
+    assert result.returncode == 0
+    assert "found=true" in result.stdout
+    assert "base64 decode + exec/eval combo" in findings.read_text(encoding="utf-8")

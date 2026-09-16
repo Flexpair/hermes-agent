@@ -39,6 +39,69 @@ def test_marker_scope_handles_module_marks_and_aliases(tmp_path: Path) -> None:
     assert "tests/test_markers.py::test_module" in scope["linux_only"]
 
 
+def test_marker_scope_handles_aliased_decorators(tmp_path: Path) -> None:
+    path = tmp_path / "tests" / "test_markers.py"
+    path.parent.mkdir()
+    path.write_text(
+        "import pytest\n"
+        "linux_only = pytest.mark.linux_only\n\n"
+        "@linux_only\n"
+        "def test_linux(): pass\n",
+        encoding="utf-8",
+    )
+
+    scope = REPORT._read_marker_scope(tmp_path, ["tests/test_markers.py"])
+
+    assert "tests/test_markers.py::test_linux" in scope["linux_only"]
+
+
+def test_eligible_linux_nodes_excludes_aliased_foreign_os_marker(tmp_path: Path) -> None:
+    path = tmp_path / "tests" / "test_markers.py"
+    path.parent.mkdir()
+    path.write_text(
+        "import pytest\n"
+        "windows_only = pytest.mark.windows_only\n\n"
+        "@windows_only\n"
+        "def test_windows(): pass\n\n"
+        "def test_shared(): pass\n",
+        encoding="utf-8",
+    )
+
+    eligible = REPORT._eligible_linux_nodes(
+        tmp_path,
+        ["tests/test_markers.py"],
+    )
+
+    assert eligible == ["tests/test_markers.py::test_shared"]
+
+
+def test_marker_aliases_ignore_unrelated_attributes_and_reassignment(tmp_path: Path) -> None:
+    path = tmp_path / "tests" / "test_markers.py"
+    path.parent.mkdir()
+    path.write_text(
+        "import pytest\n"
+        "from helpers import markers\n"
+        "not_pytest = markers.windows_only\n"
+        "reassigned = pytest.mark.windows_only\n"
+        "reassigned = lambda function: function\n\n"
+        "@not_pytest\n"
+        "def test_unrelated(): pass\n\n"
+        "@reassigned\n"
+        "def test_reassigned(): pass\n",
+        encoding="utf-8",
+    )
+
+    eligible = REPORT._eligible_linux_nodes(
+        tmp_path,
+        ["tests/test_markers.py"],
+    )
+
+    assert eligible == [
+        "tests/test_markers.py::test_unrelated",
+        "tests/test_markers.py::test_reassigned",
+    ]
+
+
 def test_parse_files_reads_runner_slice_output() -> None:
     lines = ['{"slice": [{"index": 1, "files": "tests/a.py:tests/b.py"}]}']
     assert REPORT._parse_files(lines) == ["tests/a.py", "tests/b.py"]
