@@ -167,15 +167,17 @@ jobs:
           python3 - <<'PYEOF'
           import json, os
 
-          # The review-label gate renders and blocks critical findings. Keep
-          # this scan a fact-finder so adding ci-reviewed can rerun the gate
-          # without requiring the scanner itself to fail again.
           status = []
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"review_status={json.dumps(status)}\n")
           PYEOF
 
+      - name: Fail on critical findings
+        if: steps.scan.outputs.found == 'true'
+        run: |
+          cat /tmp/findings.md
+          exit 1
 
   dep-bounds:
     name: Check PyPI dependency upper bounds

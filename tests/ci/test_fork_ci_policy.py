@@ -37,6 +37,14 @@ def test_fork_does_not_require_manual_ci_review_label() -> None:
     assert "review-labels" not in jobs["all-checks-pass"]["needs"]
 
 
+def test_supply_chain_findings_fail_without_review_label() -> None:
+    scan = _workflow("supply-chain-audit.yml")["jobs"]["scan"]
+    fail_step = next(step for step in scan["steps"] if step["name"] == "Fail on critical findings")
+
+    assert fail_step["if"] == "steps.scan.outputs.found == 'true'"
+    assert "exit 1" in fail_step["run"]
+
+
 def test_linux_lane_runs_focused_fork_regressions() -> None:
     job = _workflow("flexpair-linux-config.yml")["jobs"]["test"]
     run = job["steps"]
@@ -53,13 +61,12 @@ def test_linux_lane_runs_focused_fork_regressions() -> None:
 
 
 def test_full_linux_suite_is_weekly_manual_and_four_way_sliced() -> None:
-    workflow_path = WORKFLOWS / "flexpair-linux-full.yml"
-    workflow_text = workflow_path.read_text(encoding="utf-8")
     workflow = _workflow("flexpair-linux-full.yml")
+    triggers = workflow[True]
     job = workflow["jobs"]["test"]
 
-    assert "workflow_dispatch:" in workflow_text
-    assert "schedule:" in workflow_text
+    assert "workflow_dispatch" in triggers
+    assert "schedule" in triggers
     assert job["strategy"]["matrix"]["slice"] == [1, 2, 3, 4]
     assert job["runs-on"] == "ubuntu-latest"
     commands = "\n".join(step.get("run", "") for step in job["steps"])
