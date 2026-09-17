@@ -57,6 +57,7 @@ def test_linux_lane_runs_focused_fork_regressions() -> None:
     assert "test_*config*.py" in commands
     assert "test_*validation*.py" in commands
     assert "No CLI configuration tests found" in commands
+    assert "tests/hermes_cli/test_update_check.py" in commands
     assert "tests/scripts/install" in commands
     assert "tests/ci" in commands
 
