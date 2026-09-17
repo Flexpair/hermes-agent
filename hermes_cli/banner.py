@@ -224,7 +224,9 @@ def _is_full_sha(value: Optional[str]) -> bool:
 _compare_payload_cache: Dict[tuple, dict] = {}
 
 
-def _github_compare(current_rev: str, target_rev: str) -> Optional[dict]:
+def _github_compare(
+    current_rev: str, target_rev: str, repo_slug: Optional[str] = None
+) -> Optional[dict]:
     """Compare payload for ``current...target`` from the GitHub API; memoized per process.
 
     Shallow installer clones and API-only probes know the two tip SHAs but have no local history
@@ -233,10 +235,11 @@ def _github_compare(current_rev: str, target_rev: str) -> Optional[dict]:
     """
     if not (_is_full_sha(current_rev) and _is_full_sha(target_rev)):
         return None
-    key = (current_rev, target_rev)
+    repo_slug = repo_slug or _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
+    key = (repo_slug, current_rev, target_rev)
     if key in _compare_payload_cache:
         return _compare_payload_cache[key]
-    url = f"https://api.github.com/repos/nousresearch/hermes-agent/compare/{current_rev}...{target_rev}"
+    url = f"https://api.github.com/repos/{repo_slug}/compare/{current_rev}...{target_rev}"
 
     def _fetch():
         import urllib.request
@@ -252,9 +255,11 @@ def _github_compare(current_rev: str, target_rev: str) -> Optional[dict]:
     return payload
 
 
-def _github_compare_behind(current_rev: str, target_rev: str) -> Optional[int]:
+def _github_compare_behind(
+    current_rev: str, target_rev: str, repo_slug: Optional[str] = None
+) -> Optional[int]:
     """Exact behind-count via the GitHub compare API for uncountable graphs."""
-    payload = _github_compare(current_rev, target_rev)
+    payload = _github_compare(current_rev, target_rev, repo_slug)
     ahead = payload.get("ahead_by") if payload else None
     return ahead if isinstance(ahead, int) and not isinstance(ahead, bool) and ahead >= 0 else None
 
@@ -267,9 +272,10 @@ def upstream_commits_behind(n: int = 20) -> List[Dict[str, Any]]:
     """
     cached = _read_json(get_hermes_home() / ".update_check") or {}
     head_rev, target_rev = cached.get("head"), cached.get("target")
+    repo_slug = cached.get("repo") or _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
     if not head_rev or not target_rev or head_rev == target_rev:
         return []
-    payload = _github_compare(head_rev, target_rev)
+    payload = _github_compare(head_rev, target_rev, repo_slug)
     rows: List[Dict[str, Any]] = []
     for entry in (payload or {}).get("commits", []) if isinstance(payload, dict) else []:
         commit = entry.get("commit") or {}
@@ -289,7 +295,12 @@ def upstream_commits_behind(n: int = 20) -> List[Dict[str, Any]]:
     return rows[:n]
 
 
-def _tips_behind(head_rev: Optional[str], target_rev: Optional[str], repo_dir: Optional[Path] = None) -> Optional[int]:
+def _tips_behind(
+    head_rev: Optional[str],
+    target_rev: Optional[str],
+    repo_dir: Optional[Path] = None,
+    repo_slug: Optional[str] = None,
+) -> Optional[int]:
     """Behind-count from two tip SHAs: None if either is unknown, 0 when equal, else count/sentinel.
 
     With ``repo_dir``, a target that is already an ancestor of HEAD (local-ahead checkout) is 0 too.
@@ -302,7 +313,11 @@ def _tips_behind(head_rev: Optional[str], target_rev: Optional[str], repo_dir: O
     if head_rev == target_rev or (repo_dir is not None and _git_ok(
             ["merge-base", "--is-ancestor", target_rev, "HEAD"], cwd=repo_dir)):
         return 0
-    counted = _github_compare_behind(head_rev, target_rev)
+    official_repo = _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
+    if repo_slug and repo_slug != official_repo:
+        counted = _github_compare_behind(head_rev, target_rev, repo_slug)
+    else:
+        counted = _github_compare_behind(head_rev, target_rev)
     return counted if counted is not None else UPDATE_AVAILABLE_NO_COUNT
 
 
@@ -356,8 +371,9 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
     if not head_rev:
         return None
     canonical = _canonical_github_remote(origin_url)
+    repo_slug = canonical.removeprefix("github.com/") if canonical.startswith("github.com/") else None
     if canonical.startswith("github.com/"):
-        target_rev = _github_branch_tip(canonical.removeprefix("github.com/"), "main")
+        target_rev = _github_branch_tip(repo_slug or "", "main")
     else:
         # Non-GitHub origin: one ls-remote for the tip (ref advertisement only, no pack transfer).
         result = _git_run(["ls-remote", "origin", "refs/heads/main"], cwd=repo_dir, timeout=10, network=True)
@@ -367,7 +383,7 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
     # Tip SHAs alone can't distinguish "behind" from a local commit AHEAD of origin/main, and
     # misreporting an ahead checkout nudges the user into `hermes update`, which can wipe carried
     # work — hence the ancestor check inside _tips_behind, against the FRESH upstream SHA.
-    return _tips_behind(head_rev, target_rev, repo_dir)
+    return _tips_behind(head_rev, target_rev, repo_dir, repo_slug=repo_slug)
 
 
 def _read_json(path: Path) -> Optional[dict]:
@@ -405,22 +421,73 @@ def check_for_updates(*, passive: bool = False) -> Optional[int]:
     # stale "3 behind" must not survive the update it just prompted.
     now = time.time()
     repo_dir = None if embedded_rev else _resolve_repo_dir()
-    head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir) if repo_dir is not None else None
+    head_rev = (
+        _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
+        if repo_dir is not None
+        else None
+    )
     cached = _read_json(cache_file)
-    if cached is not None and cached.get("rev") == embedded_rev and cached.get("ver") == VERSION \
-            and cached.get("head") == head_rev:
-        ttl = _UPDATE_CHECK_CACHE_SECONDS if cached.get("behind") is not None else _UPDATE_CHECK_FAILURE_CACHE_SECONDS
+    origin_url = (
+        _git_stdout(
+            ["remote", "get-url", "origin"], cwd=repo_dir, network=True
+        )
+        if repo_dir
+        else None
+    )
+    canonical = _canonical_github_remote(origin_url)
+    current_repo_slug = (
+        canonical.removeprefix("github.com/")
+        if canonical.startswith("github.com/")
+        else None
+    )
+    cached_repo = (
+        cached.get(
+            "repo", _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
+        )
+        if cached
+        else None
+    )
+    if (
+        cached is not None
+        and cached.get("rev") == embedded_rev
+        and cached.get("ver") == VERSION
+        and cached.get("head") == head_rev
+        and cached_repo == (
+            current_repo_slug
+            or _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
+        )
+    ):
+        ttl = (
+            _UPDATE_CHECK_CACHE_SECONDS
+            if cached.get("behind") is not None
+            else _UPDATE_CHECK_FAILURE_CACHE_SECONDS
+        )
         if now - cached.get("ts", 0) < ttl:
             return cached.get("behind")
+    repo_slug = None
     if embedded_rev:
         behind = _check_via_rev(embedded_rev)
     else:
         # No checkout and no embedded revision — status can't be determined.
         behind = _check_via_local_git(repo_dir) if repo_dir is not None else None
-    _quiet(lambda: cache_file.write_text(
-        json.dumps({"ts": now, "behind": behind, "rev": embedded_rev, "ver": VERSION,
-                    "head": head_rev or embedded_rev, "target": _last_target_rev}),
-        encoding="utf-8"))
+        repo_slug = current_repo_slug
+    _quiet(
+        lambda: cache_file.write_text(
+            json.dumps(
+                {
+                    "ts": now,
+                    "behind": behind,
+                    "rev": embedded_rev,
+                    "ver": VERSION,
+                    "head": head_rev or embedded_rev,
+                    "target": _last_target_rev,
+                    "repo": repo_slug
+                    or _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/"),
+                }
+            ),
+            encoding="utf-8",
+        )
+    )
     return behind
 
 

@@ -116,6 +116,11 @@ def test_check_via_rev_recovers_exact_count():
     compare.assert_called_once_with(SHA_A, SHA_B)
 
 
+def test_compare_cache_is_scoped_by_repository():
+    with _patch_urlopen({"ahead_by": 61, "status": "ahead"}):
+        assert banner._github_compare_behind(SHA_A, SHA_B, "flexpair/hermes-agent") == 61
+
+
 def test_check_via_rev_falls_back_to_sentinel_offline():
     """FAIL-BEFORE (class): this path returned a fabricated 1 via callers."""
     with _upstream_tip(SHA_B), patch.object(banner, "_github_compare_behind", return_value=None):

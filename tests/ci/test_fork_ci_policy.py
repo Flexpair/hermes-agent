@@ -40,10 +40,15 @@ def test_fork_does_not_require_manual_ci_review_label() -> None:
 def test_supply_chain_findings_fail_directly() -> None:
     scan = _workflow("supply-chain-audit.yml")["jobs"]["scan"]
     fail_step = next(
-        step for step in scan["steps"] if step["name"] == "Fail on critical findings"
+        step
+        for step in scan["steps"]
+        if step["name"] == "Fail on scanner findings or errors"
     )
 
-    assert fail_step["if"] == "steps.scan.outputs.found == 'true'"
+    assert fail_step["if"] == (
+        "always() && (steps.scan.outputs.found == 'true' || "
+        "steps.scan.outputs.scan_rc != '0')"
+    )
     assert "exit 1" in fail_step["run"]
 
 
