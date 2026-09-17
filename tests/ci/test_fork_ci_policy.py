@@ -47,6 +47,13 @@ def test_supply_chain_findings_fail_directly() -> None:
     assert "exit 1" in fail_step["run"]
 
 
+def test_supply_chain_behavior_tests_are_in_required_lane() -> None:
+    job = _workflow("flexpair-linux-config.yml")["jobs"]["test"]
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+
+    assert "tests/ci/test_supply_chain_scanner.py" in commands
+
+
 def test_linux_lane_runs_focused_fork_regressions() -> None:
     job = _workflow("flexpair-linux-config.yml")["jobs"]["test"]
     run = job["steps"]
