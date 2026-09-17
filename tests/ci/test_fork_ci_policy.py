@@ -30,6 +30,13 @@ def test_change_detection_allows_for_slow_repository_checkout() -> None:
     assert detect["timeout-minutes"] >= 5
 
 
+def test_fork_does_not_require_manual_ci_review_label() -> None:
+    jobs = _workflow("ci.yaml")["jobs"]
+
+    assert "review-labels" not in jobs
+    assert "review-labels" not in jobs["all-checks-pass"]["needs"]
+
+
 def test_linux_lane_runs_focused_fork_regressions() -> None:
     job = _workflow("flexpair-linux-config.yml")["jobs"]["test"]
     run = job["steps"]
