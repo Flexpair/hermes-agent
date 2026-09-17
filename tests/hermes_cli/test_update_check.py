@@ -66,6 +66,20 @@ def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
     assert (cached["head"], cached["target"], cached["behind"]) == (SHA_A, SHA_B, 61)
 
 
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://github.com/Flexpair/hermes-agent.git",
+        "git@github.com:Flexpair/hermes-agent.git",
+    ],
+)
+def test_flexpair_origin_is_not_treated_as_a_user_fork(origin):
+    """The supported Flexpair distribution must stay on its own origin."""
+    from hermes_cli.update_cmd_git import _is_fork
+
+    assert _is_fork(origin) is False
+
+
 def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
     """A fresh cache answers without any network; ``hermes update`` moving HEAD busts it at once;
     an inconclusive (None) result is retried after the shorter failure window, not never."""

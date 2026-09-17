@@ -168,11 +168,19 @@ def _print_parked_branch_kept_notice(current_branch: str, target_branch: str, un
     )
 
 
+# The Flexpair fork is a supported distribution, not a user's personal fork.
+# Treating it as a user fork would make ``hermes update`` offer to add the
+# upstream remote and synchronize ``main`` from NousResearch instead of
+# staying on the installed Flexpair origin.
 OFFICIAL_REPO_URLS = {
     "https://github.com/NousResearch/hermes-agent.git",
     "git@github.com:NousResearch/hermes-agent.git",
     "https://github.com/NousResearch/hermes-agent",
     "git@github.com:NousResearch/hermes-agent",
+    "https://github.com/Flexpair/hermes-agent.git",
+    "git@github.com:Flexpair/hermes-agent.git",
+    "https://github.com/Flexpair/hermes-agent",
+    "git@github.com:Flexpair/hermes-agent",
 }
 OFFICIAL_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
 SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"

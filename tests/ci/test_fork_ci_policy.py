@@ -1,4 +1,4 @@
-"""Structural policy tests for the Linux fork's GitHub Actions workflows."""
+"""Workflow policy tests for the Linux fork's GitHub Actions workflows."""
 
 from __future__ import annotations
 
@@ -37,9 +37,11 @@ def test_fork_does_not_require_manual_ci_review_label() -> None:
     assert "review-labels" not in jobs["all-checks-pass"]["needs"]
 
 
-def test_supply_chain_findings_fail_without_review_label() -> None:
+def test_supply_chain_findings_fail_directly() -> None:
     scan = _workflow("supply-chain-audit.yml")["jobs"]["scan"]
-    fail_step = next(step for step in scan["steps"] if step["name"] == "Fail on critical findings")
+    fail_step = next(
+        step for step in scan["steps"] if step["name"] == "Fail on critical findings"
+    )
 
     assert fail_step["if"] == "steps.scan.outputs.found == 'true'"
     assert "exit 1" in fail_step["run"]
