@@ -51,6 +51,12 @@ def test_supply_chain_findings_fail_directly() -> None:
     )
     assert "exit 1" in fail_step["run"]
 
+    bounds = _workflow("supply-chain-audit.yml")["jobs"]["dep-bounds"]
+    bounds_run = next(
+        step["run"] for step in bounds["steps"] if step.get("id") == "bounds"
+    )
+    assert "in_hunk = False" in bounds_run
+
 
 def test_supply_chain_behavior_tests_are_in_required_lane() -> None:
     job = _workflow("flexpair-linux-config.yml")["jobs"]["test"]

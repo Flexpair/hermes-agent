@@ -134,8 +134,14 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
 
-          # Only check added lines in pyproject.toml
-          ADDED=$(git diff "$BASE"..."$HEAD" -- pyproject.toml | grep '^+' | grep -v '^+++' || true)
+          # Only check added lines in pyproject.toml. Do not let an added
+          # source line beginning with ++ look like a diff header.
+          ADDED=$(git diff "$BASE"..."$HEAD" -- pyproject.toml | python3 -c 'import sys; in_hunk = False
+          for line in sys.stdin:
+              if line.startswith("@@"):
+                  in_hunk = True
+              elif in_hunk and line.startswith("+"):
+                  print(line, end="")')
 
           if [ -z "$ADDED" ]; then
             echo "found=false" >> "$GITHUB_OUTPUT"
