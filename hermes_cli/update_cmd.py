@@ -516,9 +516,16 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
     is_shallow = _is_shallow_checkout(git_cmd)
     depth_args = ["--depth", "1"] if is_shallow else []
 
-    # Probe locally for an 'upstream' remote before a network fetch non-forks always fail.
+    origin_url = _m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)
+    origin_is_fork = _is_fork(origin_url)
+    # Probe locally for an 'upstream' remote only for user forks; Flexpair is a
+    # supported origin and must check the same distribution it applies.
     fetch_result = None
-    if branch == "main" and _git_run(git_cmd, ["remote", "get-url", "upstream"]).returncode == 0:
+    if (
+        origin_is_fork
+        and branch == "main"
+        and _git_run(git_cmd, ["remote", "get-url", "upstream"]).returncode == 0
+    ):
         print("→ Fetching from upstream...")
         fetch_result = _git_run(git_cmd, ["fetch"] + depth_args + ["upstream", branch], network=True)
     if fetch_result is not None and fetch_result.returncode == 0:

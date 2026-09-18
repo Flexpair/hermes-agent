@@ -50,6 +50,10 @@ def _stub_git(
             return MagicMock(returncode=0, stdout=f"{origin}\n")
         if sub == "merge-base":
             return MagicMock(returncode=1, stdout="")
+        if sub == "fetch":
+            return MagicMock(returncode=0, stdout="", stderr="")
+        if sub == "rev-list":
+            return MagicMock(returncode=0, stdout="0\n", stderr="")
         raise AssertionError(f"passive check must not run git {sub}: {args}")
 
     monkeypatch.setattr(banner.subprocess, "run", fake_run)
@@ -104,6 +108,25 @@ def test_flexpair_origin_uses_flexpair_api_compare(git_repo, monkeypatch):
     cache = json.loads((git_repo.parent / ".update_check").read_text())
     assert cache["repo"] == "flexpair/hermes-agent"
     assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
+
+
+def test_flexpair_origin_ignores_existing_upstream_remote(git_repo, monkeypatch):
+    calls = _stub_git(
+        monkeypatch,
+        head=SHA_A,
+        origin="https://github.com/Flexpair/hermes-agent.git",
+    )
+    monkeypatch.setattr(
+        "hermes_cli.update_cmd._is_shallow_checkout", lambda _git_cmd: False
+    )
+    monkeypatch.setattr(banner, "_github_compare_behind", lambda *args: 0)
+
+    from hermes_cli.update_cmd import _cmd_update_check
+
+    _cmd_update_check()
+
+    assert any(call[1:4] == ["fetch", "origin", "main"] for call in calls)
+    assert not any("upstream" in call for call in calls)
 
 
 def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
