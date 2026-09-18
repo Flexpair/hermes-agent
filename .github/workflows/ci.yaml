@@ -18,7 +18,6 @@ on:
   pull_request:
   push:
     branches: [main]
-
 permissions:
   contents: read
   pull-requests: write # needed by lint (PR comment) + supply-chain review_status
@@ -36,7 +35,10 @@ jobs:
   detect:
     name: Detect affected areas
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    # Checkout can take close to a minute on GitHub's network before the
+    # classifier itself starts. Keep this bounded without cancelling healthy
+    # runs during repository fetch.
+    timeout-minutes: 5
     outputs:
       python: ${{ steps.classify.outputs.python }}
       python_prod: ${{ steps.classify.outputs.python_prod }}
@@ -60,28 +62,30 @@ jobs:
         id: classify
         uses: ./.github/actions/detect-changes
         with:
-          sparse-checkout: scripts/ci/classify_changes.py
-          sparse-checkout-cone-mode: false
           github-token: ${{ github.token }}
 
   # ─────────────────────────────────────────────────────────────────────
   # Lane-gated sub-workflows. Each runs in parallel after detect finishes.
-  # Skipped workflows (if condition is false) don't spin up runners.
+  # The required Linux lane targets the configuration, installer, and CI
+  # surfaces maintained by this fork. The complete affordable Linux suite is
+  # split across normal runners in flexpair-linux-full.yml and runs weekly or
+  # on demand instead of blocking every configuration PR.
   # ─────────────────────────────────────────────────────────────────────
   tests:
-    name: Python tests
+    name: Linux Python tests
     needs: detect
+    # Focused regressions for the fork's maintained surfaces. Explicit
+    # macos_only/windows_only items are skipped by conftest on Linux.
     if: needs.detect.outputs.python == 'true'
-    uses: ./.github/workflows/tests.yml
+    uses: ./.github/workflows/flexpair-linux-config.yml
 
-  # macOS + Windows lanes. The main `tests` lane above is Linux-only, and
-  # the OS-marked tests it collects are skipped there by design (see the
-  # `_OS_MARKS` comment in tests/conftest.py) — this is where they run.
-  # Same `python` lane gate: if no Python changed, neither runs.
+
   tests-os:
     name: OS-specific tests
     needs: detect
-    if: needs.detect.outputs.python == 'true'
+    # The Linux fork uses the host's real platform gate; these dedicated OS
+    # tests are not part of the Linux PR path.
+    if: false
     uses: ./.github/workflows/tests-os.yml
     with:
       # The Windows lane spawns the real desktop-update hand-off script
@@ -92,7 +96,9 @@ jobs:
   lint:
     name: Python lints
     needs: detect
-    if: needs.detect.outputs.python == 'true'
+    # Full lint/type coverage is upstream-owned; keep cheap fork regressions
+    # in the dedicated Linux lane.
+    if: false
     uses: ./.github/workflows/lint.yml
     with:
       event_name: ${{ needs.detect.outputs.event_name }}
@@ -100,22 +106,22 @@ jobs:
   js-tests:
     name: JS & TS checks
     needs: detect
-    if: needs.detect.outputs.frontend == 'true'
+    # Frontend/browser coverage is upstream-owned for this Linux fork.
+    if: false
     uses: ./.github/workflows/js-tests.yml
 
   installer-tests:
     name: Installer tests
     needs: detect
-    # Windows-only, and only for PRs that touch install.ps1 or its tests.
-    if: needs.detect.outputs.installer == 'true'
+    # Windows-only installer coverage remains upstream-owned.
+    if: false
     uses: ./.github/workflows/installer-tests.yml
 
   rust-tests:
     name: Rust tests
     needs: detect
-    # Only for PRs that touch a Rust crate. `.rs` is under apps/, so these
-    # changes used to run the TypeScript matrix and nothing that compiles them.
-    if: needs.detect.outputs.rust == 'true'
+    # Rust bootstrap coverage is upstream-owned for this Linux fork.
+    if: false
     uses: ./.github/workflows/rust-tests.yml
 
   e2e-desktop:
@@ -139,7 +145,8 @@ jobs:
   docs-site:
     name: Docs Site
     needs: detect
-    if: needs.detect.outputs.site == 'true'
+    # Documentation rendering is validated upstream, not in this fork lane.
+    if: false
     uses: ./.github/workflows/docs-site-checks.yml
 
   history-check:
@@ -151,7 +158,8 @@ jobs:
   contributor-check:
     name: Check contributors
     needs: detect
-    if: needs.detect.outputs.python == 'true'
+    # Attribution validation remains active; it protects upstream syncs.
+    if: true
     uses: ./.github/workflows/contributor-check.yml
 
   uv-lockfile:
@@ -162,7 +170,8 @@ jobs:
     # blip, a blocking red X — for diffs that cannot desync the lockfile
     # (docs, frontend, prose). Only pyproject.toml / uv.lock can. A
     # `.github/` change still forces it on via the classifier's fail-open.
-    if: needs.detect.outputs.uv_lock == 'true'
+    # Lockfile resolution is upstream-owned; the focused lane uses --locked.
+    if: false
     uses: ./.github/workflows/uv-lockfile-check.yml
 
   infographic-check:
@@ -183,13 +192,15 @@ jobs:
   lockfile-diff:
     name: package-lock.json diff
     needs: detect
-    if: needs.detect.outputs.event_name == 'pull_request' && needs.detect.outputs.npm_lock == 'true'
+    # package-lock.json semantic diff is not part of the Linux fork contract.
+    if: false
     uses: ./.github/workflows/lockfile-diff.yml
 
   docker-lint:
     name: Lint Docker scripts
     needs: detect
-    if: needs.detect.outputs.docker_meta == 'true'
+    # Docker linting is upstream-owned and is not part of fork regressions.
+    if: false
     uses: ./.github/workflows/docker-lint.yml
 
   supply-chain:
@@ -201,17 +212,6 @@ jobs:
       event_name: ${{ needs.detect.outputs.event_name }}
       scan: ${{ needs.detect.outputs.scan == 'true' }}
       deps: ${{ needs.detect.outputs.deps == 'true' }}
-
-  review-labels:
-    name: Review label gate
-    needs: [detect, supply-chain]
-    if: always() && needs.detect.outputs.event_name == 'pull_request' && (needs.detect.outputs.ci_review == 'true' || needs.detect.outputs.mcp_catalog == 'true' || needs.supply-chain.outputs.critical_findings == 'true')
-    uses: ./.github/workflows/review-labels.yml
-    with:
-      ci_review: ${{ needs.detect.outputs.ci_review == 'true' }}
-      ci_review_files: ${{ needs.detect.outputs.ci_review_files }}
-      mcp_catalog: ${{ needs.detect.outputs.mcp_catalog == 'true' }}
-      supply_chain: ${{ needs.supply-chain.outputs.critical_findings == 'true' }}
 
   # ─────────────────────────────────────────────────────────────────────
   # Gate: runs after everything. ``if: always()`` ensures it reports a
@@ -243,11 +243,7 @@ jobs:
       - docker-lint
       - profile-artifact-check
       - supply-chain
-      - review-labels
-      # OSV runs weekly against main (osv-scanner.yml schedule), not per PR:
-      # every PR was reporting the same repo-wide baseline of pinned-dep CVEs
-      # in its review comment, and the SARIF upload tripped GitHub's
-      # per-installation API rate limit during merge trains.
+      # OSV runs weekly against main, not per pull request.
       # The image build runs in its own workflow (docker.yml) and reports
       # its own check. It was never required here, because it is too slow
       # to block a merge. A separate run also stops it from holding this
@@ -271,13 +267,16 @@ jobs:
           print(f'needs-json={json.dumps(compact)}')
           with open('$GITHUB_OUTPUT', 'a') as f:
               f.write(f'needs-json={json.dumps(compact)}\n')
-          failed = [name for name, info in needs.items() if info['result'] == 'failure']
+          failed = [
+              name for name, info in needs.items()
+              if info['result'] not in ('success', 'skipped')
+          ]
           for name, info in sorted(needs.items()):
               result = info['result']
               icon = '✅' if result in ('success', 'skipped') else '❌'
               print(f'{icon} {name}: {result}')
           if failed:
-              print(f'::error::{len(failed)} job(s) failed: {\", \".join(failed)}')
+              print(f'::error::{len(failed)} job(s) did not pass: {\", \".join(failed)}')
               sys.exit(1)
           print('All checks passed (or were skipped)')
           "

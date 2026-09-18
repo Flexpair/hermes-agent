@@ -43,11 +43,16 @@ class _FakeResponse:
         return False
 
 
-def _patch_urlopen(payload):
+def _patch_urlopen(payloads):
     banner._compare_payload_cache.clear()
+    if isinstance(payloads, dict):
+        payloads = [payloads]
+    responses = [
+        _FakeResponse(json.dumps(payload).encode()) for payload in payloads
+    ]
     return patch(
         "urllib.request.urlopen",
-        return_value=_FakeResponse(json.dumps(payload).encode()),
+        side_effect=responses,
     )
 
 
@@ -114,6 +119,25 @@ def test_check_via_rev_recovers_exact_count():
     with _upstream_tip(SHA_B), patch.object(banner, "_github_compare_behind", return_value=61) as compare:
         assert banner._check_via_rev(SHA_A) == 61
     compare.assert_called_once_with(SHA_A, SHA_B)
+
+
+def test_compare_cache_is_scoped_by_repository() -> None:
+    with _patch_urlopen(
+        [
+            {"ahead_by": 61, "status": "ahead"},
+            {"ahead_by": 7, "status": "ahead"},
+        ]
+    ) as urlopen:
+        assert (
+            banner._github_compare_behind(SHA_A, SHA_B, "flexpair/hermes-agent")
+            == 61
+        )
+        assert (
+            banner._github_compare_behind(SHA_A, SHA_B, "nousresearch/hermes-agent")
+            == 7
+        )
+
+    assert urlopen.call_count == 2
 
 
 def test_check_via_rev_falls_back_to_sentinel_offline():

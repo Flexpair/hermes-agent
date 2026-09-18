@@ -13,9 +13,30 @@ def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
     # The cache is keyed on the checkout's HEAD (an update moving HEAD invalidates it).
     repo_dir = banner._resolve_repo_dir()
     head = banner._git_stdout(["rev-parse", "HEAD"], cwd=repo_dir) if repo_dir else None
-    (home / ".update_check").write_text(json.dumps({
-        "ts": time.time(), "behind": 17, "rev": None, "ver": banner.VERSION, "head": head,
-    }), encoding="utf-8")
+    origin = (
+        banner._git_stdout(["remote", "get-url", "origin"], cwd=repo_dir)
+        if repo_dir
+        else None
+    )
+    canonical = banner._canonical_github_remote(origin)
+    repo_slug = (
+        canonical.removeprefix("github.com/")
+        if canonical.startswith("github.com/")
+        else "nousresearch/hermes-agent"
+    )
+    (home / ".update_check").write_text(
+        json.dumps(
+            {
+                "ts": time.time(),
+                "behind": 17,
+                "rev": None,
+                "ver": banner.VERSION,
+                "head": head,
+                "repo": repo_slug,
+            }
+        ),
+        encoding="utf-8",
+    )
     monkeypatch.delenv("HERMES_REVISION", raising=False)
     config = home / "config.yaml"
     config.write_text("updates:\n  check: true\n", encoding="utf-8")
