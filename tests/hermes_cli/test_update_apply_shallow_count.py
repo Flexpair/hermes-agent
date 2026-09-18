@@ -29,12 +29,9 @@ def _run_count_block(
     origin: str = "https://github.com/NousResearch/hermes-agent.git",
 ) -> tuple[int, MagicMock]:
     """Call the production preparation function with Git and API boundaries mocked."""
-    calls: list[list[str]] = []
-
     def fake_git(
         _git_cmd, args, cwd=None, *, check=False, network=False
     ) -> MagicMock:
-        calls.append(list(args))
         if args[:2] == ["rev-list", "HEAD..origin/main"]:
             return MagicMock(returncode=0, stdout=f"{raw_count}\n", stderr="")
         if args == ["rev-parse", "--is-shallow-repository"]:
