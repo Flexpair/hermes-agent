@@ -74,6 +74,14 @@ def _obfuscated_subprocess_payload() -> str:
     return f'import {module}; {module}.{invoke}(["sh", "-c", {constructor}(99)])\n'
 
 
+def _double_plus_exec_payload() -> str:
+    module = "base" + "64"
+    decoder = "b64" + "decode"
+    executor = "ex" + "ec"
+    prefix = "+" + "+"
+    return f"{prefix}{executor}({module}.{decoder}('cGF5bG9hZA=='))\n"
+
+
 @pytest.mark.parametrize(
     ("filename", "payload_factory", "expected"),
     [
@@ -144,9 +152,7 @@ def test_scanner_keeps_added_lines_starting_with_double_plus(tmp_path: Path) -> 
     (repo / "module.py").write_text("value = 1\n", encoding="utf-8")
     _git(repo, "add", ".")
     base = _commit(repo, "base")
-    (repo / "module.py").write_text(
-        "++exec(base64.b64decode('cGF5bG9hZA=='))\n", encoding="utf-8"
-    )
+    (repo / "module.py").write_text(_double_plus_exec_payload(), encoding="utf-8")
     _git(repo, "add", ".")
     head = _commit(repo, "double-plus payload")
     findings = tmp_path / "findings.md"

@@ -76,6 +76,7 @@ jobs:
           # contributor branch SHA explicitly so the scan cannot inspect the
           # workflow's own merge-only test changes.
           git fetch --no-tags origin "$HEAD"
+          test "$(git rev-parse FETCH_HEAD)" = "$HEAD"
           test -n "$BASE" && test -n "$HEAD"
           # Keep scanner logic executable and testable outside GitHub Actions.
           set +e
