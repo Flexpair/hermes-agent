@@ -135,3 +135,24 @@ def test_scanner_ignores_lockfiles_and_nested_install_hooks(tmp_path: Path) -> N
     assert result.returncode == 0
     assert "found=false" in result.stdout
     assert findings.read_text(encoding="utf-8") == ""
+
+
+def test_scanner_keeps_added_lines_starting_with_double_plus(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "module.py").write_text("value = 1\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    base = _commit(repo, "base")
+    (repo / "module.py").write_text(
+        "++exec(base64.b64decode('cGF5bG9hZA=='))\n", encoding="utf-8"
+    )
+    _git(repo, "add", ".")
+    head = _commit(repo, "double-plus payload")
+    findings = tmp_path / "findings.md"
+
+    result = _run_scanner(repo, base, head, findings)
+
+    assert result.returncode == 1
+    assert "found=true" in result.stdout
+    assert "base64 decode + exec/eval combo" in findings.read_text(encoding="utf-8")

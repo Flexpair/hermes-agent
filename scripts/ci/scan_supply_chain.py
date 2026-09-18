@@ -28,11 +28,21 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _added_lines(diff: str) -> list[str]:
-    return [
-        line
-        for line in diff.splitlines()
-        if line.startswith("+") and not line.startswith("+++")
-    ]
+    """Return added source lines, keeping ``++`` source prefixes intact."""
+    added: list[str] = []
+    in_hunk = False
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            in_hunk = False
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            continue
+        if not in_hunk or line == "---" or line == "+++":
+            continue
+        if line.startswith("+"):
+            added.append(line[1:])
+    return added
 
 
 def _section(title: str, explanation: str, label: str, matches: str) -> str:
