@@ -12,7 +12,7 @@ _DIFF_EXCLUDES = (":!uv.lock", ":!*.lock", ":!package-lock.json", ":!yarn.lock")
 _B64_EXEC_RE = re.compile(
     r"base64\.(?:b64decode|decodebytes|urlsafe_b64decode)", re.IGNORECASE
 )
-_EXEC_RE = re.compile(r"exec\(|eval\(", re.IGNORECASE)
+_EXEC_RE = re.compile(r"(?:exec|eval)\s*\(", re.IGNORECASE)
 _SUBPROCESS_RE = re.compile(r"subprocess\.(?:Popen|call|run)\s*\(", re.IGNORECASE)
 _OBFUSCATED_ARG_RE = re.compile(r"base64|\\x[0-9a-f]{2}|chr\(", re.IGNORECASE)
 

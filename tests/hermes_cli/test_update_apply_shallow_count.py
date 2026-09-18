@@ -103,8 +103,8 @@ def test_shallow_local_ahead_treated_as_up_to_date() -> None:
 
 
 def test_shallow_zero_count_short_circuits_without_api() -> None:
-    with patch("hermes_cli.banner._github_compare_behind") as api:
-        got, _ = _run_count_block(shallow=True, raw_count="0", api_count=None)
+    got, compare = _run_count_block(shallow=True, raw_count="0", api_count=None)
     # The block only consults the API when count > 0; a 0 count is trustworthy
     # (HEAD == origin tip counts 0 even on shallow graphs).
     assert got == 0
+    compare.assert_not_called()

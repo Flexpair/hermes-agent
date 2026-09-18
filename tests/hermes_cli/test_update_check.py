@@ -82,6 +82,7 @@ def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
     [
         "https://github.com/Flexpair/hermes-agent.git",
         "git@github.com:Flexpair/hermes-agent.git",
+        "https://github.com/flexpair/hermes-agent.git",
     ],
 )
 def test_flexpair_origin_is_not_treated_as_a_user_fork(origin):

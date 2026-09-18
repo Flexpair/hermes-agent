@@ -82,6 +82,13 @@ def _double_plus_exec_payload() -> str:
     return f"{prefix}{executor}({module}.{decoder}('cGF5bG9hZA=='))\n"
 
 
+def _spaced_exec_payload() -> str:
+    module = "base" + "64"
+    decoder = "b64" + "decode"
+    executor = "ex" + "ec"
+    return f"{executor} ({module}.{decoder}('cGF5bG9hZA=='))\n"
+
+
 @pytest.mark.parametrize(
     ("filename", "payload_factory", "expected"),
     [
@@ -89,6 +96,11 @@ def _double_plus_exec_payload() -> str:
         (
             "module.py",
             _encoded_exec_payload,
+            "base64 decode + exec/eval combo",
+        ),
+        (
+            "module.py",
+            _spaced_exec_payload,
             "base64 decode + exec/eval combo",
         ),
         (
