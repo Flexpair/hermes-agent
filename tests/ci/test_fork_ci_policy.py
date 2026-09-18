@@ -50,6 +50,7 @@ def test_supply_chain_findings_fail_directly() -> None:
         "steps.scan.outputs.scan_rc != '0')"
     )
     assert "exit 1" in fail_step["run"]
+    assert 'git fetch --no-tags origin "$HEAD"' in scan["steps"][1]["run"]
 
     bounds = _workflow("supply-chain-audit.yml")["jobs"]["dep-bounds"]
     bounds_run = next(
