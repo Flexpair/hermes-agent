@@ -45,7 +45,15 @@ def _section(title: str, explanation: str, label: str, matches: str) -> str:
 def scan_diff(repo: Path, base: str, head: str) -> str:
     """Return a markdown report for critical indicators in ``base...head``."""
     diff = _git(repo, "diff", f"{base}...{head}", "--", *_DIFF_EXCLUDES)
-    names = _git(repo, "diff", "--diff-filter=d", "--name-only", f"{base}...{head}")
+    names = _git(
+        repo,
+        "diff",
+        "--diff-filter=d",
+        "--name-only",
+        f"{base}...{head}",
+        "--",
+        *_DIFF_EXCLUDES,
+    )
     added = _added_lines(diff)
     findings = ""
 

@@ -15,7 +15,7 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
 
 
-def _run_required_gate(
+def _run_scanner(
     repo: Path, base: str, head: str, findings: Path
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -73,7 +73,11 @@ def _commit(repo: Path, message: str) -> str:
             'import subprocess; subprocess.run(["sh", "-c", chr(99)])\n',
             "subprocess with encoded/obfuscated command",
         ),
-        ("setup.py", "from setuptools import setup\n", "Install-hook file added or modified"),
+        (
+            "setup.py",
+            "from setuptools import setup\n",
+            "Install-hook file added or modified",
+        ),
     ],
 )
 def test_scanner_reports_each_critical_detector(
@@ -91,7 +95,7 @@ def test_scanner_reports_each_critical_detector(
     _git(repo, "add", ".")
     head = _commit(repo, "critical")
     findings = tmp_path / "findings.md"
-    result = _run_required_gate(repo, base, head, findings)
+    result = _run_scanner(repo, base, head, findings)
     assert result.returncode == 1
     assert "found=true" in result.stdout
     assert expected in findings.read_text(encoding="utf-8")
@@ -114,7 +118,7 @@ def test_scanner_ignores_lockfiles_and_nested_install_hooks(tmp_path: Path) -> N
     _git(repo, "add", ".")
     head = _commit(repo, "ordinary")
     findings = tmp_path / "findings.md"
-    result = _run_required_gate(repo, base, head, findings)
+    result = _run_scanner(repo, base, head, findings)
     assert result.returncode == 0
     assert "found=false" in result.stdout
     assert findings.read_text(encoding="utf-8") == ""
