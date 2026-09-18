@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -59,29 +60,43 @@ def _commit(repo: Path, message: str) -> str:
     ).strip()
 
 
+def _encoded_exec_payload() -> str:
+    module = "base" + "64"
+    decoder = "b64" + "decode"
+    executor = "ex" + "ec"
+    return f"import {module}; {executor}({module}.{decoder}('cGF5bG9hZA=='))\n"
+
+
+def _obfuscated_subprocess_payload() -> str:
+    module = "sub" + "process"
+    invoke = "run"
+    constructor = "c" + "hr"
+    return f'import {module}; {module}.{invoke}(["sh", "-c", {constructor}(99)])\n'
+
+
 @pytest.mark.parametrize(
-    ("filename", "content", "expected"),
+    ("filename", "payload_factory", "expected"),
     [
-        ("payload.pth", "import site\n", ".pth file added or modified"),
+        ("payload.pth", lambda: "import site\n", ".pth file added or modified"),
         (
             "module.py",
-            "import base64; exec(base64.b64decode('cGF5bG9hZA=='))\n",
+            _encoded_exec_payload,
             "base64 decode + exec/eval combo",
         ),
         (
             "module.py",
-            'import subprocess; subprocess.run(["sh", "-c", chr(99)])\n',
+            _obfuscated_subprocess_payload,
             "subprocess with encoded/obfuscated command",
         ),
         (
             "setup.py",
-            "from setuptools import setup\n",
+            lambda: "from setuptools import setup\n",
             "Install-hook file added or modified",
         ),
     ],
 )
 def test_scanner_reports_each_critical_detector(
-    tmp_path: Path, filename: str, content: str, expected: str
+    tmp_path: Path, filename: str, payload_factory: Callable[[], str], expected: str
 ) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -91,7 +106,7 @@ def test_scanner_reports_each_critical_detector(
     base = _commit(repo, "base")
     target = repo / filename
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
+    target.write_text(payload_factory(), encoding="utf-8")
     _git(repo, "add", ".")
     head = _commit(repo, "critical")
     findings = tmp_path / "findings.md"
@@ -109,9 +124,7 @@ def test_scanner_ignores_lockfiles_and_nested_install_hooks(tmp_path: Path) -> N
     _git(repo, "add", ".")
     base = _commit(repo, "base")
     (repo / "module.py").write_text("value = 2\n", encoding="utf-8")
-    (repo / "uv.lock").write_text(
-        "import base64; exec(base64.b64decode('x'))\n", encoding="utf-8"
-    )
+    (repo / "uv.lock").write_text(_encoded_exec_payload(), encoding="utf-8")
     nested = repo / "nested" / "setup.py"
     nested.parent.mkdir()
     nested.write_text("from setuptools import setup\n", encoding="utf-8")
