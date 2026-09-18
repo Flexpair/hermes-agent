@@ -566,7 +566,11 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
             return
         from hermes_cli.banner import _github_compare_behind
         origin_url = _m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)
-        repo_slug = _github_repo_slug(origin_url)
+        repo_slug = (
+            _github_repo_slug(origin_url)
+            if compare_branch.startswith("origin/")
+            else None
+        )
         # counted == 0 means local-ahead, not behind; None means the API could not count.
         _print_update_check_result(
             _github_compare_behind(head_sha, target_sha, repo_slug), compare_branch

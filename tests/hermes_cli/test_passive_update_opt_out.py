@@ -18,8 +18,11 @@ def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
         if repo_dir
         else None
     )
-    repo_slug = banner._canonical_github_remote(origin).removeprefix(
-        "github.com/"
+    canonical = banner._canonical_github_remote(origin)
+    repo_slug = (
+        canonical.removeprefix("github.com/")
+        if canonical.startswith("github.com/")
+        else "nousresearch/hermes-agent"
     )
     (home / ".update_check").write_text(
         json.dumps(
