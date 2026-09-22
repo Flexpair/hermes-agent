@@ -6,7 +6,7 @@ import { toWebviewInputSpace } from './preview-input'
 // webview's input space is css × zoom. Without scaling, an unscaled click
 // lands off-origin and misses silently.
 describe('toWebviewInputSpace', () => {
-  it("scales pointer events by the guest zoom so the reporter's 500,310 target is hit at 150 %", () => {
+  it("scales pointer events by the provided guest zoom factor", () => {
     const down = toWebviewInputSpace({ button: 'left', clickCount: 1, type: 'mouseDown', x: 500, y: 310 }, 1.5)
 
     expect(down).toEqual({ button: 'left', clickCount: 1, type: 'mouseDown', x: 750, y: 465 })

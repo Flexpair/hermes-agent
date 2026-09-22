@@ -8,11 +8,12 @@
  * Ctrl/Cmd +/-/0 shortcuts or the View menu, so the UI never drifts.
  */
 
+import { DEFAULT_ZOOM_PERCENT } from '@hermes/shared'
 import { atom } from 'nanostores'
 
-// Mirror DEFAULT_ZOOM_LEVEL (150%) so Appearance doesn't flash 100% before
-// the main-process zoom.get() resolves. Keep in sync with electron/zoom.ts.
-export const $zoomPercent = atom<number>(150)
+// Mirror the main-process default so Appearance doesn't flash 100% before
+// the main-process zoom.get() resolves.
+export const $zoomPercent = atom<number>(DEFAULT_ZOOM_PERCENT)
 
 export function setZoomPercent(percent: number): void {
   window.hermesDesktop?.zoom?.setPercent(percent)
