@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { toWebviewInputSpace } from './preview-input'
 
 // #116281: the act engine measures targets in guest CSS pixels, but the
-// webview's input space is css × zoom. At the shipped 90 % default an
-// unscaled click landed 1/0.9 too far from the origin and missed silently.
+// webview's input space is css × zoom. Without scaling, an unscaled click
+// lands off-origin and misses silently.
 describe('toWebviewInputSpace', () => {
-  it("scales pointer events by the guest zoom so the reporter's 500,310 target is hit at 90 %", () => {
-    const down = toWebviewInputSpace({ button: 'left', clickCount: 1, type: 'mouseDown', x: 500, y: 310 }, 0.9)
+  it("scales pointer events by the guest zoom so the reporter's 500,310 target is hit at 150 %", () => {
+    const down = toWebviewInputSpace({ button: 'left', clickCount: 1, type: 'mouseDown', x: 500, y: 310 }, 1.5)
 
-    expect(down).toEqual({ button: 'left', clickCount: 1, type: 'mouseDown', x: 450, y: 279 })
+    expect(down).toEqual({ button: 'left', clickCount: 1, type: 'mouseDown', x: 750, y: 465 })
     expect(toWebviewInputSpace({ deltaX: 0, deltaY: 600, type: 'mouseWheel', x: 380, y: 467 }, 1.25)).toEqual({
       deltaX: 0,
       deltaY: 600,
