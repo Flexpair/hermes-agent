@@ -39,14 +39,52 @@ describe('theme typography emoji fallback (#40364)', () => {
   })
 })
 
-// The pre-GitHub Nous palette stays available as nous-alt; the default name
-// still means GitHub chrome + brand blue.
+// The pre-GitHub Nous palette stays available as nous-alt; nous is still
+// GitHub chrome + brand blue (the Flexpair fork defaults to flexpair-dark).
 describe('nous-alt is the retired Nous, not the default', () => {
-  it('is registered under its own name and leaves nous as the default', () => {
-    expect(DEFAULT_SKIN_NAME).toBe('nous')
+  it('is registered under its own name, apart from nous', () => {
+    expect(DEFAULT_SKIN_NAME).toBe('flexpair-dark')
     expect(BUILTIN_THEMES['nous-alt']).toBe(nousAltTheme)
     expect(BUILTIN_THEMES.nous).not.toBe(nousAltTheme)
     expect(nousAltTheme.darkColors?.background).toBe('#0D2F86')
     expect(BUILTIN_THEMES.nous.darkColors?.background).not.toBe(nousAltTheme.darkColors?.background)
+  })
+})
+
+// Flexpair fork: company themes are built in, flexpair-dark is the default, and
+// every palette color is white, black, cyan (or a darkening) or a #157878 step.
+describe('flexpair themes', () => {
+  const onLine = (hex: string, base: [number, number, number]) => {
+    const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+
+    return [0, 255].some(end => {
+      for (let k = 0; k <= 1000; k++) {
+        const p = base.map(b => b + (end - b) * (k / 1000))
+
+        if (p.every((v, i) => Math.abs(v - c[i]) <= 2)) {
+          return true
+        }
+      }
+
+      return false
+    })
+  }
+
+  it('flexpair-dark is the default skin', () => {
+    expect(DEFAULT_SKIN_NAME).toBe('flexpair-dark')
+    expect(BUILTIN_THEMES[DEFAULT_SKIN_NAME]).toBeDefined()
+    expect(BUILTIN_THEMES['flexpair-light']).toBeDefined()
+  })
+
+  it.each(['flexpair-dark', 'flexpair-light'])('%s only uses the company palette', name => {
+    const theme = BUILTIN_THEMES[name]
+
+    const colors = [...Object.values(theme.colors), ...Object.values(theme.terminal ?? {})]
+      .filter((v): v is string => typeof v === 'string')
+      .map(v => v.slice(0, 7).toLowerCase())
+
+    for (const hex of colors) {
+      expect(onLine(hex, [0x15, 0x78, 0x78]) || onLine(hex, [0, 255, 255]), hex).toBe(true)
+    }
   })
 })

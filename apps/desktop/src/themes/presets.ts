@@ -20,7 +20,7 @@
 
 import { THEME_PRESET_PALETTES } from '@hermes/shared'
 
-import type { DesktopTheme, DesktopThemeTypography } from './types'
+import type { DesktopTheme, DesktopThemeColors, DesktopThemeTypography } from './types'
 
 // Color-emoji fonts to append to every stack as a last resort. None of the UI
 // text/mono fonts carry emoji glyphs, so without this emoji render as tofu
@@ -387,7 +387,134 @@ export const slateTheme: DesktopTheme = {
   }
 }
 
+/**
+ * Flexpair (fork) — company themes. Only white, black, cyan (#00ffff, and its
+ * darkenings) and #157878 with its lighter/darker steps. Each is single-mode
+ * (same palette in both slots), so the Light/Dark toggle doesn't invert it;
+ * `renderedModeFor` paints `.dark` from the background luminance. Matches the
+ * CLI `flexpair-dark` / `flexpair-light` skins. Scoped CSS extras (cyan pane
+ * dividers, composer focus, status hues) live in styles.css under
+ * `:root[data-hermes-theme^='flexpair']`.
+ */
+const flexpairDarkColors: DesktopThemeColors = {
+  background: '#041818',
+  foreground: '#e8f2f2',
+  card: '#062222',
+  cardForeground: '#e8f2f2',
+  muted: '#072626',
+  mutedForeground: '#8abcbc',
+  popover: '#072b2b',
+  popoverForeground: '#e8f2f2',
+  primary: '#00ffff',
+  primaryForeground: '#000000',
+  secondary: '#105959',
+  secondaryForeground: '#e8f2f2',
+  accent: '#0c4242',
+  accentForeground: '#e8f2f2',
+  border: '#157878',
+  input: '#062424',
+  ring: '#00ffff',
+  midground: '#00ffff',
+  midgroundForeground: '#000000',
+  composerRing: '#00ffff',
+  destructive: '#ffffff',
+  destructiveForeground: '#000000',
+  sidebarBackground: '#051c1c',
+  sidebarBorder: '#157878',
+  userBubble: '#0c4242',
+  userBubbleBorder: '#157878'
+}
+
+const flexpairLightColors: DesktopThemeColors = {
+  background: '#f8fbfb',
+  foreground: '#062424',
+  card: '#f0f6f6',
+  cardForeground: '#062424',
+  muted: '#eaf3f3',
+  mutedForeground: '#116060',
+  popover: '#e6f1f1',
+  popoverForeground: '#062424',
+  primary: '#157878',
+  primaryForeground: '#ffffff',
+  secondary: '#d8e9e9',
+  secondaryForeground: '#062424',
+  accent: '#ddebeb',
+  accentForeground: '#062424',
+  border: '#add0d0',
+  input: '#e8f2f2',
+  ring: '#157878',
+  midground: '#157878',
+  midgroundForeground: '#ffffff',
+  composerRing: '#00cccc',
+  destructive: '#000000',
+  destructiveForeground: '#ffffff',
+  sidebarBackground: '#e1eded',
+  sidebarBorder: '#add0d0',
+  userBubble: '#ddebeb',
+  userBubbleBorder: '#add0d0'
+}
+
+export const flexpairDarkTheme: DesktopTheme = {
+  name: 'flexpair-dark',
+  label: 'Flexpair Dark',
+  description: 'Cyan on deep teal — Flexpair company theme',
+  colors: flexpairDarkColors,
+  darkColors: flexpairDarkColors,
+  terminal: {
+    foreground: '#e8f2f2',
+    cursor: '#00ffff',
+    selectionBackground: '#15787880',
+    black: '#0a3c3c',
+    red: '#ffffff',
+    green: '#00ffff',
+    yellow: '#add0d0',
+    blue: '#449393',
+    magenta: '#8abcbc',
+    cyan: '#00cccc',
+    white: '#d0e4e4',
+    brightBlack: '#449393',
+    brightRed: '#ffffff',
+    brightGreen: '#00ffff',
+    brightYellow: '#e8f2f2',
+    brightBlue: '#67a7a7',
+    brightMagenta: '#add0d0',
+    brightCyan: '#00ffff',
+    brightWhite: '#ffffff'
+  }
+}
+
+export const flexpairLightTheme: DesktopTheme = {
+  name: 'flexpair-light',
+  label: 'Flexpair Light',
+  description: 'Teal on white — Flexpair company theme',
+  colors: flexpairLightColors,
+  darkColors: flexpairLightColors,
+  terminal: {
+    foreground: '#062424',
+    cursor: '#157878',
+    selectionBackground: '#add0d080',
+    black: '#000000',
+    red: '#000000',
+    green: '#157878',
+    yellow: '#0a3c3c',
+    blue: '#0d4848',
+    magenta: '#116060',
+    cyan: '#009999',
+    white: '#449393',
+    brightBlack: '#116060',
+    brightRed: '#000000',
+    brightGreen: '#157878',
+    brightYellow: '#0d4848',
+    brightBlue: '#0f5454',
+    brightMagenta: '#157878',
+    brightCyan: '#006666',
+    brightWhite: '#67a7a7'
+  }
+}
+
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
+  'flexpair-dark': flexpairDarkTheme,
+  'flexpair-light': flexpairLightTheme,
   nous: nousTheme,
   github: githubTheme,
   catppuccin: catppuccinTheme,
@@ -404,4 +531,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
 
 /** Skin used when nothing is persisted or the persisted name is retired. */
-export const DEFAULT_SKIN_NAME = 'nous'
+export const DEFAULT_SKIN_NAME = 'flexpair-dark'
