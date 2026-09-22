@@ -813,7 +813,7 @@ export function applyStoredToolResult(messages: ChatMessage[], toolMessage: Sess
       result: parseStoredToolResult(content),
       isError: false
     } as ChatMessagePart
-    messages[i] = { ...message, parts }
+    messages[i] = { ...message, parts, serverRowSpan: (message.serverRowSpan ?? 1) + 1 }
 
     return true
   }
