@@ -6,6 +6,7 @@
 
 import assert from 'node:assert/strict'
 
+import { DEFAULT_ZOOM_PERCENT } from '@hermes/shared/desktop-zoom'
 import { test, vi } from 'vitest'
 
 import {
@@ -30,10 +31,10 @@ test('storage key stays stable so persisted zoom survives upgrades', () => {
   assert.equal(ZOOM_STORAGE_KEY, 'hermes:desktop:zoomLevel')
 })
 
-test('default zoom matches the Appearance 90% preset', () => {
+test('default zoom matches the Appearance preset', () => {
   assert.equal(ZOOM_STEP, 0.1)
-  assert.equal(zoomLevelToPercent(DEFAULT_ZOOM_LEVEL), 90)
-  assert.equal(DEFAULT_ZOOM_LEVEL, percentToZoomLevel(90))
+  assert.equal(zoomLevelToPercent(DEFAULT_ZOOM_LEVEL), DEFAULT_ZOOM_PERCENT)
+  assert.equal(DEFAULT_ZOOM_LEVEL, percentToZoomLevel(DEFAULT_ZOOM_PERCENT))
 })
 
 test('clampZoomLevel rejects garbage and enforces bounds', () => {
