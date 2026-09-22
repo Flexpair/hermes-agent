@@ -37,6 +37,10 @@ def test_fork_does_not_require_manual_ci_review_label() -> None:
     assert "review-labels" not in jobs["all-checks-pass"]["needs"]
 
 
+def test_fork_does_not_run_duplicate_js_autofix() -> None:
+    assert not (WORKFLOWS / "js-autofix.yml").exists()
+
+
 def test_supply_chain_findings_fail_directly() -> None:
     scan = _workflow("supply-chain-audit.yml")["jobs"]["scan"]
     fail_step = next(
