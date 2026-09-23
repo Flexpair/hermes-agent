@@ -26,6 +26,10 @@ def _activate(name: str) -> None:
 def test_unconfigured_skin_uses_company_default():
     assert skin_cmd._active_skin() == "flexpair-dark"
 
+def test_whitespace_skin_uses_company_default():
+    _activate('"   "')
+    assert skin_cmd._active_skin() == "flexpair-dark"
+
 
 def test_set_edits_active_user_skin_in_place_preserving_everything_else():
     (_skins() / "oasis.yaml").write_text(

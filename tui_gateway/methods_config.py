@@ -124,6 +124,10 @@ def _display_word(key: str, default: str, allowed) -> str:
     raw = str(_display_raw().get(key, default) or "").strip().lower()
     return raw if raw in allowed else default
 
+def _cfg_get_skin(params):
+    skin = _display_raw().get("skin")
+    return {"value": skin.strip() if isinstance(skin, str) and skin.strip() else "flexpair-dark"}
+
 
 _THINKING_MODES = frozenset({"collapsed", "truncated", "full"})
 
@@ -206,7 +210,7 @@ _CONFIG_GETTERS = {
     "project": _cfg_get_project,
     "full": lambda params: {"config": _load_cfg()},
     "prompt": lambda params: {"prompt": _load_cfg().get("custom_prompt", "")},
-    "skin": lambda params: {"value": _display_raw().get("skin") or "flexpair-dark"},
+    "skin": _cfg_get_skin,
     # Normalised like the TUI renders it (frontend falls back to the default for the same inputs).
     "indicator": lambda params: {
         "value": _display_word("tui_status_indicator", DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES)},
