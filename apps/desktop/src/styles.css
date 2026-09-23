@@ -3712,6 +3712,7 @@ html[data-hud-window] [data-slot='popover-content'] {
 
 :root[data-hermes-theme^='flexpair'][data-hermes-mode='light'] {
   --ui-sash-hover-border: #00e6e6;
+  --ui-success: #157878 !important;
 }
 
 /* The chat composer has no focus state of its own — cyan border while typing. */
