@@ -445,7 +445,7 @@ const flexpairLightColors: DesktopThemeColors = {
   ring: '#157878',
   midground: '#157878',
   midgroundForeground: '#ffffff',
-  composerRing: '#00cccc',
+  composerRing: '#157878',
   destructive: '#000000',
   destructiveForeground: '#ffffff',
   sidebarBackground: '#e1eded',

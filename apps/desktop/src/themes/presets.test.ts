@@ -76,6 +76,10 @@ describe('flexpair themes', () => {
     expect(BUILTIN_THEMES['flexpair-light']).toBeDefined()
   })
 
+  it('uses a contrasting composer ring in the light palette', () => {
+    expect(BUILTIN_THEMES['flexpair-light'].colors.composerRing).toBe('#157878')
+  })
+
   it.each(['flexpair-dark', 'flexpair-light'])('%s only uses the company palette', name => {
     const theme = BUILTIN_THEMES[name]
 

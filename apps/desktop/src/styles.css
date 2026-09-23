@@ -3720,5 +3720,5 @@ html[data-hud-window] [data-slot='popover-content'] {
 }
 
 :root[data-hermes-theme^='flexpair'][data-hermes-mode='light'] [data-slot='composer-surface']:focus-within {
-  border-color: #00cccc !important;
+  border-color: #157878 !important;
 }
