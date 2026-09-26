@@ -1,0 +1,46 @@
+name: Flexpair patch replay
+
+on:
+  push:
+    branches: ['*-patched']
+    tags: [latest]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    name: Patch reproduces branch tree
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Replay patch from original base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f flexpair.patch
+          # --follow finds the original addition across patch-file renames.
+          creation=$(git log --follow --diff-filter=A --format=%H HEAD -- flexpair.patch)
+          test "$(printf '%s\n' "$creation" | wc -l)" -eq 1
+          base=$(git rev-parse "${creation}^" 2>/dev/null)
+          index=$(mktemp "${RUNNER_TEMP}/flexpair-index.XXXXXX")
+          trap 'rm -f "$index"' EXIT
+          rm -f "$index"
+          export GIT_INDEX_FILE="$index"
+          git read-tree "$base"
+          git apply --cached --check flexpair.patch
+          git apply --cached flexpair.patch
+          replayed=$(git write-tree)
+          git read-tree HEAD
+          git update-index --force-remove flexpair.patch
+          expected=$(git write-tree)
+          if [[ "$replayed" != "$expected" ]]; then
+            git diff --stat "$replayed" "$expected"
+            echo '::error::flexpair.patch does not reproduce the patched branch tree'
+            exit 1
+          fi
+          echo "Patch reproduces tree $expected from base $base"
