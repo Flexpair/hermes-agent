@@ -338,10 +338,53 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
 [#F29C38]⠀⠀⠀⠀⠀⠀⠀⠀⣰⡿⢿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
 [#F29C38]⠀⠀⠀⠀⠀⠀⠀⣼⡟⠀⠀⢻⣧⠀⠀⠀⠀⠀⠀⠀⠀[/]
 [dim #7A3511]⠀⠀⠀⠀⠀⠀⠀tail flame lit⠀⠀⠀⠀⠀⠀⠀⠀[/]""",
-    }}
+    },
+    "flexpair-dark": {
+        "name": "flexpair-dark", "description": "Flexpair dark — cyan on deep teal (white/black/cyan/#157878 only)",
+        "colors": {
+            "background": "#041818",
+            "banner_border": "#157878", "banner_title": "#00FFFF", "banner_accent": "#00FFFF",
+            "banner_dim": "#8ABCBC", "banner_text": "#E8F2F2", "ui_accent": "#00FFFF",
+            "ui_label": "#ADD0D0", "ui_ok": "#00FFFF", "ui_error": "#FFFFFF", "ui_warn": "#ADD0D0",
+            "ui_tool": "#00FFFF", "ui_thinking": "#8ABCBC", "ui_primary": "#00FFFF",
+            "ui_text": "#E8F2F2", "ui_border": "#157878",
+            "prompt": "#00FFFF", "input_rule": "#157878", "response_border": "#157878",
+            "status_bar_bg": "#062424", "status_bar_text": "#E8F2F2",
+            "status_bar_strong": "#00FFFF", "status_bar_dim": "#8ABCBC",
+            "status_bar_good": "#00FFFF", "status_bar_warn": "#ADD0D0", "status_bar_bad": "#E8F2F2",
+            "status_bar_critical": "#FFFFFF", "session_label": "#00FFFF",
+            "session_border": "#157878", "completion_menu_bg": "#062424",
+            "completion_menu_current_bg": "#157878", "completion_menu_meta_bg": "#062424",
+            "completion_menu_meta_current_bg": "#157878", "selection_bg": "#0D4848",
+            "syntax_string": "#ADD0D0", "syntax_number": "#FFFFFF", "syntax_keyword": "#00FFFF",
+            "syntax_comment": "#67A7A7",
+            "shell_dollar": "#00FFFF", "voice_status_bg": "#062424"},
+        "spinner": {}, "branding": _HERMES_BRANDING, "tool_prefix": "┊"},
+    "flexpair-light": {
+        "name": "flexpair-light", "description": "Flexpair light — teal on white (white/black/cyan/#157878 only)",
+        "colors": {
+            "background": "#F8FBFB",
+            "banner_border": "#ADD0D0", "banner_title": "#0A3C3C", "banner_accent": "#157878",
+            "banner_dim": "#116060", "banner_text": "#062424", "ui_accent": "#157878",
+            "ui_label": "#062424", "ui_ok": "#157878", "ui_error": "#000000", "ui_warn": "#0A3C3C",
+            "ui_tool": "#009999", "ui_thinking": "#116060", "ui_primary": "#0A3C3C",
+            "ui_text": "#062424", "ui_border": "#ADD0D0",
+            "prompt": "#157878", "input_rule": "#00FFFF", "response_border": "#00E6E6",
+            "status_bar_bg": "#E8F2F2", "status_bar_text": "#062424",
+            "status_bar_strong": "#157878", "status_bar_dim": "#449393",
+            "status_bar_good": "#157878", "status_bar_warn": "#0D4848", "status_bar_bad": "#062424",
+            "status_bar_critical": "#000000", "session_label": "#157878",
+            "session_border": "#ADD0D0", "completion_menu_bg": "#E8F2F2",
+            "completion_menu_current_bg": "#D0E4E4", "completion_menu_meta_bg": "#E8F2F2",
+            "completion_menu_meta_current_bg": "#D0E4E4", "selection_bg": "#D0E4E4",
+            "syntax_string": "#0D4848", "syntax_number": "#0A3C3C", "syntax_keyword": "#157878",
+            "syntax_comment": "#449393",
+            "shell_dollar": "#157878", "voice_status_bg": "#E8F2F2"},
+        "spinner": {}, "branding": _HERMES_BRANDING, "tool_prefix": "┊"},
+}
 
 _active_skin: Optional[SkinConfig] = None
-_active_skin_name: str = "default"
+_active_skin_name: str = "flexpair-dark"
 # Routed multiplex profiles: (name, skin) per home key. ``display.skin`` and ``<home>/skins/*.yaml``
 # are per profile, and the relay display name / TUI skin payload are read under each profile's
 # override — one module slot would be last-writer-wins across profiles. Unscoped keeps the module slot.
@@ -461,15 +504,15 @@ def get_active_skin_name() -> str:
     home_key = _routed_home_key()
     if home_key is not None:
         entry = _active_skin_by_home.get(home_key)
-        return entry[0] if entry else "default"
+        return entry[0] if entry else "flexpair-dark"
     return _active_skin_name
 
 
 def init_skin_from_config(config: dict) -> None:
     """Initialize the active skin from CLI config at startup."""
     display = config.get("display") or {}
-    skin_name = display.get("skin", "default") if isinstance(display, dict) else "default"
-    set_active_skin(skin_name.strip() if isinstance(skin_name, str) and skin_name.strip() else "default")
+    skin_name = display.get("skin", "flexpair-dark") if isinstance(display, dict) else "flexpair-dark"
+    set_active_skin(skin_name.strip() if isinstance(skin_name, str) and skin_name.strip() else "flexpair-dark")
 
 
 def _active_branding(key: str, fallback: str) -> str:

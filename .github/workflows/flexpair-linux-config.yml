@@ -1,0 +1,71 @@
+name: Flexpair Linux config regression tests
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flexpair-linux-config-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Config, installer, and CI tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
+        with:
+          version: "0.9.28"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python 3.11
+        uses: ./.github/actions/retry
+        with:
+          command: uv python install 3.11
+
+      - name: Install Linux test dependencies
+        uses: ./.github/actions/retry
+        with:
+          command: uv sync --locked --python 3.11 --extra all --extra dev
+
+      - name: Check Linux installer syntax
+        run: bash -n scripts/install.sh
+
+      - name: Run focused fork regressions
+        run: |
+          config_tests=()
+          while IFS= read -r test_file; do
+            config_tests+=("$test_file")
+          done < <(
+            find tests/hermes_cli -maxdepth 1 -type f \
+              \( -name 'test_*config*.py' -o -name 'test_*validation*.py' \) \
+              -print | sort
+          )
+          if (( ${#config_tests[@]} == 0 )); then
+            echo "::error::No CLI configuration tests found"
+            exit 1
+          fi
+          uv run --no-sync scripts/run_tests.sh \
+            "${config_tests[@]}" \
+            tests/hermes_cli/test_update_check.py \
+            tests/hermes_cli/test_update_apply_shallow_count.py \
+            tests/hermes_cli/test_update_behind_count_recovery.py \
+            tests/hermes_cli/test_passive_update_opt_out.py \
+            tests/ci/test_supply_chain_scanner.py \
+            tests/scripts/install \
+            tests/ci
+        env:
+          HERMES_TEST_WORKERS: "8"
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""
