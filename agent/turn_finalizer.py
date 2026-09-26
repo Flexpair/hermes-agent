@@ -270,7 +270,7 @@ def _close_transcript_tail(agent, messages, final_response, interrupted, _recove
         _apply_override(messages)
 
 
-def _micro_compact_after_turn(agent, messages, final_response, logger) -> None:
+def _micro_compact_after_turn(agent, messages, final_response, logger, task_id) -> None:
     """Post-turn micro-compaction: absorb the oldest uncompacted exchange into the
     rolling summary before persist, amortizing compression across turns."""
     try:
@@ -297,7 +297,14 @@ def _micro_compact_after_turn(agent, messages, final_response, logger) -> None:
                 _compressor._flush_scan_cursor_invalidated = False
                 agent._db_flush_scan_prefix = None
             if isinstance(_compacted, list) and _compacted:
+                _spliced = _compacted is not messages  # no-op and defrag passes return the input
                 messages[:] = _compacted
+                if _spliced:
+                    # The splice summarized tool results away: a repeat read must serve them
+                    # again, not an "unchanged" stub pointing at a body that is gone (#32106).
+                    from agent.conversation_compression import _reset_read_dedup_caches
+
+                    _reset_read_dedup_caches(task_id, session_id=agent.session_id or "")
             if _before != len(messages):
                 logger.info("Micro-compaction: %d -> %d messages", _before, len(messages))
     except Exception as _mc_err:
@@ -322,9 +329,14 @@ def _log_turn_exit(agent, messages, final_response, api_call_count, _turn_exit_r
         1 for m in messages
         if isinstance(m, dict) and m.get("role") == "assistant" and m.get("tool_calls")
     )
+    # Fork turns (background review, side questions) carry ``_turn_origin``; tagging the
+    # exit line keeps a fork's ``interrupted_during_api_call`` from reading as a killed
+    # foreground stream — the fork shares the parent's session_id and often its model (#118693).
+    _turn_origin = getattr(agent, "_turn_origin", None)
     _diag_msg = (
         "Turn ended: reason=%s model=%s api_calls=%d/%d budget=%d/%d "
         "tool_turns=%d last_msg_role=%s response_len=%d session=%s"
+        + (" origin=%s" if _turn_origin else "")
     )
     _diag_args = (
         _turn_exit_reason, agent.model, api_call_count, agent.max_iterations,
@@ -332,6 +344,7 @@ def _log_turn_exit(agent, messages, final_response, api_call_count, _turn_exit_r
         agent.iteration_budget.max_total if agent.iteration_budget else 0,
         _turn_tool_count, _last_msg_role, len(final_response) if final_response else 0,
         agent.session_id or "none",
+        *((_turn_origin,) if _turn_origin else ()),
     )
     if _last_msg_role == "tool" and not interrupted:
         logger.warning(
@@ -499,6 +512,40 @@ def finalize_turn(
         logger=logger,
     )
 
+    # A non-interrupted turn that fell out of the loop after a tool result, with no
+    # follow-up assistant text, is the Desktop/TUI "silent stop" (#55316, #54756): the
+    # composer returns to ready (or keeps spinning) while the durable transcript ends
+    # at a raw ``tool`` row — the user never learns the turn stopped, and the next user
+    # message lands as ``tool → user``. Interrupted tails keep
+    # ``close_interrupted_tool_sequence``; this is the non-interrupt sibling. Mint the
+    # exit reason, fail the turn, and synthesize the visible close so the tail close in
+    # ``_persist_step`` persists an assistant row. A turn that already streamed text is
+    # left alone: ``_recover_final_from_stream`` owns that recovery (#95514).
+    if (
+        not final_response
+        and not interrupted
+        and messages
+        and isinstance(messages[-1], dict)
+        and messages[-1].get("role") == "tool"
+        and not (getattr(agent, "_current_streamed_assistant_text", "") or "").strip()
+    ):
+        _turn_exit_reason = "pending_tool_result"
+        failed = True
+        final_response = ""
+        try:
+            if agent._turn_completion_explainer_enabled():
+                final_response = (
+                    agent._format_turn_completion_explanation("pending_tool_result", None) or ""
+                )
+        except Exception:
+            final_response = ""
+        if not final_response:
+            # The turn-completion explainer opt-out must not reintroduce the silent stop.
+            final_response = (
+                "No reply: the turn stopped while a tool result was still pending. "
+                "Send `continue` to let the model summarize."
+            )
+
     # Loop exits that are failures in their own right (outer-loop error cap, shutdown, context
     # that could not be shrunk) carry the verdict the UI descriptor needs; a bare
     # ``turn_exit_reason`` collapsed to code="unknown", retryable=True on every surface.
@@ -553,7 +600,7 @@ def finalize_turn(
             final_response, _, _ = apply_llm_output_transform(agent, final_response, turn_id=turn_id, logger=logger)
         _close_transcript_tail(agent, messages, final_response, interrupted, _recovered_from_stream)
         if not interrupted and not failed:
-            _micro_compact_after_turn(agent, messages, final_response, logger)
+            _micro_compact_after_turn(agent, messages, final_response, logger, effective_task_id)
         agent._persist_session(messages, conversation_history)
 
     _guarded_cleanup("persist_session", _persist_step, _cleanup_errors, logger)
