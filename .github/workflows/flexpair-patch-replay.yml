@@ -3,7 +3,6 @@ name: Flexpair patch replay
 on:
   push:
     branches: ['*-patched']
-    tags: [latest]
   workflow_dispatch:
 
 permissions:

@@ -354,16 +354,15 @@ index 0000000000..b9f6931476
 \ No newline at end of file
 diff --git a/.github/workflows/flexpair-patch-replay.yml b/.github/workflows/flexpair-patch-replay.yml
 new file mode 100644
-index 0000000000..e216840c41
+index 0000000000..b98dbb680e
 --- /dev/null
 +++ b/.github/workflows/flexpair-patch-replay.yml
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,45 @@
 +name: Flexpair patch replay
 +
 +on:
 +  push:
 +    branches: ['*-patched']
-+    tags: [latest]
 +  workflow_dispatch:
 +
 +permissions:
