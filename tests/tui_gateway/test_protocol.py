@@ -1520,6 +1520,34 @@ def test_skin_live_switch_end_to_end(server, tmp_path, monkeypatch):
     assert emitted[0][1]["colors"]["banner_title"] == "#00ffcc"
 
 
+def test_empty_config_broadcasts_company_skin(server, tmp_path, monkeypatch):
+    """An unconfigured gateway must advertise the same skin as the CLI."""
+    import hermes_cli.skin_engine as skin_engine
+
+    monkeypatch.setattr(skin_engine, "get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(server, "_hermes_home", tmp_path)
+    monkeypatch.setattr(server, "_last_skin_sig", None, raising=False)
+    server._cfg_cache = server._cfg_sig = server._cfg_path = None
+    emitted = []
+    monkeypatch.setattr(server, "_emit", lambda ev, sid, payload=None: emitted.append((ev, payload)))
+
+    server._broadcast_skin_if_changed()
+
+    assert [ev for ev, _ in emitted] == ["skin.changed"]
+    assert emitted[0][1]["name"] == "flexpair-dark"
+
+def test_config_get_skin_matches_runtime_for_whitespace(server, tmp_path, monkeypatch):
+    import hermes_cli.skin_engine as skin_engine
+
+    monkeypatch.setattr(skin_engine, "get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(server, "_hermes_home", tmp_path)
+    server._cfg_cache = server._cfg_sig = server._cfg_path = None
+    (tmp_path / "config.yaml").write_text('display:\n  skin: "   "\n', encoding="utf-8")
+
+    response = server.handle_request({"id": "skin", "method": "config.get", "params": {"key": "skin"}})
+    assert response["result"]["value"] == server.resolve_skin()["name"] == "flexpair-dark"
+
+
 def test_broadcast_skin_if_changed_on_any_signature_move(server, monkeypatch):
     """A skin the agent changes mid-turn goes live once per real move: a name
     switch (incl. switch-then-revert) OR an in-place color edit to the active skin

@@ -546,9 +546,16 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
     is_shallow = _is_shallow_checkout(git_cmd)
     depth_args = ["--depth", "1"] if is_shallow else []
 
-    # Probe locally for an 'upstream' remote before a network fetch non-forks always fail.
+    origin_url = _m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)
+    origin_is_fork = _is_fork(origin_url)
+    # Probe locally for an 'upstream' remote only for user forks; Flexpair is a
+    # supported origin and must check the same distribution it applies.
     fetch_result = None
-    if branch == "main" and _git_run(git_cmd, ["remote", "get-url", "upstream"]).returncode == 0:
+    if (
+        origin_is_fork
+        and branch == "main"
+        and _git_run(git_cmd, ["remote", "get-url", "upstream"]).returncode == 0
+    ):
         print("→ Fetching from upstream...")
         fetch_result = _git_run(git_cmd, ["fetch"] + depth_args + ["upstream", branch], network=True)
     if fetch_result is not None and fetch_result.returncode == 0:
@@ -588,8 +595,16 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
             print("✓ Already up to date.")
             return
         from hermes_cli.banner import _github_compare_behind
+        origin_url = _m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)
+        repo_slug = (
+            _github_repo_slug(origin_url)
+            if compare_branch.startswith("origin/")
+            else None
+        )
         # counted == 0 means local-ahead, not behind; None means the API could not count.
-        _print_update_check_result(_github_compare_behind(head_sha, target_sha), compare_branch)
+        _print_update_check_result(
+            _github_compare_behind(head_sha, target_sha, repo_slug), compare_branch
+        )
         return
 
     rev_result = _git_run(git_cmd, ["rev-list", f"HEAD..{compare_branch}", "--count"], check=True)
@@ -611,6 +626,18 @@ def _is_shallow_checkout(git_cmd) -> bool:
 def _tip_shas(git_cmd, target_ref: str) -> tuple[str, str]:
     """``(HEAD sha, <target_ref> sha)`` as printed by rev-parse ("" when unresolvable)."""
     return tuple(_git_run(git_cmd, ["rev-parse", ref]).stdout.strip() for ref in ("HEAD", target_ref))
+
+
+def _github_repo_slug(origin_url: str | None) -> str | None:
+    """Return the GitHub ``owner/repo`` slug for an origin URL."""
+    from hermes_cli.banner import _canonical_github_remote
+
+    canonical = _canonical_github_remote(origin_url)
+    return (
+        canonical.removeprefix("github.com/")
+        if canonical.startswith("github.com/")
+        else None
+    )
 
 
 def _print_update_check_result(behind: int | None, compare_branch: str) -> None:
@@ -990,7 +1017,11 @@ def _prepare_checkout_for_update(
     apply_is_shallow = _is_shallow_checkout(git_cmd)
     if commit_count > 0 and apply_is_shallow:
         from hermes_cli.banner import _github_compare_behind
-        counted = _github_compare_behind(*_tip_shas(git_cmd, f"origin/{branch}"))
+        head_sha, target_sha = _tip_shas(git_cmd, f"origin/{branch}")
+        repo_slug = _github_repo_slug(
+            _m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)
+        )
+        counted = _github_compare_behind(head_sha, target_sha, repo_slug)
         # counted == 0 means local-ahead: falls through to the up-to-date path.
         commit_count = counted if counted is not None else -1
 

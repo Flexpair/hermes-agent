@@ -3680,3 +3680,46 @@ html[data-hud-window] [data-slot='popover-content'] {
 [data-hud-shell] [data-slot='composer-bounds'] *::-webkit-scrollbar {
   display: none;
 }
+
+/* ─── Flexpair (fork) theme extras ────────────────────────────────────────
+   Tokens a DesktopTheme palette can't express, scoped to the flexpair-* themes
+   (`data-hermes-theme` has its "-light"/"-dark" mode suffix stripped, so match
+   the prefix). Only white, black, cyan and #157878 steps. Unlayered so it beats
+   the base layer; `!important` where the ThemeProvider writes inline styles. */
+:root[data-hermes-theme^='flexpair'] {
+  /* Cyan pane dividers on hover — easy to find and grab. */
+  --ui-sash-hover-border: #00ffff;
+  /* Semantic hues → palette (no red/green/yellow/purple/blue). */
+  --ui-success: #00cccc !important;
+  --ui-green: #00cccc;
+  --ui-cyan: #00cccc;
+  --ui-blue: #157878;
+  --ui-purple: #449393;
+  --ui-yellow: #67a7a7;
+  --ui-orange: #0d4848;
+  --ui-red: #000000;
+  --ui-selection-background: color-mix(in srgb, #157878 30%, transparent);
+  /* Running-session arc. */
+  --arc-c1: #00ffff;
+  --arc-c2: #157878;
+}
+
+:root.dark[data-hermes-theme^='flexpair'] {
+  --ui-orange: #add0d0;
+  --ui-red: #ffffff;
+  --ui-selection-background: color-mix(in srgb, #00ffff 30%, transparent);
+}
+
+:root[data-hermes-theme^='flexpair'][data-hermes-mode='light'] {
+  --ui-sash-hover-border: #00e6e6;
+  --ui-success: #157878 !important;
+}
+
+/* The chat composer has no focus state of its own — cyan border while typing. */
+:root[data-hermes-theme^='flexpair'] [data-slot='composer-surface']:focus-within {
+  border-color: #00e6e6 !important;
+}
+
+:root[data-hermes-theme^='flexpair'][data-hermes-mode='light'] [data-slot='composer-surface']:focus-within {
+  border-color: #157878 !important;
+}

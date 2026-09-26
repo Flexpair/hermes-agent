@@ -33,7 +33,12 @@ def git_repo(tmp_path, monkeypatch):
     return repo_dir
 
 
-def _stub_git(monkeypatch, *, head=SHA_A, origin="https://github.com/NousResearch/hermes-agent.git"):
+def _stub_git(
+    monkeypatch,
+    *,
+    head=SHA_A,
+    origin="https://github.com/NousResearch/hermes-agent.git",
+):
     calls = []
 
     def fake_run(args, **kwargs):
@@ -45,6 +50,10 @@ def _stub_git(monkeypatch, *, head=SHA_A, origin="https://github.com/NousResearc
             return MagicMock(returncode=0, stdout=f"{origin}\n")
         if sub == "merge-base":
             return MagicMock(returncode=1, stdout="")
+        if sub == "fetch":
+            return MagicMock(returncode=0, stdout="", stderr="")
+        if sub == "rev-list":
+            return MagicMock(returncode=0, stdout="0\n", stderr="")
         raise AssertionError(f"passive check must not run git {sub}: {args}")
 
     monkeypatch.setattr(banner.subprocess, "run", fake_run)
@@ -52,11 +61,13 @@ def _stub_git(monkeypatch, *, head=SHA_A, origin="https://github.com/NousResearc
 
 
 def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
-    """The whole point: no ``git fetch`` / ``ls-remote`` for a GitHub origin, exact count via compare."""
+    """No fetch for GitHub origins; exact count comes from the compare API."""
     calls = _stub_git(monkeypatch, head=SHA_A)
     tip = MagicMock(return_value=SHA_B)
     monkeypatch.setattr(banner, "_github_branch_tip", tip)
-    monkeypatch.setattr(banner, "_github_compare_behind", lambda cur, tgt: 61)
+    monkeypatch.setattr(
+        banner, "_github_compare_behind", lambda cur, tgt, repo=None: 61
+    )
 
     assert banner.check_for_updates() == 61
     tip.assert_called_once_with("nousresearch/hermes-agent", "main")
@@ -64,6 +75,59 @@ def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
 
     cached = json.loads((git_repo.parent / ".update_check").read_text())
     assert (cached["head"], cached["target"], cached["behind"]) == (SHA_A, SHA_B, 61)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://github.com/Flexpair/hermes-agent.git",
+        "git@github.com:Flexpair/hermes-agent.git",
+        "https://github.com/flexpair/hermes-agent.git",
+    ],
+)
+def test_flexpair_origin_is_not_treated_as_a_user_fork(origin):
+    """The supported Flexpair distribution must stay on its own origin."""
+    from hermes_cli.update_cmd_git import _is_fork
+
+    assert _is_fork(origin) is False
+
+
+def test_flexpair_origin_uses_flexpair_api_compare(git_repo, monkeypatch):
+    calls = _stub_git(
+        monkeypatch,
+        head=SHA_A,
+        origin="https://github.com/Flexpair/hermes-agent.git",
+    )
+    tip = MagicMock(return_value=SHA_B)
+    compare = MagicMock(return_value=61)
+    monkeypatch.setattr(banner, "_github_branch_tip", tip)
+    monkeypatch.setattr(banner, "_github_compare_behind", compare)
+
+    assert banner.check_for_updates() == 61
+    tip.assert_called_once_with("flexpair/hermes-agent", "main")
+    compare.assert_called_once_with(SHA_A, SHA_B, "flexpair/hermes-agent")
+    cache = json.loads((git_repo.parent / ".update_check").read_text())
+    assert cache["repo"] == "flexpair/hermes-agent"
+    assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
+
+
+def test_flexpair_origin_ignores_existing_upstream_remote(git_repo, monkeypatch):
+    calls = _stub_git(
+        monkeypatch,
+        head=SHA_A,
+        origin="https://github.com/Flexpair/hermes-agent.git",
+    )
+    monkeypatch.setattr(
+        "hermes_cli.update_cmd._is_shallow_checkout", lambda _git_cmd: False
+    )
+    monkeypatch.setattr(banner, "_github_compare_behind", lambda *args: 0)
+
+    from hermes_cli.update_cmd import _cmd_update_check
+
+    _cmd_update_check()
+
+    assert any(call[1:4] == ["fetch", "origin", "main"] for call in calls)
+    assert not any("upstream" in call for call in calls)
 
 
 def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
@@ -77,8 +141,11 @@ def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
     monkeypatch.setattr(banner, "_github_branch_tip", tip)
 
     def write_cache(*, ts, head, behind):
-        cache_file.write_text(json.dumps(
-            {"ts": ts, "behind": behind, "rev": None, "ver": __version__, "head": head}))
+        cache_file.write_text(
+            json.dumps(
+                {"ts": ts, "behind": behind, "rev": None, "ver": __version__, "head": head}
+            )
+        )
 
     write_cache(ts=time.time() - banner._UPDATE_CHECK_CACHE_SECONDS + 60, head=SHA_A, behind=3)
     assert banner.check_for_updates() == 3
