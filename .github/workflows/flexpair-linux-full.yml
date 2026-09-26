@@ -36,15 +36,15 @@ jobs:
             pyproject.toml
             uv.lock
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.14
         uses: ./.github/actions/retry
         with:
-          command: uv python install 3.11
+          command: uv python install 3.14
 
       - name: Install Linux test dependencies
         uses: ./.github/actions/retry
         with:
-          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
+          command: uv sync --locked --python 3.14 --extra all --group dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
 
       - name: Run Linux-compatible test slice
         run: uv run --no-sync scripts/run_tests.sh
