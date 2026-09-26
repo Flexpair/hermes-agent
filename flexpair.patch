@@ -853,7 +853,7 @@ diff --git a/AGENTS.md b/AGENTS.md
 index c704bb8c9d..e32396380e 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -7,6 +7,23 @@ past that); see the **routing table** at the end and read the area file before e
+@@ -7,6 +7,31 @@ past that); see the **routing table** at the end and read the area file before e
  
  **Never give up on the right solution.**
  
@@ -871,8 +871,16 @@ index c704bb8c9d..e32396380e 100644
 +  and verify the resulting source tree. A newer upstream commit requires a new dated branch;
 +  never reuse the old one or assume the patch still applies unchanged.
 +- Preserve intentional upstream changes and Flexpair behavior while adapting the patch.
-+  After sufficient testing, transfer **only** the updated patch file to `main`; never
-+  cherry-pick an applied-source commit onto `main`. Do not install the fork during source sync.
++  **Rule: never synchronize fork `main` with upstream before the revised patch-file
++  commit has been cherry-picked onto `main`.** Keep `main` on its old upstream base
++  while preparing and testing the revised patch against the exact new upstream commit
++  in an isolated branch/worktree. Cherry-pick **only** the patch-file commit onto
++  `main`; never cherry-pick applied-source commits. Only then synchronize `main`
++  with that exact tested upstream commit. Check that
++  `git apply --check flexpair.patch` succeeds on the resulting `main` tree and that
++  its only Flexpair-owned file is `flexpair.patch`. The order alone does **not**
++  guarantee applicability; do not move `latest` if this final check fails.
++  Do not install the fork during source sync.
 +
  ## What Hermes Is
  
