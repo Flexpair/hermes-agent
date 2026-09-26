@@ -13,7 +13,7 @@ import pytest
 
 from pm.environment import PythonEnvironment
 from pm.plugin_declarations import read_python_declaration, unsupported_requirements
-from pm.workspace import enabled_member_dirs, lock_and_sync
+from pm.workspace import _workspace_member, enabled_member_dirs, lock_and_sync
 from tests.pm import _fixtures
 
 
@@ -98,3 +98,30 @@ def test_invalid_requirement_refused_at_declaration_boundary(tmp_path, modern):
     with pytest.raises(ValueError):
         read_python_declaration(tmp_path)
     assert path.read_bytes() == before
+
+
+def test_tooling_only_pyproject_becomes_valid_virtual_workspace_member(tmp_path):
+    plugin = tmp_path / "plugin"
+    plugin.mkdir()
+    project = plugin / "pyproject.toml"
+    project.write_text('[tool.ruff]\nline-length = 100\n', encoding="utf-8")
+    generated = _workspace_member(plugin, tmp_path / "workspace", identity=plugin)
+    document = tomllib.loads((generated / "pyproject.toml").read_text(encoding="utf-8"))
+    assert document["project"]["name"].startswith("hermes-plugin-plugin-")
+    assert document["project"]["version"] == "0.0.0"
+    assert document["tool"]["ruff"]["line-length"] == 100
+    assert project.read_text(encoding="utf-8") == '[tool.ruff]\nline-length = 100\n'
+
+
+def test_virtual_workspace_member_preserves_declared_dynamic_version(tmp_path):
+    plugin = tmp_path / "plugin"
+    plugin.mkdir()
+    (plugin / "pyproject.toml").write_text(
+        '[project]\nname = "original"\ndynamic = ["version"]\n[tool.uv]\npackage = false\n',
+        encoding="utf-8",
+    )
+    generated = _workspace_member(plugin, tmp_path / "workspace", identity=plugin)
+    project = tomllib.loads((generated / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert project["name"].startswith("hermes-plugin-plugin-")
+    assert project["dynamic"] == ["version"]
+    assert "version" not in project
