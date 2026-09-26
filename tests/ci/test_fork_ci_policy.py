@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
+import json
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -12,8 +12,17 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 
 def _workflow(name: str) -> dict:
-    data = yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
-    return data
+    path = WORKFLOWS / name
+    if name == "ci.yaml":
+        text = path.read_text(encoding="utf-8").replace("on:", '"on":', 1)
+        text = text.replace("${{", "__GH_EXPR_OPEN__").replace("}}", "__GH_EXPR_CLOSE__")
+        import subprocess
+        return json.loads(subprocess.run(
+            ["ruby", "-e", "require 'yaml'; require 'json'; require 'date'; puts JSON.generate(YAML.safe_load(STDIN.read, permitted_classes: [Date], aliases: true))"],
+            input=text, capture_output=True, text=True, check=True,
+        ).stdout)
+    import hermes_yaml as yaml
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def test_fork_orchestrator_keeps_linux_lane() -> None:
@@ -30,6 +39,14 @@ def test_change_detection_allows_for_slow_repository_checkout() -> None:
     assert detect["timeout-minutes"] >= 5
 
 
+def test_bootstrap_installer_is_gated_on_classified_changes() -> None:
+    job = _workflow("ci.yaml")["jobs"]["bootstrap-installer"]
+
+    assert job["uses"] == "./.github/workflows/bootstrap-installer.yml"
+    assert job["if"] == "inputs.release == true || needs.detect.outputs.bootstrap == 'true'"
+    assert "bootstrap-installer" in _workflow("ci.yaml")["jobs"]["all-checks-pass"]["needs"]
+
+
 def test_fork_does_not_require_manual_ci_review_label() -> None:
     jobs = _workflow("ci.yaml")["jobs"]
 
@@ -39,6 +56,16 @@ def test_fork_does_not_require_manual_ci_review_label() -> None:
 
 def test_fork_does_not_run_duplicate_js_autofix() -> None:
     assert not (WORKFLOWS / "js-autofix.yml").exists()
+
+
+def test_fork_keeps_expensive_docker_advisory_off_pull_requests() -> None:
+    workflow = _workflow("docker.yml")
+    triggers = workflow.get(True, workflow.get("on", {}))
+
+    assert "pull_request" not in triggers
+    assert "release" not in triggers
+    assert "push" in triggers
+    assert "workflow_call" in triggers
 
 
 def test_supply_chain_findings_fail_directly() -> None:
@@ -81,7 +108,7 @@ def test_linux_lane_runs_focused_fork_regressions() -> None:
     assert "test_*config*.py" in commands
     assert "test_*validation*.py" in commands
     assert "No CLI configuration tests found" in commands
-    assert "tests/hermes_cli/test_update_check.py" in commands
+    assert "tests/hermes_cli/test_source_check.py" in commands
     assert "tests/hermes_cli/test_update_apply_shallow_count.py" in commands
     assert "tests/hermes_cli/test_update_behind_count_recovery.py" in commands
     assert "tests/hermes_cli/test_passive_update_opt_out.py" in commands

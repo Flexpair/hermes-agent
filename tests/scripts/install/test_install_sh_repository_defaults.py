@@ -12,17 +12,14 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INSTALL_SH = REPO_ROOT / "scripts" / "install.sh"
-EXPECTED_URLS = (
-    "git@github.com:Flexpair/hermes-agent.git",
-    "https://github.com/Flexpair/hermes-agent.git",
-)
+EXPECTED_URL = "https://github.com/Flexpair/hermes-agent.git"
 
 
 def test_installer_uses_flexpair_repository_defaults() -> None:
     probe = f"""
 set -eu
 source "{INSTALL_SH!s}" --manifest >/dev/null
-printf '%s\\n' "$REPO_URL_SSH" "$REPO_URL_HTTPS"
+printf '%s\\n' "$REPO_URL"
 """
     result = subprocess.run(
         ["bash", "-c", probe],
@@ -33,4 +30,4 @@ printf '%s\\n' "$REPO_URL_SSH" "$REPO_URL_HTTPS"
     )
 
     assert result.returncode == 0, result.stderr
-    assert tuple(result.stdout.splitlines()) == EXPECTED_URLS
+    assert tuple(result.stdout.splitlines()) == (EXPECTED_URL,)

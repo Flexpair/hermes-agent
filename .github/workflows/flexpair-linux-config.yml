@@ -57,7 +57,7 @@ jobs:
           fi
           uv run --no-sync scripts/run_tests.sh \
             "${config_tests[@]}" \
-            tests/hermes_cli/test_update_check.py \
+            tests/hermes_cli/test_source_check.py \
             tests/hermes_cli/test_update_apply_shallow_count.py \
             tests/hermes_cli/test_update_behind_count_recovery.py \
             tests/hermes_cli/test_passive_update_opt_out.py \

@@ -14,13 +14,8 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 from hermes_cli.gitlock import prune_stale_shallow_grafts
-
-SHA_A = "a" * 40
-SHA_B = "b" * 40
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -93,35 +88,35 @@ def test_prune_is_idempotent_and_noop_without_grafts(tmp_path):
 def test_update_check_prunes_and_reports_count(tmp_path, monkeypatch, capsys):
     """`hermes update --check` prunes grafts after its depth-1 fetch and reports the prune."""
     import hermes_cli.update_cmd as update_cmd
+    monkeypatch.setattr("hermes_cli.update_owning_install.owning_install_root", lambda _root: None)
 
-    fake_root = SimpleNamespace(PROJECT_ROOT=tmp_path)
-    monkeypatch.setattr(update_cmd, "_m", lambda: fake_root)
-    (tmp_path / ".git").mkdir()
+    clone = _mk_shallow_scenario(tmp_path)
+    assert len(_shallow_lines(clone)) == 3
+    head_sha = _git(clone, "rev-parse", "HEAD")
+    previous_tip = _git(clone, "rev-parse", "origin/main")
+    origin = tmp_path / "origin"
+    _git(origin, "commit", "--allow-empty", "-q", "-m", "c5")
+    tip_sha = _git(origin, "rev-parse", "HEAD")
+
+    # Keep this check on the update facade; importing the CLI entry would run
+    # its process bootstrap, unrelated to the Git comparison being exercised.
+    monkeypatch.setattr(update_cmd, "_m", lambda: type("Project", (), {"PROJECT_ROOT": clone})())
     monkeypatch.setattr(
         "hermes_cli.update_contract.evaluate_update_admission", lambda root: None
     )
-    monkeypatch.setattr(update_cmd, "_is_shallow_checkout", lambda git_cmd: True)
-    monkeypatch.setattr(update_cmd, "_tip_shas", lambda git_cmd, branch: (SHA_A, SHA_B))
-
-    def fake_git_run(git_cmd, args, **kwargs):
-        joined = " ".join(args)
-        if "get-url" in joined and "upstream" in joined:
-            return MagicMock(returncode=1, stdout="", stderr="")  # no upstream remote
-        if "fetch" in joined:
-            return MagicMock(returncode=0, stdout="", stderr="")  # depth-1 fetch lands
-        return MagicMock(returncode=0, stdout="", stderr="")
-
-    monkeypatch.setattr(update_cmd, "_git_run", fake_git_run)
-    monkeypatch.setattr(update_cmd, "_base_git_cmd", lambda: ["git"])
-    monkeypatch.setattr("hermes_cli.banner._github_compare_behind", lambda *a, **k: 0)
-    prune_calls = []
+    # Local fixture commits have no GitHub compare result; keep the check offline.
     monkeypatch.setattr(
-        "hermes_cli.gitlock.prune_stale_shallow_grafts",
-        lambda repo: prune_calls.append(repo) or 2,
+        "hermes_cli.source_check._github_compare_behind", lambda *a, **k: None
     )
 
     update_cmd._cmd_update_check("main")
 
     out = capsys.readouterr().out
-    assert prune_calls == [tmp_path]
+    assert _git(clone, "rev-parse", "HEAD") == head_sha
+    assert _git(clone, "rev-parse", "origin/main") == tip_sha != previous_tip
+    assert _git(clone, "rev-parse", "FETCH_HEAD") == tip_sha
+    assert set(_shallow_lines(clone)) == {head_sha, tip_sha}
+    assert _git(clone, "rev-list", "--count", "HEAD") == "1"
+    assert _git(clone, "rev-list", "--count", "origin/main") == "1"
     assert "pruned 2 stale shallow graft(s)" in out
+    assert "Update available (behind origin/main)." in out

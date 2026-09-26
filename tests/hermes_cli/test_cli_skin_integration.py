@@ -40,7 +40,6 @@ class TestCliSkinPromptIntegration:
         init_skin_from_config(config)
         assert get_active_skin().name == "flexpair-dark"
 
-
     def test_ares_prompt_fragments_use_skin_symbol(self):
         cli = _make_cli_stub()
 
@@ -49,11 +48,10 @@ class TestCliSkinPromptIntegration:
 
     def test_secret_prompt_fragments_preserve_secret_state(self):
         cli = _make_cli_stub()
-        cli._secret_state = {"response_queue": object()}
+        setattr(cli, "_secret_state", {"response_queue": object()})
 
         set_active_skin("ares")
         assert cli._get_tui_prompt_fragments() == [("class:sudo-prompt", "🔑 ⚔ ")]
-
 
     def test_narrow_terminals_compact_voice_recording_prompt_fragments(self):
         cli = _make_cli_stub()
