@@ -3334,7 +3334,15 @@ async function resolveHealedBranch(updateRoot, branch) {
 // update changes HEAD, which busts the cache immediately). `git fetch` runs only
 // inside applyUpdates. `force` (menu item, Settings "Check now") skips the
 // cache; the renderer's background poller never passes it.
+function updatesAreDisabled(): boolean {
+  return true
+}
+
 async function checkUpdates({ force = false }: { force?: boolean } = {}) {
+  if (updatesAreDisabled()) {
+    return { supported: false, reason: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
+  }
+
   const updateRoot = resolveUpdateRoot()
   let { branch } = readDesktopUpdateConfig()
   const gitDir = path.join(updateRoot, '.git')
@@ -4180,6 +4188,10 @@ async function releaseBackendLock(updateRoot, tag) {
 // Detection (checkUpdates / commit changelog / "N behind") stays in the UI;
 // only this apply action changed.
 async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
+  if (updatesAreDisabled()) {
+    return { ok: false, error: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
+  }
+
   if (updateInFlight) {
     throw new Error('An update is already in progress.')
   }
@@ -16425,6 +16437,9 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
 // dials, drains only exact Desktop-owned processes, runs the launcher outside
 // those serves, proves the correlated receipt, and restores every prior scope.
 async function requestManagedSshUpdate(rawId) {
+  if (updatesAreDisabled()) {
+    return refusedManagedSshUpdate(String(rawId || '').trim(), crypto.randomUUID(), 'Updates are disabled in this Flexpair build.')
+  }
   const connectionId = String(rawId || '').trim()
   const existing = managedConnectionUpdates.get(connectionId)
 
@@ -16476,6 +16491,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
 // app's own update pipeline; Desktop-managed SSH uses the transactional
 // drain/update/restore lifecycle; URL remotes POST their backend updater.
 ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
+  if (updatesAreDisabled()) {
+    return { ok: false, error: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
+  }
   const registry = readDesktopConnectionsRegistry()
 
   // Optional renderer-side exclusions: the everything-update flow dispatches

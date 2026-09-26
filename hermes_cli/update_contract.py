@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class UpdateRefusal:
     """Why an in-place update is refused, and what to run instead."""
 
-    code: str              # image-marker | image-marker-invalid | docker | nix | apt
+    code: str              # updates-disabled (Flexpair fixed build)
     message: str           # full user-facing text (multi-line ok)
     update_command: str    # the one-line remediation command
 
@@ -37,11 +37,14 @@ def _refusal(code: str, method: str, message: Optional[Callable[[str], str]] = N
 
 
 def evaluate_update_admission(project_root: Path) -> Optional[UpdateRefusal]:
-    """Return an :class:`UpdateRefusal` when in-place update must not run.
+    """Reject all bundled updates for the fixed Flexpair distribution."""
+    return UpdateRefusal(
+        code="updates-disabled",
+        message="Updates are disabled in this Flexpair build; the installed version is fixed.",
+        update_command="disabled",
+    )
 
-    ``None`` means the install is eligible for in-place update (git checkout or unknown-but-
-    mutable). Never raises; on any internal error it falls back to the heuristic layer only.
-    """
+    # Upstream admission logic remains below for reconciliation with newer upstream bases.
     # Layer 1: baked provenance marker — authoritative when present.
     try:
         from hermes_cli.image_provenance import read_image_provenance

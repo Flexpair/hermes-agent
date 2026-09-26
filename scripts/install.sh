@@ -2,8 +2,7 @@
 # ============================================================================
 # Hermes Agent Installer
 # ============================================================================
-# Installation script for Linux, macOS, and Android/Termux.
-# Uses uv for desktop/server installs and Python's stdlib venv + pip on Termux.
+# Installation is supported only on Linux (not Android/Termux).
 #
 # Usage:
 #   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
@@ -14,6 +13,13 @@
 # ============================================================================
 
 set -e
+
+# Reject unsupported hosts before changing the environment or touching an install.
+if [ "$(uname -s)" != "Linux" ] || [ -n "${TERMUX_VERSION:-}" ] ||
+   [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]; then
+    printf '%s\n' 'Flexpair installation requires Linux; refusing to install on this OS.' >&2
+    exit 1
+fi
 
 # Guard against environment leakage when the installer is launched from another
 # Python-driven tool session (e.g. Hermes terminal tool). A pre-set PYTHONPATH
@@ -1522,9 +1528,17 @@ show_manual_install_hint() {
 # Installation
 # ============================================================================
 
+refuse_existing_install() {
+    if [ -e "$INSTALL_DIR" ] || [ -L "$INSTALL_DIR" ]; then
+        log_error "Updates are disabled in this Flexpair build; the existing installation is unchanged."
+        return 1
+    fi
+}
+
 clone_repo() {
     log_info "Installing to $INSTALL_DIR..."
 
+    refuse_existing_install || return 1
     # An interrupted previous clone leaves a .git with no initial commit, where
     # the update path's `git stash` / `git checkout` abort with "You do not
     # have the initial commit yet" and fail the install (#40998). Move such a
@@ -3770,6 +3784,7 @@ run_stage_body() {
         repository)
             detect_os
             resolve_install_layout
+            refuse_existing_install || return 1
             check_git
             clone_repo
             ;;
@@ -3902,6 +3917,7 @@ main() {
 
     detect_os
     resolve_install_layout
+    refuse_existing_install
     install_uv
     check_python
     check_git
@@ -3941,8 +3957,14 @@ main() {
 if [ "$MANIFEST_MODE" = true ]; then
     emit_manifest
 elif [ -n "$STAGE_NAME" ]; then
+    detect_os
+    resolve_install_layout
+    refuse_existing_install || exit 1
     run_stage_protocol "$STAGE_NAME"
 elif [ -n "$ENSURE_DEPS" ]; then
+    detect_os
+    resolve_install_layout
+    refuse_existing_install || exit 1
     ensure_mode
 else
     main

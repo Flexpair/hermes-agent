@@ -77,6 +77,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# PowerShell is not a supported entry point for this Linux-only installer.
+Write-Error "Flexpair installation requires Linux; refusing to install on this OS."
+exit 1
+
 # Suppress Invoke-WebRequest's per-chunk progress bar.  Windows PowerShell
 # 5.1's progress UI repaints synchronously on every received byte, which
 # pegs CPU on a single core and throttles downloads by 10-100x (a 57MB
@@ -2280,6 +2284,7 @@ function Install-Repository {
         }
 
         if ($repoValid) {
+            throw "Updates are disabled in this Flexpair build; the existing installation is unchanged."
             Write-Info "Existing installation found, updating..."
             Push-Location $InstallDir
             # Wrap the entire fetch+checkout block in EAP=Continue so git's
@@ -5077,6 +5082,10 @@ if ($MyInvocation.InvocationName -eq ".") {
 }
 
 try {
+    if (-not $ProtocolVersion -and -not $ShowResolvedPaths -and -not $Manifest -and
+        (Test-Path -LiteralPath $InstallDir)) {
+        throw "Updates are disabled in this Flexpair build; the existing installation is unchanged."
+    }
     if ($Ensure -ne "") {
         if ($PSBoundParameters.ContainsKey("Stage")) {
             Write-Err "Cannot use -Ensure and -Stage simultaneously"

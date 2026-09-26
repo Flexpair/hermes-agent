@@ -398,6 +398,8 @@ def check_for_updates(*, passive: bool = False) -> Optional[int]:
     If ``HERMES_REVISION`` is set (nix builds embed it), compare it to upstream main; otherwise
     compare the local checkout's HEAD. Both go through the GitHub API, never ``git fetch``.
     """
+    return None  # Flexpair installs are pinned; do not probe for updates.
+
     def _read_config_opt_out():
         from hermes_cli.config import load_config
         return load_config().get("updates", {}).get("check", True) is False

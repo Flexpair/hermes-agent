@@ -1,7 +1,9 @@
-"""Passive opt-out keeps explicit update checks available."""
+"""Fixed Flexpair builds do not check for updates, even when explicitly requested."""
 import json
 import subprocess
 import time
+
+import pytest
 
 from hermes_constants import get_hermes_home
 
@@ -40,10 +42,10 @@ def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
     monkeypatch.delenv("HERMES_REVISION", raising=False)
     config = home / "config.yaml"
     config.write_text("updates:\n  check: true\n", encoding="utf-8")
-    assert banner.check_for_updates(passive=True) == 17
+    assert banner.check_for_updates(passive=True) is None
     config.write_text("updates:\n  check: false\n", encoding="utf-8")
     assert banner.check_for_updates(passive=True) is None
-    assert banner.check_for_updates() == 17
+    assert banner.check_for_updates() is None
 
 
 def test_explicit_check_fetches_local_origin_despite_passive_opt_out(tmp_path, monkeypatch, capsys):
@@ -60,7 +62,9 @@ def test_explicit_check_fetches_local_origin_despite_passive_opt_out(tmp_path, m
     git("-C", remote, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "next")
     monkeypatch.setattr(main, "PROJECT_ROOT", local)
     (get_hermes_home() / "config.yaml").write_text("updates:\n  check: false\n", encoding="utf-8")
-    _cmd_update_check()
+    with pytest.raises(SystemExit) as error:
+        _cmd_update_check()
+    assert error.value.code == 2
     output = capsys.readouterr().out
-    assert "Fetching from origin" in output
-    assert "1 commit" in output
+    assert "Updates are disabled" in output
+    assert "Fetching from origin" not in output

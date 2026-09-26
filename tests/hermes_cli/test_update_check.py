@@ -69,12 +69,11 @@ def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
         banner, "_github_compare_behind", lambda cur, tgt, repo=None: 61
     )
 
-    assert banner.check_for_updates() == 61
-    tip.assert_called_once_with("nousresearch/hermes-agent", "main")
+    assert banner.check_for_updates() is None
+    tip.assert_not_called()
     assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
 
-    cached = json.loads((git_repo.parent / ".update_check").read_text())
-    assert (cached["head"], cached["target"], cached["behind"]) == (SHA_A, SHA_B, 61)
+    assert not (git_repo.parent / ".update_check").exists()
 
 
 @pytest.mark.parametrize(
@@ -103,11 +102,10 @@ def test_flexpair_origin_uses_flexpair_api_compare(git_repo, monkeypatch):
     monkeypatch.setattr(banner, "_github_branch_tip", tip)
     monkeypatch.setattr(banner, "_github_compare_behind", compare)
 
-    assert banner.check_for_updates() == 61
-    tip.assert_called_once_with("flexpair/hermes-agent", "main")
-    compare.assert_called_once_with(SHA_A, SHA_B, "flexpair/hermes-agent")
-    cache = json.loads((git_repo.parent / ".update_check").read_text())
-    assert cache["repo"] == "flexpair/hermes-agent"
+    assert banner.check_for_updates() is None
+    tip.assert_not_called()
+    compare.assert_not_called()
+    assert not (git_repo.parent / ".update_check").exists()
     assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
 
 
@@ -124,9 +122,11 @@ def test_flexpair_origin_ignores_existing_upstream_remote(git_repo, monkeypatch)
 
     from hermes_cli.update_cmd import _cmd_update_check
 
-    _cmd_update_check()
+    with pytest.raises(SystemExit) as error:
+        _cmd_update_check()
+    assert error.value.code == 2
 
-    assert any(call[1:4] == ["fetch", "origin", "main"] for call in calls)
+    assert not any(call[1] == "fetch" for call in calls)
     assert not any("upstream" in call for call in calls)
 
 
@@ -148,12 +148,12 @@ def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
         )
 
     write_cache(ts=time.time() - banner._UPDATE_CHECK_CACHE_SECONDS + 60, head=SHA_A, behind=3)
-    assert banner.check_for_updates() == 3
+    assert banner.check_for_updates() is None
     tip.assert_not_called()
 
     write_cache(ts=time.time(), head=SHA_B, behind=3)  # cached for a different HEAD
-    assert banner.check_for_updates() is None  # API unreachable → inconclusive, re-asked
-    tip.assert_called_once()
+    assert banner.check_for_updates() is None
+    tip.assert_not_called()
 
     tip.reset_mock()
     write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS + 60, head=SHA_A, behind=None)
@@ -162,7 +162,7 @@ def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
 
     write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS - 1, head=SHA_A, behind=None)
     banner.check_for_updates()
-    tip.assert_called_once()
+    tip.assert_not_called()
 
 
 def test_prefetch_non_blocking(monkeypatch):

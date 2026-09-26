@@ -55,6 +55,9 @@ param(
     [switch]$SelfTestWorkingDirectory
 )
 
+Write-Error "Updates are disabled in this Flexpair build; the installed version is fixed."
+exit 2
+
 if (-not $SelfTestUi -and -not $SelfTestPipeDrain -and -not $InstallRoot) {
     # Mandatory in spirit; relaxed in the signature only so the self-test
     # switches can drive the UI / the pipe drain without a checkout.

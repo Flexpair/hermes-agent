@@ -98,10 +98,18 @@ function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => R
   )
 }
 
-test.skipIf(process.platform === 'win32')('POSIX hand-off preserves the Desktop marker acquisition time', () => {
-  assertScriptHandoff(runPosix)
+test.skipIf(process.platform === 'win32')('POSIX hand-off refuses updates without creating a marker', () => {
+  const { home, installRoot } = sandbox('disabled')
+  const result = runPosix(installRoot, '1234567890')
+  assert.equal(result.status, 2)
+  assert.match(String(result.stderr), /Updates are disabled/)
+  assert.equal(fs.existsSync(path.join(home, '.hermes-update-in-progress')), false)
 })
 
-test.skipIf(process.platform !== 'win32')('PowerShell hand-off preserves the Desktop marker acquisition time', () => {
-  assertScriptHandoff(runWindows)
+test.skipIf(process.platform !== 'win32')('PowerShell hand-off refuses updates without creating a marker', () => {
+  const { home, installRoot } = sandbox('disabled')
+  const result = runWindows(installRoot, '1234567890')
+  assert.equal(result.status, 2)
+  assert.match(String(result.stderr), /Updates are disabled/)
+  assert.equal(fs.existsSync(path.join(home, '.hermes-update-in-progress')), false)
 })

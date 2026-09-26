@@ -19,6 +19,13 @@
 
 set -e
 
+# Developer setup must obey the same Linux-only installation policy.
+if [ "$(uname -s)" != "Linux" ] || [ -n "${TERMUX_VERSION:-}" ] ||
+   [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]; then
+    printf '%s\n' 'Flexpair installation requires Linux; refusing to install on this OS.' >&2
+    exit 1
+fi
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -28,6 +35,12 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+# Never rebuild an existing checkout's environment on a second setup invocation.
+if [ -e "$SCRIPT_DIR/venv" ] || [ -L "$SCRIPT_DIR/venv" ]; then
+    printf '%s\n' 'Updates are disabled in this Flexpair build; the existing installation is unchanged.' >&2
+    exit 1
+fi
 
 # Prevent uv from discovering config files (uv.toml, pyproject.toml) from the
 # wrong user's home directory when running under sudo -u <user>.  See #21269.
