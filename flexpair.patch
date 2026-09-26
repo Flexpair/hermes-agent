@@ -849,6 +849,34 @@ index d73b749ab4..489810c8e9 100644
  
            if [ -z "$ADDED" ]; then
              echo "found=false" >> "$GITHUB_OUTPUT"
+diff --git a/AGENTS.md b/AGENTS.md
+index c704bb8c9d..e32396380e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -7,6 +7,23 @@ past that); see the **routing table** at the end and read the area file before e
+ 
+ **Never give up on the right solution.**
+ 
++## Flexpair fork: upstream and patch branches
++
++- Fork `main` follows an exact upstream code commit. Its only Flexpair-owned file is
++  `flexpair.patch`; never commit the applied source tree or this guidance directly to `main`.
++- Keep the entire remaining Flexpair-specific source delta in that single, undated patch file.
++  Include changes to this `AGENTS.md` in the patch so the guidance appears in patched branches.
++- Create a fresh `YYYY-MM-DD-patched` branch for each upstream code base. The date is the
++  calendar date of the underlying upstream code commit, **not** the branch creation date or
++  the date of commits that only add or update `flexpair.patch` on fork `main`. Verify the
++  underlying upstream SHA and its commit date before choosing a name.
++- Branch from the patch-bearing `main` revision for that upstream base, apply `flexpair.patch`,
++  and verify the resulting source tree. A newer upstream commit requires a new dated branch;
++  never reuse the old one or assume the patch still applies unchanged.
++- Preserve intentional upstream changes and Flexpair behavior while adapting the patch.
++  After sufficient testing, transfer **only** the updated patch file to `main`; never
++  cherry-pick an applied-source commit onto `main`. Do not install the fork during source sync.
++
+ ## What Hermes Is
+ 
+ Hermes is a personal AI agent that runs the same agent core across a CLI, a messaging
 diff --git a/apps/desktop/e2e/fixtures.ts b/apps/desktop/e2e/fixtures.ts
 index 134e957d88..17e28cbe1e 100644
 --- a/apps/desktop/e2e/fixtures.ts
