@@ -122,8 +122,26 @@ jobs:
               FAILED=1; echo "::endgroup::"; continue
             fi
 
+            # Sync dependencies into a fresh PM generation. The current process
+            # keeps its original interpreter, so validate in a new invocation.
+            # Preparation failures must fail admission rather than falling through
+            # to a probe that only reports a missing import.
+            if ! "$HERMES_PYTHON" - "$PLUGIN_DIR" <<'PYEOF'
+          import sys
+          from pathlib import Path
+
+          import pm
+          from pm.plugin_inputs import Candidates
+
+          pm.sync_venv(plugins=Candidates([Path(sys.argv[1])]), explicit=True)
+          PYEOF
+            then
+              echo "::error file=$entry::dependency preparation failed"
+              FAILED=1; echo "::endgroup::"; continue
+            fi
+
             # Manifest schema + declared-vs-registered capability check.
-            if ! hermes plugins validate --install-deps "$PLUGIN_DIR"; then
+            if ! hermes plugins validate "$PLUGIN_DIR"; then
               echo "::error file=$entry::hermes plugins validate failed"
               FAILED=1; echo "::endgroup::"; continue
             fi
