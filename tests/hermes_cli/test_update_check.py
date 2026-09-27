@@ -172,7 +172,7 @@ def test_prefetch_non_blocking(monkeypatch):
     banner._update_check_done = threading.Event()
     monkeypatch.setattr(banner, "_skip_background_prefetch", lambda: False)
 
-    with patch.object(banner, "check_for_updates", return_value=5):
+    with patch.object(banner.source_check, "check_for_updates", return_value={"behind": 5}):
         start = time.monotonic()
         banner.prefetch_update_check()
         assert time.monotonic() - start < 1.0

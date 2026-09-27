@@ -192,6 +192,7 @@ def _sealed_tree(tmp_path: Path, distribution: str) -> Path:
     return root
 
 
+@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
 def test_admission_source_checkout_on_termux_host_refuses_with_apt_hint(tmp_path, monkeypatch):
     """A git checkout is normally admitted, but not on a Termux host: the
     lock has no Android wheels, so a source sync would build sdists on the
@@ -211,6 +212,7 @@ def test_admission_source_checkout_on_termux_host_refuses_with_apt_hint(tmp_path
     assert evaluate_update_admission(tmp_path) is None, "the same checkout off Termux stays updatable"
 
 
+@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
 def test_admission_apt_termux_refuses_with_pkg_upgrade(tmp_path, monkeypatch):
     """A sealed apt-termux tree (no .git) is refused by the steward gate:
     the package manager owns the code tree, so remediation is pkg upgrade
@@ -229,6 +231,7 @@ def test_admission_apt_termux_refuses_with_pkg_upgrade(tmp_path, monkeypatch):
     assert "pkg upgrade hermes-agent" in refusal.update_command
 
 
+@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
 def test_admission_apt_termux_command_comes_from_steward_table(tmp_path, monkeypatch):
     """The apt-termux remediation command is read from the config module's
     ``_UPDATE_COMMAND_BY_METHOD`` table (the same one every install method

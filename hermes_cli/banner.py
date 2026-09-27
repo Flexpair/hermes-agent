@@ -4,8 +4,10 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import threading
+from urllib.parse import urlparse
 from pathlib import Path
 from hermes_cli import source_check
 # Historical updater import (tests/compat/old_updater_surface.json). In-tree callers use the owner.

@@ -1,6 +1,7 @@
 """Fixed Flexpair builds do not check for updates, even when explicitly requested."""
 import json
 import subprocess
+import time
 
 import pytest
 
@@ -8,7 +9,7 @@ from hermes_constants import get_hermes_home
 
 
 def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
-    from hermes_cli import banner
+    from hermes_cli import __version__, banner
 
     home = get_hermes_home()
     # The cache is keyed on the checkout's HEAD (an update moving HEAD invalidates it).
@@ -31,7 +32,7 @@ def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
                 "ts": time.time(),
                 "behind": 17,
                 "rev": None,
-                "ver": banner.VERSION,
+                "ver": __version__,
                 "head": head,
                 "repo": repo_slug,
             }

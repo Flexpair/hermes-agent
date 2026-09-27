@@ -310,6 +310,7 @@ jobs:
       - tests-os
       - lint
       - js-tests
+      - installer-tests
       - rust-tests
       - bootstrap-installer
       - e2e-desktop

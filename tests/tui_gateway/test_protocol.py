@@ -1653,6 +1653,7 @@ def test_empty_config_broadcasts_company_skin(server, tmp_path, monkeypatch):
 
     monkeypatch.setattr(skin_engine, "get_hermes_home", lambda: tmp_path)
     monkeypatch.setattr(server, "_hermes_home", tmp_path)
+    monkeypatch.setattr(server, "_stdio_is_rpc_channel", True)
     monkeypatch.setattr(server, "_last_skin_sig", None, raising=False)
     server._cfg_cache = server._cfg_sig = server._cfg_path = None
     emitted = []
