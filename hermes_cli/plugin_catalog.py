@@ -196,12 +196,27 @@ def _removed_from_list(raw_list: Any) -> List[RemovedEntry]:
 def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]:
     """Every valid ``*.yaml`` entry in the catalog dir (``removed.yaml`` excluded), sorted by file name.
     Malformed entries are skipped with a warning — never raises."""
+    # Local removal: China-market catalog entries.
+    # wechat-social-assistant (WeChat), volcengine-voice (ByteDance Doubao),
+    # dashscope-image/-video (Alibaba), minimax-image/-video (MiniMax),
+    # kimi-code-delegate (Moonshot Kimi), deepseek-whale (DeepSeek),
+    # hermes-zh (Simplified-Chinese UI pack), cjk_sanitizer (CJK filter),
+    # desensitize (Chinese-context PII, siliconflow.cn fallback).
+    _REMOVED_CN_CATALOG_FILES = frozenset({
+        "wechat-social-assistant.yaml", "volcengine-voice.yaml",
+        "dashscope-image.yaml", "dashscope-video.yaml",
+        "minimax-image.yaml", "minimax-video.yaml",
+        "kimi-code-delegate.yaml", "deepseek-whale.yaml",
+        "hermes-zh.yaml", "cjk_sanitizer.yaml", "desensitize.yaml",
+    })
     root = catalog_dir or get_catalog_dir()
     if not root.is_dir():
         return []
     entries = []
     for path in sorted(root.glob("*.yaml")):
         if path.name == "removed.yaml":
+            continue
+        if path.name in _REMOVED_CN_CATALOG_FILES:
             continue
         data = _read_yaml(path)
         entry = entry_from_mapping(data, str(path)) if data is not None else None
