@@ -3967,3 +3967,637 @@ index 5fb780757b..0f052b4162 100644
  
  ## Complete list of configurable keys
  
+diff --git a/agent/i18n.py b/agent/i18n.py
+index d1e725855..3e82aaae1 100644
+--- a/agent/i18n.py
++++ b/agent/i18n.py
+@@ -16,8 +16,10 @@ from typing import Any
+ 
+ logger = logging.getLogger(__name__)
+ 
++# Local removal: "zh" / "zh-hant" deleted (China-market locales).
++# locales/zh.yaml + zh-hant.yaml are removed; requests for them fall back to "en".
+ SUPPORTED_LANGUAGES: tuple[str, ...] = (
+-    "en", "zh", "zh-hant", "ja", "de", "es", "fr", "tr", "uk",
++    "en", "ja", "de", "es", "fr", "tr", "uk",
+     "af", "ko", "it", "ga", "pt", "ru", "hu", "ar",
+ )
+ DEFAULT_LANGUAGE = "en"
+@@ -28,9 +30,7 @@ DEFAULT_LANGUAGE = "en"
+ # the pt catalog (no separate br one).
+ _LANGUAGE_ALIASES: dict[str, str] = {
+     "english": "en", "en-us": "en", "en-gb": "en",
+-    "chinese": "zh", "mandarin": "zh", "zh-cn": "zh", "zh-hans": "zh", "zh-sg": "zh",
+-    "traditional-chinese": "zh-hant", "traditional_chinese": "zh-hant",
+-    "zh-tw": "zh-hant", "zh-hk": "zh-hant", "zh-mo": "zh-hant",
++    # Local removal: chinese/* aliases deleted (fell back to "en" via default).
+     "japanese": "ja", "jp": "ja", "ja-jp": "ja",
+     "german": "de", "deutsch": "de", "de-de": "de", "de-at": "de", "de-ch": "de",
+     "spanish": "es", "español": "es", "espanol": "es", "es-es": "es", "es-mx": "es", "es-ar": "es",
+diff --git a/gateway/config.py b/gateway/config.py
+index f1cfcf914..e0c526631 100644
+--- a/gateway/config.py
++++ b/gateway/config.py
+@@ -255,12 +255,18 @@ class Platform(Enum):
+         """Directory names of bundled platform plugins under ``plugins/platforms/``, plus a map of
+         manifest ``name:`` keys that differ from their directory (alias -> directory name). Aliases
+         never shadow a directory name, so the directory stays the canonical platform value."""
++        # Local removal: China-market messaging platforms.
++        # dingtalk (Alibaba), feishu (ByteDance Feishu; shares code with
++        # international Lark -- removing this dir removes Lark as well),
++        # wecom (Tencent WeCom / Enterprise WeChat, incl. wecom_callback).
++        _REMOVED_CN_PLATFORMS = {"dingtalk", "feishu", "wecom"}
+         try:
+             platforms_dir = Path(__file__).parent.parent / "plugins" / "platforms"
+             dirs = [
+                 child for child in (platforms_dir.iterdir() if platforms_dir.is_dir() else ())
+                 if child.is_dir() and (child / "__init__.py").exists()
+                 and ((child / "plugin.yaml").exists() or (child / "plugin.yml").exists())
++                and child.name.lower() not in _REMOVED_CN_PLATFORMS
+             ]
+             names = {child.name.lower() for child in dirs}
+             aliases = {}
+diff --git a/gateway/run.py b/gateway/run.py
+index 6c9556d10..2eb5fd07b 100644
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -3329,13 +3329,16 @@ def _builtin_adapter_import(module: str, adapter_name: str, requirement: str):
+ 
+ 
+ # platform -> (module, adapter class, requirements probe, warning on probe failure).
++# Local removal: China-market builtin adapters (Tencent) deleted here:
++# Platform.WEIXIN (WeChat/iLink), Platform.QQBOT (QQ Bot),
++# Platform.YUANBAO (Tencent Yuanbao). Source files
++# (gateway/platforms/weixin.py, qqbot/, yuanbao*.py) stay on disk but are
++# never instantiated. Existing configs using them log a warning and skip.
+ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
+     Platform.WHATSAPP_CLOUD: ("whatsapp_cloud", "WhatsAppCloudAdapter", "check_whatsapp_cloud_requirements",
+                               "WhatsApp Cloud: aiohttp/httpx missing — reinstall hermes-agent"),
+     Platform.SIGNAL: ("signal", "SignalAdapter", "check_signal_requirements",
+                       "Signal: runtime requirements not met"),
+-    Platform.WEIXIN: ("weixin", "WeixinAdapter", "check_weixin_requirements",
+-                      "Weixin: aiohttp/cryptography not installed"),
+     Platform.API_SERVER: ("api_server", "APIServerAdapter", "check_api_server_requirements",
+                           "API Server: aiohttp not installed"),
+     Platform.WEBHOOK: ("webhook", "WebhookAdapter", "check_webhook_requirements",
+@@ -3344,14 +3347,19 @@ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
+                                "MSGraph webhook: aiohttp not installed"),
+     Platform.BLUEBUBBLES: ("bluebubbles", "BlueBubblesAdapter", "check_bluebubbles_requirements",
+                            "BlueBubbles: aiohttp/httpx missing or BLUEBUBBLES_SERVER_URL/BLUEBUBBLES_PASSWORD not configured"),
+-    Platform.QQBOT: ("qqbot", "QQAdapter", "check_qq_requirements",
+-                     "QQBot: aiohttp/httpx missing or QQ_APP_ID/QQ_CLIENT_SECRET not configured"),
+-    Platform.YUANBAO: ("yuanbao", "YuanbaoAdapter", "WEBSOCKETS_AVAILABLE",
+-                       "Yuanbao: websockets not installed. Run: pip install websockets")}
++}
++_REMOVED_CN_BUILTIN_PLATFORMS = frozenset({"weixin", "qqbot", "yuanbao"})
+ 
+ 
+ def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[BasePlatformAdapter]:
+     """Instantiate a core (non-plugin) adapter, or None when its requirements are unmet/unknown."""
++    try:
++        _platform_value = platform.value if isinstance(platform, Platform) else str(platform)
++    except Exception:
++        _platform_value = str(platform)
++    if _platform_value in _REMOVED_CN_BUILTIN_PLATFORMS:
++        logger.warning("Skipping removed China-market platform '%s'", _platform_value)
++        return None
+     spec = _BUILTIN_ADAPTERS.get(platform)
+     if spec is None:
+         return None
+diff --git a/hermes_cli/auth.py b/hermes_cli/auth.py
+index 33e017bfc..a2d917753 100644
+--- a/hermes_cli/auth.py
++++ b/hermes_cli/auth.py
+@@ -181,7 +181,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+     ProviderConfig(
+         "xai-oauth", "xAI Grok OAuth (SuperGrok / Premium+)", "oauth_external",
+         inference_base_url=DEFAULT_XAI_OAUTH_BASE_URL),
+-    ProviderConfig("qwen-oauth", "Qwen OAuth", "oauth_external", inference_base_url=DEFAULT_QWEN_BASE_URL),
+     ("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1", ("LM_API_KEY",), "LM_BASE_URL"),
+     ("copilot", "GitHub Copilot", DEFAULT_GITHUB_MODELS_BASE_URL,
+      ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"), "COPILOT_API_BASE_URL"),
+@@ -190,24 +189,9 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+         inference_base_url=DEFAULT_COPILOT_ACP_BASE_URL, base_url_env_var="COPILOT_ACP_BASE_URL"),
+     ("gemini", "Google AI Studio", "https://generativelanguage.googleapis.com/v1beta",
+      ("GOOGLE_API_KEY", "GEMINI_API_KEY"), "GEMINI_BASE_URL"),
+-    ("zai", "Z.AI / GLM", "https://api.z.ai/api/paas/v4",
+-     ("GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"), "GLM_BASE_URL"),
+-    # Legacy platform.moonshot.ai keys use this endpoint (OpenAI-compat); sk-kimi- (Kimi Code)
+-    # keys are auto-redirected to api.kimi.com/coding by _resolve_kimi_base_url().
+-    ("kimi-coding", "Kimi / Moonshot", "https://api.moonshot.ai/v1",
+-     ("KIMI_API_KEY", "KIMI_CODING_API_KEY"), "KIMI_BASE_URL"),
+-    ("kimi-coding-cn", "Kimi / Moonshot (China)", "https://api.moonshot.cn/v1", ("KIMI_CN_API_KEY",)),
+-    ("stepfun", "StepFun Step Plan", STEPFUN_STEP_PLAN_INTL_BASE_URL, ("STEPFUN_API_KEY",), "STEPFUN_BASE_URL"),
+     ("arcee", "Arcee AI", "https://api.arcee.ai/api/v1", ("ARCEEAI_API_KEY",), "ARCEE_BASE_URL"),
+     ("gmi", "GMI Cloud", "https://api.gmi-serving.com/v1", ("GMI_API_KEY",), "GMI_BASE_URL"),
+     ("actual", "Actual Computer", DEFAULT_ACTUAL_BASE_URL, ("ACTUAL_API_KEY",), "ACTUAL_BASE_URL"),
+-    ("minimax", "MiniMax", "https://api.minimax.io/anthropic", ("MINIMAX_API_KEY",), "MINIMAX_BASE_URL"),
+-    ProviderConfig(
+-        "minimax-oauth", "MiniMax (OAuth \u00b7 minimax.io)", "oauth_minimax",
+-        portal_base_url=MINIMAX_OAUTH_GLOBAL_BASE, inference_base_url=MINIMAX_OAUTH_GLOBAL_INFERENCE,
+-        client_id=MINIMAX_OAUTH_CLIENT_ID, scope=MINIMAX_OAUTH_SCOPE,
+-        extra={"region": "global", "cn_portal_base_url": MINIMAX_OAUTH_CN_BASE,
+-               "cn_inference_base_url": MINIMAX_OAUTH_CN_INFERENCE}),
+     # CLAUDE_CODE_OAUTH_TOKEN is NOT an API key despite auth_type="api_key": `claude setup-token`
+     # yields an `sk-ant-oat01…` OAuth token (401s as x-api-key, 429s as bare Bearer). It stays in
+     # this tuple because the tuple doubles as the credential-DISCOVERY list
+@@ -215,13 +199,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+     # path by prefix. Only ANTHROPIC_API_KEY and ANTHROPIC_TOKEN are usable as literal API keys.
+     ("anthropic", "Anthropic", "https://api.anthropic.com",
+      ("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"), "ANTHROPIC_BASE_URL"),
+-    ("alibaba", "Qwen Cloud", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+-     ("DASHSCOPE_API_KEY",), "DASHSCOPE_BASE_URL"),
+-    ("alibaba-coding-plan", "Alibaba Cloud (Coding Plan)", "https://coding-intl.dashscope.aliyuncs.com/v1",
+-     ("ALIBABA_CODING_PLAN_API_KEY", "DASHSCOPE_API_KEY"), "ALIBABA_CODING_PLAN_BASE_URL"),
+-    ("minimax-cn", "MiniMax (China)", "https://api.minimaxi.com/anthropic", ("MINIMAX_CN_API_KEY",),
+-     "MINIMAX_CN_BASE_URL"),
+-    ("deepseek", "DeepSeek", "https://api.deepseek.com/v1", ("DEEPSEEK_API_KEY",), "DEEPSEEK_BASE_URL"),
+     ("xai", "xAI", "https://api.x.ai/v1", ("XAI_API_KEY",), "XAI_BASE_URL"),
+     ("nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1", ("NVIDIA_API_KEY",), "NVIDIA_BASE_URL"),
+     ("ai-gateway", "Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", ("AI_GATEWAY_API_KEY",),
+@@ -234,11 +211,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+      "OPENCODE_GO_BASE_URL"),
+     ("kilocode", "Kilo Code", "https://api.kilo.ai/api/gateway", ("KILOCODE_API_KEY",), "KILOCODE_BASE_URL"),
+     ("huggingface", "Hugging Face", "https://router.huggingface.co/v1", ("HF_TOKEN",), "HF_BASE_URL"),
+-    ("xiaomi", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1", ("XIAOMI_API_KEY",), "XIAOMI_BASE_URL"),
+-    ("tencent-tokenhub", "Tencent TokenHub", "https://tokenhub.tencentmaas.com/v1", ("TOKENHUB_API_KEY",),
+-     "TOKENHUB_BASE_URL"),
+-    ("tencent-tokenplan", "Tencent TokenPlan", "https://api.lkeap.cloud.tencent.com/plan/anthropic",
+-     ("TOKENPLAN_API_KEY",), "TOKENPLAN_BASE_URL"),
+     ("ollama-cloud", "Ollama Cloud", DEFAULT_OLLAMA_CLOUD_BASE_URL, ("OLLAMA_API_KEY",), "OLLAMA_BASE_URL"),
+     ("bedrock", "AWS Bedrock", "https://bedrock-runtime.us-east-1.amazonaws.com", (), "BEDROCK_BASE_URL",
+      "aws_sdk"),
+@@ -1378,33 +1350,20 @@ def _refuse_env_adoption_if_config_corrupt() -> None:
+ # (plugins/model-providers/<name>/) are layered on at call time; this hardcoded
+ # table remains authoritative for existing names.
+ _PROVIDER_ALIASES: Dict[str, str] = {
+-    "glm": "zai", "z-ai": "zai", "z.ai": "zai", "zhipu": "zai",
+     "google": "gemini", "google-gemini": "gemini", "google-ai-studio": "gemini",
+     "x-ai": "xai", "x.ai": "xai", "grok": "xai",
+     "xai-oauth": "xai-oauth", "x-ai-oauth": "xai-oauth",
+     "grok-oauth": "xai-oauth", "xai-grok-oauth": "xai-oauth",
+-    "kimi": "kimi-coding", "kimi-for-coding": "kimi-coding", "moonshot": "kimi-coding",
+-    "kimi-cn": "kimi-coding-cn", "moonshot-cn": "kimi-coding-cn",
+-    "step": "stepfun", "stepfun-coding-plan": "stepfun",
+     "arcee-ai": "arcee", "arceeai": "arcee",
+     "gmi-cloud": "gmi", "gmicloud": "gmi",
+     "actual-computer": "actual", "actualcomputer": "actual", "aci": "actual",
+-    "minimax-china": "minimax-cn", "minimax_cn": "minimax-cn",
+-    "minimax-portal": "minimax-oauth", "minimax-global": "minimax-oauth", "minimax_oauth": "minimax-oauth",
+-    "alibaba_coding": "alibaba-coding-plan", "alibaba-coding": "alibaba-coding-plan",
+-    "alibaba_coding_plan": "alibaba-coding-plan",
+     "claude": "anthropic", "claude-code": "anthropic",
+     "github": "copilot", "github-copilot": "copilot",
+     "github-models": "copilot", "github-model": "copilot",
+     "github-copilot-acp": "copilot-acp", "copilot-acp-agent": "copilot-acp",
+     "aigateway": "ai-gateway", "vercel": "ai-gateway", "vercel-ai-gateway": "ai-gateway",
+     "opencode": "opencode-zen", "zen": "opencode-zen",
+-    "qwen-portal": "qwen-oauth", "qwen-cli": "qwen-oauth", "qwen-oauth": "qwen-oauth",
+     "hf": "huggingface", "hugging-face": "huggingface", "huggingface-hub": "huggingface",
+-    "mimo": "xiaomi", "xiaomi-mimo": "xiaomi",
+-    "tencent": "tencent-tokenhub", "tokenhub": "tencent-tokenhub",
+-    "tencent-cloud": "tencent-tokenhub", "tencentmaas": "tencent-tokenhub",
+-    "tokenplan": "tencent-tokenplan", "tencent-lkeap": "tencent-tokenplan",
+     "aws": "bedrock", "aws-bedrock": "bedrock", "amazon-bedrock": "bedrock", "amazon": "bedrock",
+     "go": "opencode-go", "opencode-go-sub": "opencode-go",
+     "kilo": "kilocode", "kilo-code": "kilocode", "kilo-gateway": "kilocode",
+@@ -1930,10 +1889,6 @@ OAUTH_PROVIDER_FLOWS: Dict[str, OAuthProviderFlow] = {
+         "xai-oauth", "resolve_xai_oauth_runtime_credentials", "get_xai_oauth_auth_status",
+         terminal_refresh_codes=frozenset({"xai_refresh_failed", "xai_auth_missing_refresh_token"}),
+         logout_from_config=True),
+-    "qwen-oauth": OAuthProviderFlow(
+-        "qwen-oauth", "resolve_qwen_runtime_credentials", "get_qwen_auth_status"),
+-    "minimax-oauth": OAuthProviderFlow(
+-        "minimax-oauth", "resolve_minimax_oauth_runtime_credentials", "get_minimax_oauth_auth_status"),
+ }
+ 
+ 
+@@ -1998,16 +1953,13 @@ def _provider_env_base_url(pconfig: ProviderConfig) -> str:
+ 
+ 
+ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
+-    """Status snapshot for API-key providers (z.ai, Kimi, MiniMax)."""
++    """Status snapshot for API-key providers."""
+     pconfig = _registry_lookup(provider_id)
+     if not pconfig or pconfig.auth_type != "api_key":
+         return {"configured": False}
+     api_key, key_source = _resolve_api_key_provider_secret(provider_id, pconfig)
+     env_url = _provider_env_base_url(pconfig)
+-    if provider_id in {"kimi-coding", "kimi-coding-cn"}:
+-        base_url = _resolve_kimi_base_url(api_key, pconfig.inference_base_url, env_url)
+-    else:
+-        base_url = env_url or pconfig.inference_base_url
++    base_url = env_url or pconfig.inference_base_url
+     actual_local_noauth = False
+     if provider_id == "actual":
+         base_url = normalize_actual_base_url(base_url)
+@@ -2219,9 +2171,6 @@ def _copilot_runtime_base_url(api_key: str, default: str, env_url: str) -> str:
+ # Providers whose runtime base URL is not simply env-override-or-registry-default:
+ # ``(api_key, registry_default, env_override) -> base_url``.
+ _API_KEY_BASE_URL_RESOLVERS: Dict[str, Callable[[str, str, str], str]] = {
+-    "kimi-coding": _resolve_kimi_base_url,
+-    "kimi-coding-cn": _resolve_kimi_base_url,
+-    "zai": _resolve_zai_base_url,
+     "copilot": _copilot_runtime_base_url,
+     "lmstudio": lambda *a: _normalize_lmstudio_runtime_base_url(_default_api_key_base_url(*a)),
+     "actual": lambda *a: normalize_actual_base_url(_default_api_key_base_url(*a))}
+diff --git a/hermes_cli/auth_commands.py b/hermes_cli/auth_commands.py
+index 75d52b7aa..bf3f94c76 100644
+--- a/hermes_cli/auth_commands.py
++++ b/hermes_cli/auth_commands.py
+@@ -27,7 +27,7 @@ from hermes_cli.secret_prompt import masked_secret_prompt
+ 
+ 
+ # Providers that support OAuth login in addition to API keys.
+-_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter"}
++_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "openrouter"}
+ # ...and default to it when ``--type`` is omitted. OpenRouter stays API-key-first: the documented
+ # ``hermes auth add openrouter --api-key sk-or-...`` must keep working with no ``--type``.
+ _OAUTH_DEFAULT_PROVIDERS = _OAUTH_CAPABLE_PROVIDERS - {"openrouter"}
+@@ -207,14 +207,6 @@ def _anthropic_oauth_login(args) -> dict:
+     return creds
+ 
+ 
+-def _qwen_oauth_login(args) -> dict:
+-    from hermes_cli.auth_qwen import _mark_qwen_oauth_active
+-
+-    creds = auth_mod.resolve_qwen_runtime_credentials(refresh_if_expiring=False)
+-    _mark_qwen_oauth_active(creds)
+-    return creds
+-
+-
+ @dataclass(frozen=True)
+ class _OAuthAddSpec:
+     """Per-provider parameters for the generic ``hermes auth add <provider> --type oauth`` path."""
+@@ -271,19 +263,6 @@ _OAUTH_ADD_SPECS: dict[str, _OAuthAddSpec] = {
+             "base_url": creds.get("base_url") or auth_mod.DEFAULT_XAI_OAUTH_BASE_URL,
+             "last_refresh": creds.get("last_refresh")},
+         activate_first=True),
+-    "qwen-oauth": _OAuthAddSpec(
+-        login=_qwen_oauth_login,
+-        token=lambda creds: creds["api_key"],
+-        source=f"{SOURCE_MANUAL}:qwen_cli",
+-        fields=lambda creds, provider: {"base_url": creds.get("base_url")}),
+-    "minimax-oauth": _OAuthAddSpec(
+-        login=lambda args: auth_mod._minimax_oauth_login(
+-            open_browser=not getattr(args, "no_browser", False),
+-            timeout_seconds=getattr(args, "timeout", None) or 15.0),
+-        token=lambda creds: creds["access_token"],
+-        source=f"{SOURCE_MANUAL}:minimax_oauth",
+-        fields=lambda creds, provider: {
+-            "refresh_token": creds.get("refresh_token"), "base_url": creds.get("inference_base_url")}),
+     "openrouter": _OAuthAddSpec(
+         login=lambda args: auth_mod._openrouter_pkce_login(
+             open_browser=not getattr(args, "no_browser", False),
+diff --git a/hermes_cli/gateway_setup_wizard.py b/hermes_cli/gateway_setup_wizard.py
+index 9f702a1cf..e8541674a 100644
+--- a/hermes_cli/gateway_setup_wizard.py
++++ b/hermes_cli/gateway_setup_wizard.py
+@@ -50,7 +50,6 @@ _PLATFORMS = [
+         ],
+     },
+     {"key": "signal", "label": "Signal", "emoji": "📡", "token_var": "SIGNAL_HTTP_URL"},
+-    {"key": "weixin", "label": "Weixin / WeChat", "emoji": "💬", "token_var": "WEIXIN_ACCOUNT_ID"},
+     {
+         "key": "bluebubbles", "label": "BlueBubbles (iMessage)",
+         "emoji": "💬", "token_var": "BLUEBUBBLES_SERVER_URL",
+@@ -81,43 +80,6 @@ _PLATFORMS = [
+              "help": "Phone number or Apple ID to deliver cron results and notifications to."},
+         ],
+     },
+-    {
+-        "key": "qqbot", "label": "QQ Bot", "emoji": "🐧", "token_var": "QQ_APP_ID",
+-        "setup_instructions": [
+-            "1. Register a QQ Bot application at q.qq.com",
+-            "2. Note your App ID and App Secret from the application page",
+-            "3. Enable the required intents (C2C, Group, Guild messages)",
+-            "4. Configure sandbox or publish the bot",
+-        ],
+-        "vars": [
+-            {"name": "QQ_APP_ID", "prompt": "QQ Bot App ID", "password": False,
+-             "help": "Your QQ Bot App ID from q.qq.com."},
+-            {"name": "QQ_CLIENT_SECRET", "prompt": "QQ Bot App Secret", "password": True,
+-             "help": "Your QQ Bot App Secret from q.qq.com."},
+-            {"name": "QQ_ALLOWED_USERS",
+-             "prompt": "Allowed user OpenIDs (comma-separated, leave empty for open access)",
+-             "password": False, "is_allowlist": True,
+-             "help": "Optional — restrict DM access to specific user OpenIDs."},
+-            {"name": "QQBOT_HOME_CHANNEL",
+-             "prompt": "Home channel (user/group OpenID for cron delivery, or empty)", "password": False,
+-             "help": "OpenID to deliver cron results and notifications to."},
+-        ],
+-    },
+-    {
+-        "key": "yuanbao", "label": "Yuanbao", "emoji": "💎", "token_var": "YUANBAO_APP_ID",
+-        "setup_instructions": [
+-            "1. Download the Yuanbao app from https://yuanbao.tencent.com/",
+-            "2. In the app, go to PAI → My Bot and create a new bot",
+-            "3. After the bot is created, copy the App ID and App Secret",
+-            "4. Enter them below and Hermes will connect automatically over WebSocket",
+-        ],
+-        "vars": [
+-            {"name": "YUANBAO_APP_ID", "prompt": "App ID", "password": False,
+-             "help": "The App ID from your Yuanbao IM Bot credentials."},
+-            {"name": "YUANBAO_APP_SECRET", "prompt": "App Secret", "password": True,
+-             "help": "The App Secret (used for HMAC signing) from your Yuanbao IM Bot."},
+-        ],
+-    },
+ ]
+ 
+ 
+diff --git a/hermes_cli/main.py b/hermes_cli/main.py
+index 99b894e1c..69aa2c065 100644
+--- a/hermes_cli/main.py
++++ b/hermes_cli/main.py
+@@ -755,15 +755,11 @@ from hermes_cli.model_setup_flows import (
+     _model_flow_nous,
+     _model_flow_openai_codex,
+     _model_flow_xai_oauth,
+-    _model_flow_qwen_oauth,
+-    _model_flow_minimax_oauth,
+     _model_flow_custom,
+     _model_flow_azure_foundry,
+     _model_flow_named_custom,
+     _model_flow_copilot,
+     _model_flow_copilot_acp,
+-    _model_flow_kimi,
+-    _model_flow_stepfun,
+     _model_flow_bedrock,
+     _model_flow_vertex,
+     _model_flow_api_key_provider,
+@@ -1994,14 +1990,10 @@ _PROVIDER_MODEL_FLOWS = {
+     "nous": lambda c, m, a: _model_flow_nous(c, m, args=a),
+     "openai-codex": lambda c, m, a: _model_flow_openai_codex(c, m),
+     "xai-oauth": lambda c, m, a: _model_flow_xai_oauth(c, m, args=a),
+-    "qwen-oauth": lambda c, m, a: _model_flow_qwen_oauth(c, m),
+-    "minimax-oauth": lambda c, m, a: _model_flow_minimax_oauth(c, m, args=a),
+     "copilot-acp": lambda c, m, a: _model_flow_copilot_acp(c, m),
+     "copilot": lambda c, m, a: _model_flow_copilot(c, m),
+     "custom": lambda c, m, a: _model_flow_custom(c),
+     "anthropic": lambda c, m, a: _model_flow_anthropic(c, m),
+-    "kimi-coding": lambda c, m, a: _model_flow_kimi(c, m),
+-    "stepfun": lambda c, m, a: _model_flow_stepfun(c, m),
+     "bedrock": lambda c, m, a: _model_flow_bedrock(c, m),
+     "vertex": lambda c, m, a: _model_flow_vertex(c, m),
+     "azure-foundry": lambda c, m, a: _model_flow_azure_foundry(c, m),
+diff --git a/hermes_cli/plugin_catalog.py b/hermes_cli/plugin_catalog.py
+index 0f81d1b71..08bc17112 100644
+--- a/hermes_cli/plugin_catalog.py
++++ b/hermes_cli/plugin_catalog.py
+@@ -196,6 +196,19 @@ def _removed_from_list(raw_list: Any) -> List[RemovedEntry]:
+ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]:
+     """Every valid ``*.yaml`` entry in the catalog dir (``removed.yaml`` excluded), sorted by file name.
+     Malformed entries are skipped with a warning — never raises."""
++    # Local removal: China-market catalog entries.
++    # wechat-social-assistant (WeChat), volcengine-voice (ByteDance Doubao),
++    # dashscope-image/-video (Alibaba), minimax-image/-video (MiniMax),
++    # kimi-code-delegate (Moonshot Kimi), deepseek-whale (DeepSeek),
++    # hermes-zh (Simplified-Chinese UI pack), cjk_sanitizer (CJK filter),
++    # desensitize (Chinese-context PII, siliconflow.cn fallback).
++    _REMOVED_CN_CATALOG_FILES = frozenset({
++        "wechat-social-assistant.yaml", "volcengine-voice.yaml",
++        "dashscope-image.yaml", "dashscope-video.yaml",
++        "minimax-image.yaml", "minimax-video.yaml",
++        "kimi-code-delegate.yaml", "deepseek-whale.yaml",
++        "hermes-zh.yaml", "cjk_sanitizer.yaml", "desensitize.yaml",
++    })
+     root = catalog_dir or get_catalog_dir()
+     if not root.is_dir():
+         return []
+@@ -203,6 +216,8 @@ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]
+     for path in sorted(root.glob("*.yaml")):
+         if path.name == "removed.yaml":
+             continue
++        if path.name in _REMOVED_CN_CATALOG_FILES:
++            continue
+         data = _read_yaml(path)
+         entry = entry_from_mapping(data, str(path)) if data is not None else None
+         if entry is not None:
+diff --git a/hermes_cli/plugins_discovery.py b/hermes_cli/plugins_discovery.py
+index e9645e51f..9decd89c3 100644
+--- a/hermes_cli/plugins_discovery.py
++++ b/hermes_cli/plugins_discovery.py
+@@ -248,6 +248,20 @@ def gate_manifest(
+             f"{RELAY_PLUGINS_CONFIG_ENV} instead"
+         )
+         return _placeholder(error, logging.WARNING, "Refusing to load removed Hermes Relay plugin '%s'; %s", error)
++    # Local removal: China-market platform plugins (all install sources:
++    # bundled, user ~/.hermes/plugins, project .hermes/plugins, entry points).
++    # dingtalk (Alibaba), feishu (ByteDance; also disables Lark
++    # international, same adapter), wecom (Tencent Enterprise WeChat).
++    _REMOVED_CN_PLATFORM_KEYS = frozenset({
++        "platforms/dingtalk", "platforms/feishu", "platforms/wecom",
++        "dingtalk-platform", "feishu-platform", "wecom-platform",
++        "dingtalk", "feishu", "wecom",
++    })
++    manifest_path = str(manifest.path or "")
++    if (names & _REMOVED_CN_PLATFORM_KEYS
++            or any(k in manifest_path for k in ("/platforms/dingtalk", "/platforms/feishu", "/platforms/wecom"))):
++        error = "removed — China-market platform disabled by local patch"
++        return _placeholder(error, logging.WARNING, "Refusing to load removed China-market plugin '%s'; %s", error)
+     if names & disabled:
+         return _placeholder("disabled via config", logging.DEBUG, "Skipping disabled plugin '%s'")
+     # Exclusive plugins (memory providers) have their own activation path; record only.
+diff --git a/hermes_cli/tools_config.py b/hermes_cli/tools_config.py
+index 95ded5341..58ca3a4cb 100644
+--- a/hermes_cli/tools_config.py
++++ b/hermes_cli/tools_config.py
+@@ -91,7 +91,6 @@ CONFIGURABLE_TOOLSETS = [
+     ("spotify",          "🎵 Spotify",                  "playback, search, playlists, library"),
+     ("discord",         "💬 Discord (read/participate)", "fetch messages, search members, create thread"),
+     ("discord_admin",   "🛡️  Discord Server Admin",    "list channels/roles, pin, assign roles"),
+-    ("yuanbao",          "🤖 Yuanbao",                  "group info, member queries, DM"),
+     ("computer_use",     "🖱️  Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"),
+ ]
+ 
+@@ -399,7 +398,7 @@ TOOLSET_ENV_REQUIREMENTS = {"vision": [("OPENROUTER_API_KEY", "https://openroute
+ # --- Platform / Toolset Helpers ---
+ _PLATFORM_ENABLE_ENV_VARS = (
+     ("telegram", "TELEGRAM_BOT_TOKEN"), ("discord", "DISCORD_BOT_TOKEN"), ("slack", "SLACK_BOT_TOKEN"),
+-    ("whatsapp", "WHATSAPP_ENABLED"), ("qqbot", "QQ_APP_ID"))
++    ("whatsapp", "WHATSAPP_ENABLED"))
+ 
+ 
+ def _get_enabled_platforms() -> List[str]:
+@@ -666,7 +665,7 @@ def _prune_toolsets_stripped_by_disabled(enabled_toolsets: Set[str], disabled_na
+ 
+ 
+ def _recover_platform_native_toolsets(enabled_toolsets: Set[str], platform: str, *, skip: Set[str]) -> None:
+-    """Add non-configurable platform toolsets (discord, feishu_*) in place: in the default composite but not in
++    """Add non-configurable platform toolsets (discord) in place: in the default composite but not in
+     CONFIGURABLE_TOOLSETS, so never in a checklist or saved list. Runs for BOTH ``_get_platform_tools`` branches."""
+     from toolsets import resolve_toolset, TOOLSETS
+ 
+diff --git a/providers/__init__.py b/providers/__init__.py
+index 373bd507a..7d5eae3ac 100644
+--- a/providers/__init__.py
++++ b/providers/__init__.py
+@@ -94,6 +94,18 @@ _BUNDLED_PLUGINS_DIR = (
+ )
+ 
+ 
++# Local removal: China-market model providers (vendors headquartered in
++# mainland China). Both the international and the explicit *-cn endpoints are
++# skipped, because the vendor itself is China-specific.
++# Covers: alibaba (+ -cn, token-plan, token-plan-cn), alibaba-coding-plan
++# (+ -cn), deepseek, kimi-coding (+ -cn / Moonshot), minimax (+ -cn, -oauth),
++# qwen-oauth (Alibaba Qwen), stepfun, xiaomi (MiMo), zai (Zhipu Z.AI / GLM).
++_REMOVED_CN_MODEL_PROVIDERS = frozenset({
++    "alibaba", "alibaba-coding-plan", "deepseek", "kimi-coding", "minimax",
++    "qwen-oauth", "stepfun", "xiaomi", "zai",
++})
++
++
+ def _sync_auth_registry() -> None:
+     """Mirror profiles into the ``hermes_cli`` snapshots (auth registry, picker catalog) that are loaded.
+ 
+@@ -601,6 +613,9 @@ def _run_discovery_steps() -> None:
+         for child in sorted(_BUNDLED_PLUGINS_DIR.iterdir()):
+             if not child.is_dir() or child.name.startswith(("_", ".")):
+                 continue
++            if child.name in _REMOVED_CN_MODEL_PROVIDERS:
++                logger.debug("Skipping removed China-market provider '%s'", child.name)
++                continue
+             _import_plugin_dir(child, "bundled")
+ 
+     # 2. Legacy single-file profiles at providers/<name>.py. Kept for
+diff --git a/tools/send_message_tool.py b/tools/send_message_tool.py
+index 48c7e9646..d243ed295 100644
+--- a/tools/send_message_tool.py
++++ b/tools/send_message_tool.py
+@@ -16,7 +16,7 @@ from tools.send_message_senders import (
+     _AUDIO_EXTS, _DEFAULT_CAPTION_LIMIT, _IMAGE_EXTS, _NO_DELIVERABLE, _VIDEO_EXTS, _VOICE_EXTS,
+     _adapter_media_method, _error, _live_adapter, _media_caption_split, _plugin_standalone_sender,
+     _registry_standalone_send, _resolve_slack_user_target, _sanitize_error_text, _send_bluebubbles,
+-    _send_matrix_via_adapter, _send_qqbot, _send_signal, _send_telegram, _send_weixin, _send_yuanbao)
++    _send_matrix_via_adapter, _send_signal, _send_telegram)
+ from tools.registry import tool_error
+ 
+ # NOTE: ``send_message`` is intentionally NOT registered as an agent-callable model tool
+@@ -659,41 +659,34 @@ def _via_adapter_route(p, pc, cid, chunk, media, tid, fd):
+ # Native-media chunked routes for built-in platforms; media rides on the final chunk, non-final
+ # chunks get the sentinel. platform -> (media required, sentinel, sender(platform, pconfig,
+ # chat_id, chunk, media, thread_id, force_document)). Matrix: ALL sends use the native adapter
+-# (E2EE text). Signal: attachments ride the JSON-RPC param. Yuanbao / WeCom: media needs the
+-# running gateway. Slack text: live adapter (multi-workspace, ignored_channels gates) else the
++# (E2EE text). Signal: attachments ride the JSON-RPC param. Slack text: live adapter
++# (multi-workspace, ignored_channels gates) else the
+ # plugin's standalone sender. Names resolve at call time so tests can monkeypatch ``_send_signal``.
+ _CHUNKED_ROUTES = {
+     "matrix": (False, [], lambda p, pc, cid, chunk, media, tid, fd: _send_matrix_via_adapter(
+         pc, cid, chunk, media_files=media, thread_id=tid)),
+     "signal": (True, [], lambda p, pc, cid, chunk, media, tid, fd: _send_signal(
+         pc.extra, cid, chunk, media_files=media)),
+-    "yuanbao": (True, None, lambda p, pc, cid, chunk, media, tid, fd: _send_yuanbao(cid, chunk, media_files=media)),
+-    "slack": (False, [], _via_adapter_route),
+-    "wecom": (True, None, _via_adapter_route)}
++    "slack": (False, [], _via_adapter_route)}
+ 
+ # Text-only senders for built-in platforms (generic path; media is dropped with a
+ # warning). Signature: (pconfig, chat_id, chunk, thread_id) -> result.
+ _TEXT_SENDERS = {
+     **{name: partial(_registry_standalone_send, name)
+-       for name in ("whatsapp", "email", "sms", "dingtalk", "feishu", "wecom")},
++       for name in ("whatsapp", "email", "sms")},
+     "signal": lambda pc, cid, chunk, tid: _send_signal(pc.extra, cid, chunk),
+-    "bluebubbles": lambda pc, cid, chunk, tid: _send_bluebubbles(pc.extra, cid, chunk),
+-    "qqbot": lambda pc, cid, chunk, tid: _send_qqbot(pc, cid, chunk),
+-    "yuanbao": lambda pc, cid, chunk, tid: _send_yuanbao(cid, chunk)}
++    "bluebubbles": lambda pc, cid, chunk, tid: _send_bluebubbles(pc.extra, cid, chunk)}
+ 
+-_MEDIA_PLATFORMS_NOTE = "telegram, discord, matrix, weixin, signal, yuanbao, feishu, whatsapp and slack"
++_MEDIA_PLATFORMS_NOTE = "telegram, discord, matrix, signal, whatsapp and slack"
+ 
+ 
+ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None,
+                             force_document=False, mentions=None, args=None):
+     """Route to the platform sender, chunking long text with the adapters' splitter. Order matters:
+-    Weixin first (its native helper must not be blocked by unrelated optional imports such as
+-    lark-oapi), Telegram (chunks itself), plugin standalone media, native chunked, generic text."""
++    Telegram (chunks itself), plugin standalone media, native chunked, generic text."""
+     from gateway.config import Platform
+     platform_name = platform.value if hasattr(platform, "value") else str(platform)
+     media_files = media_files or []
+-    if platform == Platform.WEIXIN:
+-        return await _send_weixin(pconfig, chat_id, message, media_files=media_files)
+     # Telegram chunks internally on the *formatted* text (escaping inflates length).
+     if platform == Platform.TELEGRAM:
+         return await _send_telegram(
+diff --git a/toolsets.py b/toolsets.py
+index 89386334b..a013bfc86 100644
+--- a/toolsets.py
++++ b/toolsets.py
+@@ -43,11 +43,6 @@ _HERMES_CORE_TOOLS = [
+ # Webhook payloads are untrusted third-party content: no file/system execution.
+ _HERMES_WEBHOOK_SAFE_TOOLS = ["web_search", "web_extract", "vision_analyze", "clarify"]
+ _HA_TOOLS = ["ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service"]
+-_FEISHU_TOOLS = [
+-    "feishu_doc_read", "feishu_drive_list_comments", "feishu_drive_list_comment_replies",
+-    "feishu_drive_reply_comment", "feishu_drive_add_comment",
+-]
+-_YUANBAO_TOOLS = ["yb_query_group_info", "yb_query_group_members", "yb_send_dm", "yb_search_sticker", "yb_send_sticker"]
+ 
+ 
+ def _ts(description, tools=(), includes=(), **extra):
+@@ -172,9 +167,6 @@ TOOLSETS = {
+     ),
+     "discord": _ts("Discord read and participate tools (fetch messages, search members, create threads)", ["discord"]),
+     "discord_admin": _ts("Discord server management (list channels/roles, pin messages, assign roles)", ["discord_admin"]),
+-    "yuanbao": _ts("Yuanbao platform tools - group info, member queries, DM, stickers", _YUANBAO_TOOLS),
+-    "feishu_doc": _ts("Read Feishu/Lark document content", ["feishu_doc_read"]),
+-    "feishu_drive": _ts("Feishu/Lark document comment operations (list, reply, add)", _FEISHU_TOOLS[1:]),
+     "spotify": _ts(
+         "Native Spotify playback, search, playlist, album, and library tools",
+         ["spotify_playback", "spotify_devices", "spotify_queue", "spotify_search",
+@@ -228,18 +220,6 @@ TOOLSETS = {
+     "hermes-email": _bundle("Email bot toolset - interact with Hermes via email (IMAP/SMTP)"),
+     "hermes-mattermost": _bundle("Mattermost bot toolset - self-hosted team messaging (full access)"),
+     "hermes-matrix": _bundle("Matrix bot toolset - decentralized encrypted messaging (full access)"),
+-    "hermes-dingtalk": _bundle("DingTalk bot toolset - enterprise messaging platform (full access)"),
+-    "hermes-feishu": _bundle("Feishu/Lark bot toolset - enterprise messaging via Feishu/Lark (full access)", _FEISHU_TOOLS),
+-    "hermes-weixin": _bundle("Weixin bot toolset - personal WeChat messaging via iLink (full access)"),
+-    "hermes-qqbot": _bundle("QQBot toolset - QQ messaging via Official Bot API v2 (full access)"),
+-    "hermes-wecom": _bundle("WeCom bot toolset - enterprise WeChat messaging (full access)"),
+-    "hermes-wecom-callback": _bundle("WeCom callback toolset - enterprise self-built app messaging (full access)"),
+-    "hermes-yuanbao": {
+-        "description": "Yuanbao Bot 元宝消息平台工具集 - 群信息、成员查询、私聊、贴纸表情",
+-        "tools": _HERMES_CORE_TOOLS + _YUANBAO_TOOLS,
+-        "module": "tools.yuanbao_tools",
+-        "includes": [],
+-    },
+     "hermes-sms": _bundle("SMS bot toolset - interact with Hermes via SMS (Twilio)"),
+     "hermes-webhook": _ts("Webhook toolset - receive and process external webhook events", _HERMES_WEBHOOK_SAFE_TOOLS),
+     "hermes-gateway": _ts(
+@@ -248,9 +228,8 @@ TOOLSETS = {
+         includes=[
+             "hermes-telegram", "hermes-discord", "hermes-whatsapp", "hermes-slack",
+             "hermes-signal", "hermes-bluebubbles", "hermes-homeassistant", "hermes-email",
+-            "hermes-sms", "hermes-mattermost", "hermes-matrix", "hermes-dingtalk",
+-            "hermes-feishu", "hermes-wecom", "hermes-wecom-callback", "hermes-weixin",
+-            "hermes-qqbot", "hermes-webhook", "hermes-yuanbao",
++            "hermes-sms", "hermes-mattermost", "hermes-matrix",
++            "hermes-webhook",
+         ],
+     ),
+ }
+diff --git a/hermes_cli/web_server_messaging.py b/hermes_cli/web_server_messaging.py
+index 487771ffd..4ede1139c 100644
+--- a/hermes_cli/web_server_messaging.py
++++ b/hermes_cli/web_server_messaging.py
+@@ -253,7 +253,16 @@ def _messaging_platform_catalog() -> tuple[dict[str, Any], ...]:
+     seen: set[str] = set()
+     entries: list[dict[str, Any]] = []
+     builtin = [m.value for m in Platform.__members__.values() if m.value != "local"]
++    # Local removal: China-market platforms never get UI cards, even though the
++    # Platform enum keeps the members so old configs fail gracefully (warning +
++    # skip at adapter instantiation instead of an unknown-platform crash).
++    _REMOVED_CN_PLATFORM_IDS = frozenset({
++        "dingtalk", "feishu", "wecom", "wecom_callback",
++        "weixin", "qqbot", "yuanbao",
++    })
+     for pid in builtin + list(plugin_map):
++        if pid in _REMOVED_CN_PLATFORM_IDS:
++            continue
+         if pid in seen:
+             continue
+         seen.add(pid)
