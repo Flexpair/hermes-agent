@@ -204,7 +204,7 @@ index a445f7542a..736ba21bf4 100644
    # CI timing report: collect per-job/step durations from the GitHub API,
 diff --git a/.github/workflows/flexpair-linux-config.yml b/.github/workflows/flexpair-linux-config.yml
 new file mode 100644
-index 0000000000..a97edd3507
+index 0000000000..17ba375195
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-config.yml
 @@ -0,0 +1,73 @@
@@ -246,7 +246,7 @@ index 0000000000..a97edd3507
 +      - name: Install Linux test dependencies
 +        uses: ./.github/actions/retry
 +        with:
-+          command: uv sync --locked --python 3.11 --extra all --extra dev
++          command: uv sync --locked --python 3.11 --extra all --group dev
 +
 +      - name: Check Linux installer syntax
 +        run: bash -n scripts/install.sh
@@ -283,7 +283,7 @@ index 0000000000..a97edd3507
 +          NOUS_API_KEY: ""
 diff --git a/.github/workflows/flexpair-linux-full.yml b/.github/workflows/flexpair-linux-full.yml
 new file mode 100644
-index 0000000000..b9f6931476
+index 0000000000..7a8f1c56a6
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-full.yml
 @@ -0,0 +1,55 @@
@@ -333,7 +333,7 @@ index 0000000000..b9f6931476
 +      - name: Install Linux test dependencies
 +        uses: ./.github/actions/retry
 +        with:
-+          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
++          command: uv sync --locked --python 3.11 --extra all --group dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
 +
 +      - name: Run Linux-compatible test slice
 +        run: uv run --no-sync scripts/run_tests.sh
