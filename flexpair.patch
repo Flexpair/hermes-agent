@@ -215,10 +215,10 @@ index 7e6b916f2a..be77421e80 100644
    release:
 diff --git a/.github/workflows/flexpair-linux-config.yml b/.github/workflows/flexpair-linux-config.yml
 new file mode 100644
-index 0000000000..c9f6ed2888
+index 0000000000..7ad2471176
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-config.yml
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,58 @@
 +name: Flexpair Linux config regression tests
 +
 +on:
@@ -270,7 +270,8 @@ index 0000000000..c9f6ed2888
 +            tests/hermes_cli/test_update_check.py \
 +            tests/hermes_cli/test_passive_update_opt_out.py \
 +            tests/hermes_cli/test_setup_hermes_script.py \
-+            tests/scripts/install/test_install_sh_repository_defaults.py
++            tests/scripts/install/test_install_sh_repository_defaults.py \
++            tests/scripts/desktop_update/test_desktop_update_linux_gate.py
 +        env:
 +          HERMES_TEST_WORKERS: "8"
 +          OPENROUTER_API_KEY: ""
@@ -2680,10 +2681,10 @@ index c094bcacfa..b2b31eb8d3 100644
  
 diff --git a/tests/hermes_cli/test_flexpair_fixed_install.py b/tests/hermes_cli/test_flexpair_fixed_install.py
 new file mode 100644
-index 0000000000..4306952e10
+index 0000000000..1c1a9a8d59
 --- /dev/null
 +++ b/tests/hermes_cli/test_flexpair_fixed_install.py
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,77 @@
 +"""A Flexpair checkout cannot be advanced by the bundled update surfaces."""
 +
 +from pathlib import Path
@@ -2715,24 +2716,6 @@ index 0000000000..4306952e10
 +def test_passive_update_check_does_not_contact_network(monkeypatch):
 +    monkeypatch.setattr(banner, "_github_branch_tip", lambda *a, **kw: pytest.fail("network probed"))
 +    assert banner.check_for_updates() is None
-+
-+
-+def test_desktop_update_script_refuses_before_touching_install(tmp_path):
-+    script = Path(__file__).resolve().parents[2] / "scripts/desktop-update/posix.sh"
-+    install_root = tmp_path / "hermes-agent"
-+    install_root.mkdir()
-+    sentinel = install_root / "unchanged"
-+    sentinel.write_text("fixed")
-+    before = sorted(path.name for path in tmp_path.iterdir())
-+    result = subprocess.run(
-+        ["bash", str(script), "--install-root", str(install_root), "--self-test-gate"],
-+        capture_output=True, text=True, timeout=5,
-+    )
-+    assert result.returncode == 2
-+    assert "Updates are disabled" in result.stderr
-+    assert sentinel.read_text() == "fixed"
-+    assert sorted(path.name for path in install_root.iterdir()) == ["unchanged"]
-+    assert sorted(path.name for path in tmp_path.iterdir()) == before
 +
 +
 +@pytest.mark.parametrize("script", ["scripts/install.sh", "setup-hermes.sh"])

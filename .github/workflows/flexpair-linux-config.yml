@@ -49,7 +49,8 @@ jobs:
             tests/hermes_cli/test_update_check.py \
             tests/hermes_cli/test_passive_update_opt_out.py \
             tests/hermes_cli/test_setup_hermes_script.py \
-            tests/scripts/install/test_install_sh_repository_defaults.py
+            tests/scripts/install/test_install_sh_repository_defaults.py \
+            tests/scripts/desktop_update/test_desktop_update_linux_gate.py
         env:
           HERMES_TEST_WORKERS: "8"
           OPENROUTER_API_KEY: ""
