@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
+from ruamel.yaml import YAML
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -12,7 +12,7 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 
 def _workflow(name: str) -> dict:
-    data = yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
+    data = YAML(typ="safe").load((WORKFLOWS / name).read_text(encoding="utf-8"))
     return data
 
 
@@ -92,7 +92,7 @@ def test_linux_lane_runs_focused_fork_regressions() -> None:
 
 def test_full_linux_suite_is_weekly_manual_and_four_way_sliced() -> None:
     workflow = _workflow("flexpair-linux-full.yml")
-    triggers = workflow[True]
+    triggers = workflow["on"]
     job = workflow["jobs"]["test"]
 
     assert "workflow_dispatch" in triggers
