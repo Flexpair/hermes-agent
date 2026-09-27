@@ -215,10 +215,10 @@ index 7e6b916f2a..be77421e80 100644
    release:
 diff --git a/.github/workflows/flexpair-linux-config.yml b/.github/workflows/flexpair-linux-config.yml
 new file mode 100644
-index 0000000000..929a20b275
+index 0000000000..7ad2471176
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-config.yml
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,58 @@
 +name: Flexpair Linux config regression tests
 +
 +on:
@@ -228,12 +228,12 @@ index 0000000000..929a20b275
 +  contents: read
 +
 +concurrency:
-+  group: flexpair-linux-config-${{ github.event.pull_request.number || github.ref }}
-+  cancel-in-progress: true
++  group: flexpair-linux-config-${{ github.sha }}
++  cancel-in-progress: false
 +
 +jobs:
 +  test:
-+    name: Config, installer, and CI tests
++    name: Patched installer and update paths
 +    runs-on: ubuntu-latest
 +    timeout-minutes: 15
 +    steps:
@@ -264,27 +264,14 @@ index 0000000000..929a20b275
 +
 +      - name: Run focused fork regressions
 +        run: |
-+          config_tests=()
-+          while IFS= read -r test_file; do
-+            config_tests+=("$test_file")
-+          done < <(
-+            find tests/hermes_cli -maxdepth 1 -type f \
-+              \( -name 'test_*config*.py' -o -name 'test_*validation*.py' \) \
-+              -print | sort
-+          )
-+          if (( ${#config_tests[@]} == 0 )); then
-+            echo "::error::No CLI configuration tests found"
-+            exit 1
-+          fi
 +          uv run --no-sync scripts/run_tests.sh \
-+            "${config_tests[@]}" \
++            tests/hermes_cli/test_flexpair_fixed_install.py \
++            tests/hermes_cli/test_update_contract.py \
 +            tests/hermes_cli/test_update_check.py \
-+            tests/hermes_cli/test_update_apply_shallow_count.py \
-+            tests/hermes_cli/test_update_behind_count_recovery.py \
 +            tests/hermes_cli/test_passive_update_opt_out.py \
-+            tests/ci/test_supply_chain_scanner.py \
-+            tests/scripts/install \
-+            tests/ci
++            tests/hermes_cli/test_setup_hermes_script.py \
++            tests/scripts/install/test_install_sh_repository_defaults.py \
++            tests/scripts/desktop_update/test_desktop_update_linux_gate.py
 +        env:
 +          HERMES_TEST_WORKERS: "8"
 +          OPENROUTER_API_KEY: ""
@@ -354,10 +341,10 @@ index 0000000000..b9f6931476
 \ No newline at end of file
 diff --git a/.github/workflows/flexpair-patch-replay.yml b/.github/workflows/flexpair-patch-replay.yml
 new file mode 100644
-index 0000000000..b98dbb680e
+index 0000000000..36be1b88d7
 --- /dev/null
 +++ b/.github/workflows/flexpair-patch-replay.yml
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,62 @@
 +name: Flexpair patch replay
 +
 +on:
@@ -369,6 +356,23 @@ index 0000000000..b98dbb680e
 +  contents: read
 +
 +jobs:
++  regressions:
++    name: Linux config, installer, and freeze regressions
++    uses: ./.github/workflows/flexpair-linux-config.yml
++
++  desktop-freeze:
++    name: Desktop update refusal
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
++        with:
++          node-version: 26
++          cache: npm
++      - run: npm ci --ignore-scripts
++      - run: npm exec --workspace apps/desktop -- vitest run --project electron electron/update-handoff-marker.test.ts
++
 +  replay:
 +    name: Patch reproduces branch tree
 +    runs-on: ubuntu-latest
