@@ -98,8 +98,8 @@ def test_admission_marker_refuses_even_on_git_checkout(tmp_path, monkeypatch):
     )
     refusal = evaluate_update_admission(tmp_path)
     assert refusal is not None
-    assert refusal.code == "image-marker"
-    assert "docker pull" in refusal.update_command
+    assert refusal.code == "updates-disabled"
+    assert refusal.update_command == "disabled"
 
 
 def test_admission_invalid_marker_fails_closed(tmp_path, monkeypatch):
@@ -110,8 +110,8 @@ def test_admission_invalid_marker_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(ip, "IMAGE_PROVENANCE_PATH", bad)
     refusal = evaluate_update_admission(tmp_path)
     assert refusal is not None
-    assert refusal.code == "image-marker-invalid"
-    assert "docker pull" in refusal.update_command
+    assert refusal.code == "updates-disabled"
+    assert refusal.update_command == "disabled"
 
 
 def test_admission_no_marker_falls_back_to_heuristics(tmp_path, monkeypatch):
@@ -122,17 +122,18 @@ def test_admission_no_marker_falls_back_to_heuristics(tmp_path, monkeypatch):
         "hermes_cli.config.detect_install_method", lambda *a, **k: "docker"
     )
     refusal = evaluate_update_admission(tmp_path)
-    assert refusal is not None and refusal.code == "docker"
+    assert refusal is not None and refusal.code == "updates-disabled"
 
 
-def test_admission_git_checkout_no_marker_is_admitted(tmp_path, monkeypatch):
+def test_admission_git_checkout_no_marker_is_refused(tmp_path, monkeypatch):
     import hermes_cli.image_provenance as ip
 
     monkeypatch.setattr(ip, "IMAGE_PROVENANCE_PATH", tmp_path / "absent.json")
     monkeypatch.setattr(
         "hermes_cli.config.detect_install_method", lambda *a, **k: "git"
     )
-    assert evaluate_update_admission(tmp_path) is None
+    refusal = evaluate_update_admission(tmp_path)
+    assert refusal is not None and refusal.code == "updates-disabled"
 
 
 def test_admission_nix_refuses(tmp_path, monkeypatch):
@@ -144,7 +145,7 @@ def test_admission_nix_refuses(tmp_path, monkeypatch):
 
     monkeypatch.setattr("hermes_cli.config.detect_install_method", _detect)
     refusal = evaluate_update_admission(tmp_path)
-    assert refusal is not None and refusal.code == "nix"
+    assert refusal is not None and refusal.code == "updates-disabled"
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +192,7 @@ def _sealed_tree(tmp_path: Path, distribution: str) -> Path:
     return root
 
 
+@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
 def test_admission_source_checkout_on_termux_host_refuses_with_apt_hint(tmp_path, monkeypatch):
     """A git checkout is normally admitted, but not on a Termux host: the
     lock has no Android wheels, so a source sync would build sdists on the
@@ -210,6 +212,7 @@ def test_admission_source_checkout_on_termux_host_refuses_with_apt_hint(tmp_path
     assert evaluate_update_admission(tmp_path) is None, "the same checkout off Termux stays updatable"
 
 
+@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
 def test_admission_apt_termux_refuses_with_pkg_upgrade(tmp_path, monkeypatch):
     """A sealed apt-termux tree (no .git) is refused by the steward gate:
     the package manager owns the code tree, so remediation is pkg upgrade
@@ -228,6 +231,7 @@ def test_admission_apt_termux_refuses_with_pkg_upgrade(tmp_path, monkeypatch):
     assert "pkg upgrade hermes-agent" in refusal.update_command
 
 
+@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
 def test_admission_apt_termux_command_comes_from_steward_table(tmp_path, monkeypatch):
     """The apt-termux remediation command is read from the config module's
     ``_UPDATE_COMMAND_BY_METHOD`` table (the same one every install method

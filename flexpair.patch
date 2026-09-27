@@ -1,16 +1,16 @@
 diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
-index 973f4b0917..7f97968b04 100644
+index a445f7542a..736ba21bf4 100644
 --- a/.github/workflows/ci.yaml
 +++ b/.github/workflows/ci.yaml
-@@ -18,7 +18,6 @@ on:
-   pull_request:
-   push:
-     branches: [main]
--
- permissions:
-   contents: read
-   pull-requests: write # needed by lint (PR comment) + supply-chain review_status
-@@ -36,7 +35,10 @@ jobs:
+@@ -55,14 +55,17 @@ jobs:
+   # (all lanes true) so post-merge validation is never weakened.
+   #
+   # A release run (inputs.release) additionally forces every lane true via
+-  # the `release-forced-*` outputs: a stable candidate must run the FULL
++  # the gate-lanes outputs: a stable candidate must run the active fork
+   # pipeline, not the lanes its diff would touch — the diff of a release
+   # tag is not a meaningful applicability signal.
+   # ─────────────────────────────────────────────────────────────────────
    detect:
      name: Detect affected areas
      runs-on: ubuntu-latest
@@ -20,15 +20,9 @@ index 973f4b0917..7f97968b04 100644
 +    # runs during repository fetch.
 +    timeout-minutes: 5
      outputs:
-       python: ${{ steps.classify.outputs.python }}
-       python_prod: ${{ steps.classify.outputs.python_prod }}
-@@ -60,28 +62,30 @@ jobs:
-         id: classify
-         uses: ./.github/actions/detect-changes
-         with:
--          sparse-checkout: scripts/ci/classify_changes.py
--          sparse-checkout-cone-mode: false
-           github-token: ${{ github.token }}
+       python: ${{ steps.gate-lanes.outputs.python }}
+       python_prod: ${{ steps.gate-lanes.outputs.python_prod }}
+@@ -109,22 +112,26 @@ jobs:
  
    # ─────────────────────────────────────────────────────────────────────
    # Lane-gated sub-workflows. Each runs in parallel after detect finishes.
@@ -63,7 +57,7 @@ index 973f4b0917..7f97968b04 100644
      uses: ./.github/workflows/tests-os.yml
      with:
        # The Windows lane spawns the real desktop-update hand-off script
-@@ -92,7 +96,9 @@ jobs:
+@@ -135,7 +142,9 @@ jobs:
    lint:
      name: Python lints
      needs: detect
@@ -74,7 +68,7 @@ index 973f4b0917..7f97968b04 100644
      uses: ./.github/workflows/lint.yml
      with:
        event_name: ${{ needs.detect.outputs.event_name }}
-@@ -100,22 +106,22 @@ jobs:
+@@ -143,23 +152,29 @@ jobs:
    js-tests:
      name: JS & TS checks
      needs: detect
@@ -83,15 +77,13 @@ index 973f4b0917..7f97968b04 100644
 +    if: false
      uses: ./.github/workflows/js-tests.yml
  
-   installer-tests:
-     name: Installer tests
-     needs: detect
--    # Windows-only, and only for PRs that touch install.ps1 or its tests.
--    if: needs.detect.outputs.installer == 'true'
++  installer-tests:
++    name: Installer tests
++    needs: detect
 +    # Windows-only installer coverage remains upstream-owned.
 +    if: false
-     uses: ./.github/workflows/installer-tests.yml
- 
++    uses: ./.github/workflows/installer-tests.yml
++
    rust-tests:
      name: Rust tests
      needs: detect
@@ -102,8 +94,17 @@ index 973f4b0917..7f97968b04 100644
 +    if: false
      uses: ./.github/workflows/rust-tests.yml
  
-   e2e-desktop:
-@@ -139,7 +145,8 @@ jobs:
+   bootstrap-installer:
+     name: Bootstrap installer
+     needs: detect
+     # The bootstrap-installer path: install.sh, the pin fragments it embeds,
+-    # and the version stamp it ships. The PowerShell installer's native tests
+-    # are platforms("windows") pytest files and run in tests-os.
++    # and the version stamp it ships. Windows installer coverage is upstream-owned.
+     if: needs.detect.outputs.bootstrap == 'true'
+     uses: ./.github/workflows/bootstrap-installer.yml
+ 
+@@ -192,7 +207,8 @@ jobs:
    docs-site:
      name: Docs Site
      needs: detect
@@ -113,7 +114,7 @@ index 973f4b0917..7f97968b04 100644
      uses: ./.github/workflows/docs-site-checks.yml
  
    history-check:
-@@ -151,7 +158,8 @@ jobs:
+@@ -204,7 +220,8 @@ jobs:
    contributor-check:
      name: Check contributors
      needs: detect
@@ -123,7 +124,7 @@ index 973f4b0917..7f97968b04 100644
      uses: ./.github/workflows/contributor-check.yml
  
    uv-lockfile:
-@@ -162,7 +170,8 @@ jobs:
+@@ -215,7 +232,8 @@ jobs:
      # blip, a blocking red X — for diffs that cannot desync the lockfile
      # (docs, frontend, prose). Only pyproject.toml / uv.lock can. A
      # `.github/` change still forces it on via the classifier's fail-open.
@@ -133,7 +134,7 @@ index 973f4b0917..7f97968b04 100644
      uses: ./.github/workflows/uv-lockfile-check.yml
  
    infographic-check:
-@@ -183,13 +192,15 @@ jobs:
+@@ -246,13 +264,15 @@ jobs:
    lockfile-diff:
      name: package-lock.json diff
      needs: detect
@@ -151,7 +152,7 @@ index 973f4b0917..7f97968b04 100644
      uses: ./.github/workflows/docker-lint.yml
  
    supply-chain:
-@@ -202,17 +213,6 @@ jobs:
+@@ -265,16 +285,6 @@ jobs:
        scan: ${{ needs.detect.outputs.scan == 'true' }}
        deps: ${{ needs.detect.outputs.deps == 'true' }}
  
@@ -165,60 +166,48 @@ index 973f4b0917..7f97968b04 100644
 -      ci_review_files: ${{ needs.detect.outputs.ci_review_files }}
 -      mcp_catalog: ${{ needs.detect.outputs.mcp_catalog == 'true' }}
 -      supply_chain: ${{ needs.supply-chain.outputs.critical_findings == 'true' }}
--
+ 
    # ─────────────────────────────────────────────────────────────────────
    # Gate: runs after everything. ``if: always()`` ensures it reports a
-   # status even when some deps were skipped. Only actual ``failure``
-@@ -243,11 +243,7 @@ jobs:
-       - docker-lint
+@@ -300,6 +310,7 @@ jobs:
+       - tests-os
+       - lint
+       - js-tests
++      - installer-tests
+       - rust-tests
+       - bootstrap-installer
+       - e2e-desktop
+@@ -316,11 +327,8 @@ jobs:
        - profile-artifact-check
+       - icons-freshness-check
        - supply-chain
 -      - review-labels
 -      # OSV runs weekly against main (osv-scanner.yml schedule), not per PR:
 -      # every PR was reporting the same repo-wide baseline of pinned-dep CVEs
 -      # in its review comment, and the SARIF upload tripped GitHub's
 -      # per-installation API rate limit during merge trains.
++
 +      # OSV runs weekly against main, not per pull request.
        # The image build runs in its own workflow (docker.yml) and reports
        # its own check. It was never required here, because it is too slow
        # to block a merge. A separate run also stops it from holding this
-@@ -271,13 +267,16 @@ jobs:
-           print(f'needs-json={json.dumps(compact)}')
-           with open('$GITHUB_OUTPUT', 'a') as f:
-               f.write(f'needs-json={json.dumps(compact)}\n')
--          failed = [name for name, info in needs.items() if info['result'] == 'failure']
-+          failed = [
-+              name for name, info in needs.items()
-+              if info['result'] not in ('success', 'skipped')
-+          ]
-           for name, info in sorted(needs.items()):
-               result = info['result']
-               icon = '✅' if result in ('success', 'skipped') else '❌'
-               print(f'{icon} {name}: {result}')
-           if failed:
--              print(f'::error::{len(failed)} job(s) failed: {\", \".join(failed)}')
-+              print(f'::error::{len(failed)} job(s) did not pass: {\", \".join(failed)}')
-               sys.exit(1)
-           print('All checks passed (or were skipped)')
-           "
-diff --git a/.github/workflows/docker.yml b/.github/workflows/docker.yml
-index 7e6b916f2a..be77421e80 100644
---- a/.github/workflows/docker.yml
-+++ b/.github/workflows/docker.yml
-@@ -9,7 +9,6 @@ on:
-   #
-   # Trusted main pushes resolve the environment-scoped Docker Hub secrets in
-   # this same workflow, never across a workflow boundary.
--  pull_request:
-   push:
-     branches: [main]
-   release:
+@@ -345,7 +353,9 @@ jobs:
+         run: |
+           args=()
+           if [ "$RELEASE" = true ]; then args+=(--release); fi
+-          printf '%s' "$NEEDS" | python3 scripts/ci/required_results.py "${args[@]}"
++          # Fork-disabled upstream lanes intentionally skip on every event,
++          # including release. Keep strict release checks for active lanes.
++          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "js-tests", "installer-tests", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
+ 
+   # ─────────────────────────────────────────────────────────────────────
+   # CI timing report: collect per-job/step durations from the GitHub API,
 diff --git a/.github/workflows/flexpair-linux-config.yml b/.github/workflows/flexpair-linux-config.yml
 new file mode 100644
-index 0000000000..c9f6ed2888
+index 0000000000..12d560dd49
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-config.yml
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,73 @@
 +name: Flexpair Linux config regression tests
 +
 +on:
@@ -233,7 +222,7 @@ index 0000000000..c9f6ed2888
 +
 +jobs:
 +  test:
-+    name: Patched installer and update paths
++    name: Config, installer, and CI tests
 +    runs-on: ubuntu-latest
 +    timeout-minutes: 15
 +    steps:
@@ -249,28 +238,44 @@ index 0000000000..c9f6ed2888
 +            pyproject.toml
 +            uv.lock
 +
-+      - name: Set up Python 3.11
++      - name: Set up Python 3.14
 +        uses: ./.github/actions/retry
 +        with:
-+          command: uv python install 3.11
++          command: uv python install 3.14
 +
 +      - name: Install Linux test dependencies
 +        uses: ./.github/actions/retry
 +        with:
-+          command: uv sync --locked --python 3.11 --extra all --extra dev
++          command: uv sync --locked --python 3.14 --extra all --group dev
 +
 +      - name: Check Linux installer syntax
 +        run: bash -n scripts/install.sh
 +
 +      - name: Run focused fork regressions
 +        run: |
++          config_tests=()
++          while IFS= read -r test_file; do
++            config_tests+=("$test_file")
++          done < <(
++            find tests/hermes_cli -maxdepth 1 -type f \
++              \( -name 'test_*config*.py' -o -name 'test_*validation*.py' \) \
++              -print | sort
++          )
++          if (( ${#config_tests[@]} == 0 )); then
++            echo "::error::No CLI configuration tests found"
++            exit 1
++          fi
 +          uv run --no-sync scripts/run_tests.sh \
++            "${config_tests[@]}" \
 +            tests/hermes_cli/test_flexpair_fixed_install.py \
 +            tests/hermes_cli/test_update_contract.py \
 +            tests/hermes_cli/test_update_check.py \
++            tests/hermes_cli/test_update_apply_shallow_count.py \
++            tests/hermes_cli/test_update_behind_count_recovery.py \
 +            tests/hermes_cli/test_passive_update_opt_out.py \
 +            tests/hermes_cli/test_setup_hermes_script.py \
-+            tests/scripts/install/test_install_sh_repository_defaults.py
++            tests/scripts/install \
++            tests/ci
 +        env:
 +          HERMES_TEST_WORKERS: "8"
 +          OPENROUTER_API_KEY: ""
@@ -278,7 +283,7 @@ index 0000000000..c9f6ed2888
 +          NOUS_API_KEY: ""
 diff --git a/.github/workflows/flexpair-linux-full.yml b/.github/workflows/flexpair-linux-full.yml
 new file mode 100644
-index 0000000000..b9f6931476
+index 0000000000..f0ee2bbb25
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-full.yml
 @@ -0,0 +1,55 @@
@@ -320,15 +325,15 @@ index 0000000000..b9f6931476
 +            pyproject.toml
 +            uv.lock
 +
-+      - name: Set up Python 3.11
++      - name: Set up Python 3.14
 +        uses: ./.github/actions/retry
 +        with:
-+          command: uv python install 3.11
++          command: uv python install 3.14
 +
 +      - name: Install Linux test dependencies
 +        uses: ./.github/actions/retry
 +        with:
-+          command: uv sync --locked --python 3.11 --extra all --extra dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
++          command: uv sync --locked --python 3.14 --extra all --group dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
 +
 +      - name: Run Linux-compatible test slice
 +        run: uv run --no-sync scripts/run_tests.sh
@@ -340,10 +345,10 @@ index 0000000000..b9f6931476
 \ No newline at end of file
 diff --git a/.github/workflows/flexpair-patch-replay.yml b/.github/workflows/flexpair-patch-replay.yml
 new file mode 100644
-index 0000000000..36be1b88d7
+index 0000000000..6e52dad070
 --- /dev/null
 +++ b/.github/workflows/flexpair-patch-replay.yml
-@@ -0,0 +1,62 @@
+@@ -0,0 +1,64 @@
 +name: Flexpair patch replay
 +
 +on:
@@ -380,20 +385,22 @@ index 0000000000..36be1b88d7
 +        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 +        with:
 +          fetch-depth: 0
-+      - name: Replay patch from original base
++      - name: Replay patch from upstream-synced base
 +        shell: bash
 +        run: |
 +          set -euo pipefail
 +          test -f flexpair.patch
-+          # --follow finds the original addition across patch-file renames.
-+          creation=$(git log --follow --diff-filter=A --format=%H HEAD -- flexpair.patch)
-+          test "$(printf '%s\n' "$creation" | wc -l)" -eq 1
-+          base=$(git rev-parse "${creation}^" 2>/dev/null)
++          # The branch and fork main share the patch-only commit. Its parent
++          # is the upstream-synced source tree against which this patch is built.
++          patch_commit=$(git merge-base HEAD origin/main)
++          test -n "$patch_commit"
++          base=$(git rev-parse "${patch_commit}^" 2>/dev/null)
 +          index=$(mktemp "${RUNNER_TEMP}/flexpair-index.XXXXXX")
 +          trap 'rm -f "$index"' EXIT
 +          rm -f "$index"
 +          export GIT_INDEX_FILE="$index"
 +          git read-tree "$base"
++          git update-index --force-remove flexpair.patch
 +          git apply --cached --check flexpair.patch
 +          git apply --cached flexpair.patch
 +          replayed=$(git write-tree)
@@ -408,10 +415,10 @@ index 0000000000..36be1b88d7
 +          echo "Patch reproduces tree $expected from base $base"
 diff --git a/.github/workflows/js-autofix.yml b/.github/workflows/js-autofix.yml
 deleted file mode 100644
-index bd4ee6d1c9..0000000000
+index 8db763fd28..0000000000
 --- a/.github/workflows/js-autofix.yml
 +++ /dev/null
-@@ -1,276 +0,0 @@
+@@ -1,273 +0,0 @@
 -name: auto-fix lint issues & formatting
 -
 -# On push to main (or manual trigger), run `npm run fix` on each workspace
@@ -479,14 +486,11 @@ index bd4ee6d1c9..0000000000
 -    steps:
 -      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 -
--      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+-      - name: Set up locked Node and npm
+-        id: node
+-        uses: ./.github/actions/setup-pm
 -        with:
--          node-version: 26
--          cache: npm
--
--      - name: grab npm 12
--        run: |
--          npm i -g npm@12
+-          toolchain: node
 -
 -      # --ignore-scripts: eslint only needs TS sources + eslint packages.
 -      - uses: ./.github/actions/retry
@@ -714,7 +718,7 @@ index 6eb1a4445e..a14f5980b4 100644
      timeout-minutes: 40
      steps:
 diff --git a/.github/workflows/nix.yml b/.github/workflows/nix.yml
-index ccd47d1b09..1eea9e6641 100644
+index 5dc68c84ab..45ad834f66 100644
 --- a/.github/workflows/nix.yml
 +++ b/.github/workflows/nix.yml
 @@ -11,7 +11,6 @@ name: Nix flake check
@@ -724,7 +728,7 @@ index ccd47d1b09..1eea9e6641 100644
 -  pull_request:
    push:
      branches: [main]
- 
+   workflow_call:
 diff --git a/.github/workflows/supply-chain-audit.yml b/.github/workflows/supply-chain-audit.yml
 index d73b749ab4..489810c8e9 100644
 --- a/.github/workflows/supply-chain-audit.yml
@@ -904,7 +908,7 @@ index d73b749ab4..489810c8e9 100644
            if [ -z "$ADDED" ]; then
              echo "found=false" >> "$GITHUB_OUTPUT"
 diff --git a/AGENTS.md b/AGENTS.md
-index c704bb8c9d..e32396380e 100644
+index 832df27767..6415acaaf1 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
 @@ -7,6 +7,23 @@ past that); see the **routing table** at the end and read the area file before e
@@ -932,10 +936,10 @@ index c704bb8c9d..e32396380e 100644
  
  Hermes is a personal AI agent that runs the same agent core across a CLI, a messaging
 diff --git a/apps/desktop/e2e/fixtures.ts b/apps/desktop/e2e/fixtures.ts
-index 134e957d88..17e28cbe1e 100644
+index 674d6f5508..b1a7ccea44 100644
 --- a/apps/desktop/e2e/fixtures.ts
 +++ b/apps/desktop/e2e/fixtures.ts
-@@ -121,7 +121,7 @@ export function createSandbox(prefix: string): Sandbox {
+@@ -134,7 +134,7 @@ export function createSandbox(prefix: string): Sandbox {
    )
  
    // Pin Chromium actual-size zoom (level 0) for the suite. Fresh installs
@@ -945,54 +949,98 @@ index 134e957d88..17e28cbe1e 100644
    // 100%. Without this file every sandbox would inherit the product default
    // and fail pointer interception + snapshot diffs.
 diff --git a/apps/desktop/e2e/onboarding-settings.spec.ts b/apps/desktop/e2e/onboarding-settings.spec.ts
-index 6fe1253cdb..c25551a6f4 100644
---- a/apps/desktop/e2e/onboarding-settings.spec.ts
+new file mode 100644
+index 0000000000..d29ca26ab3
+--- /dev/null
 +++ b/apps/desktop/e2e/onboarding-settings.spec.ts
-@@ -20,10 +20,11 @@ test('input setup survives a fresh-install zoom restore before onboarding', asyn
-     app = launched.app
-     const page = launched.page
-     await page.waitForSelector('button', { state: 'attached' })
+@@ -0,0 +1,82 @@
++import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
++import { createRequire } from 'node:module'
++import path from 'node:path'
++
++import { buildAppEnv, createSandbox, launchDesktop, setupNoProvider } from './fixtures'
++import { type ElectronApplication, expect, type Page, test } from './test'
++
++const { prepareWindowForInput } = createRequire(import.meta.url)(
++  '../../../tests/install/e2e-assets/window-input.cjs',
++) as { prepareWindowForInput: (app: ElectronApplication, page: Page) => Promise<void> }
++
++test('input setup survives a fresh-install zoom restore before onboarding', async () => {
++  const sandbox = createSandbox('cold-input')
++  unlinkSync(path.join(sandbox.userDataDir, 'zoom-state.json'))
++  writeFileSync(path.join(sandbox.hermesHome, 'config.yaml'), '# no provider\n', 'utf8')
++  let app: ElectronApplication | undefined
++
++  try {
++    const launched = await launchDesktop(buildAppEnv(sandbox))
++    app = launched.app
++    const page = launched.page
++    await page.waitForSelector('button', { state: 'attached' })
 +    const appWindow = await app.browserWindow(page)
-+    await expect.poll(() => appWindow.evaluate(win => win.webContents.getZoomFactor())).toBeCloseTo(1.5)
-     await prepareWindowForInput(app, page)
-     const later = page.getByRole('button', { name: /choose a provider later/i })
-     await expect(later).toBeVisible({ timeout: 60_000 })
--    const appWindow = await app.browserWindow(page)
-     await appWindow.evaluate(win => win.emit('focus'))
-     await expect.poll(() => appWindow.evaluate(win => win.webContents.getZoomFactor())).toBeCloseTo(1)
-     await later.click({ timeout: 5_000 })
++    await prepareWindowForInput(app, page)
++    const later = page.getByRole('button', { name: /choose a provider later/i })
++    await expect(later).toBeVisible({ timeout: 60_000 })
++    await appWindow.evaluate(win => win.emit('focus'))
++    await expect.poll(() => appWindow.evaluate(win => win.webContents.getZoomFactor())).toBeCloseTo(1)
++    await later.click({ timeout: 5_000 })
++    await expect(later).toBeHidden()
++  } finally {
++    await app?.close().catch(() => undefined)
++    sandbox.cleanup()
++  }
++})
++
++// Exercise the install driver's input setup against the real renderer/backend,
++// with no installer, update, credentials, or live user data.
++for (const lifecycleEvent of ['focus', 'navigation'] as const) {
++  test(`onboarding input zoom survives ${lifecycleEvent} and opens Settings`, async () => {
++    const fixture = await setupNoProvider()
++    const { app, page, sandbox } = fixture
++
++    try {
++      await prepareWindowForInput(app, page)
++      const later = page.getByRole('button', { name: /choose a provider later/i })
++      await expect(later).toBeVisible({ timeout: 60_000 })
++      const zoomFile = path.join(sandbox.userDataDir, 'zoom-state.json')
++      const savedLevel = () => JSON.parse(readFileSync(zoomFile, 'utf8')).zoomLevel as number
++      await page.evaluate(() => {
++        const desktop = (window as unknown as { hermesDesktop: { zoom: { setPercent: (percent: number) => void } } }).hermesDesktop
++        desktop.zoom.setPercent(90)
++      })
++      await expect.poll(savedLevel).toBeCloseTo(Math.log(0.9) / Math.log(1.2))
++
++      await prepareWindowForInput(app, page)
++      const appWindow = await app.browserWindow(page)
++
++      // The same lifecycle callback that fires when another window takes focus
++      // must restore our input scale, not the original 90% preference.
++      if (lifecycleEvent === 'focus') {
++        await appWindow.evaluate(win => win.emit('focus'))
++      } else {
++        await page.evaluate(() => { window.location.hash = '#/settings' })
++      }
++
++      await expect.poll(() => appWindow.evaluate(win => win.webContents.getZoomFactor())).toBeCloseTo(1)
++      expect(savedLevel()).toBe(0)
++      await later.click({ timeout: 5_000 })
++      await expect(later).toBeHidden()
++
++      if (lifecycleEvent === 'navigation') {
++        await page.evaluate(() => { window.location.hash = '#/' })
++      }
++
++      await page.getByRole('button', { name: 'Open settings', exact: true }).click({ timeout: 5_000 })
++      await expect(page).toHaveURL(/settings/)
++    } finally {
++      await fixture.cleanup()
++    }
++  })
++}
 diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
-index 6779b7ac93..05f3f95a40 100644
+index cc8935ceb2..1e6dc0eccf 100644
 --- a/apps/desktop/electron/main.ts
 +++ b/apps/desktop/electron/main.ts
-@@ -3334,7 +3334,15 @@ async function resolveHealedBranch(updateRoot, branch) {
- // update changes HEAD, which busts the cache immediately). `git fetch` runs only
- // inside applyUpdates. `force` (menu item, Settings "Check now") skips the
- // cache; the renderer's background poller never passes it.
-+function updatesAreDisabled(): boolean {
-+  return true
-+}
-+
- async function checkUpdates({ force = false }: { force?: boolean } = {}) {
-+  if (updatesAreDisabled()) {
-+    return { supported: false, reason: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
-+  }
-+
-   const updateRoot = resolveUpdateRoot()
-   let { branch } = readDesktopUpdateConfig()
-   const gitDir = path.join(updateRoot, '.git')
-@@ -4180,6 +4188,10 @@ async function releaseBackendLock(updateRoot, tag) {
- // Detection (checkUpdates / commit changelog / "N behind") stays in the UI;
- // only this apply action changed.
- async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
-+  if (updatesAreDisabled()) {
-+    return { ok: false, error: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
-+  }
-+
-   if (updateInFlight) {
-     throw new Error('An update is already in progress.')
-   }
-@@ -16425,6 +16437,9 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
+@@ -16248,6 +16248,9 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
  // dials, drains only exact Desktop-owned processes, runs the launcher outside
  // those serves, proves the correlated receipt, and restores every prior scope.
  async function requestManagedSshUpdate(rawId) {
@@ -1002,7 +1050,7 @@ index 6779b7ac93..05f3f95a40 100644
    const connectionId = String(rawId || '').trim()
    const existing = managedConnectionUpdates.get(connectionId)
  
-@@ -16476,6 +16491,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
+@@ -16299,6 +16302,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
  // app's own update pipeline; Desktop-managed SSH uses the transactional
  // drain/update/restore lifecycle; URL remotes POST their backend updater.
  ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
@@ -1013,12 +1061,56 @@ index 6779b7ac93..05f3f95a40 100644
  
    // Optional renderer-side exclusions: the everything-update flow dispatches
 diff --git a/apps/desktop/electron/update-handoff-marker.test.ts b/apps/desktop/electron/update-handoff-marker.test.ts
-index a8f48e6a38..089f2d8a23 100644
+index 352412ac6d..f8f9a98116 100644
 --- a/apps/desktop/electron/update-handoff-marker.test.ts
 +++ b/apps/desktop/electron/update-handoff-marker.test.ts
-@@ -98,10 +98,18 @@ function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => R
+@@ -17,11 +17,6 @@ function sandbox(tag: string) {
+   return { home, installRoot }
+ }
+ 
+-function markerStartedAt(home: string): number {
+-  const [, startedAt] = fs.readFileSync(path.join(home, '.hermes-update-in-progress'), 'utf8').split('\n')
+-
+-  return Number.parseInt(startedAt, 10)
+-}
+ 
+ function runPosix(installRoot: string, startedAt?: string) {
+   const env: NodeJS.ProcessEnv = { ...process.env, HERMES_HOME: path.dirname(installRoot) }
+@@ -42,38 +37,11 @@ function runPosix(installRoot: string, startedAt?: string) {
    )
  }
+ 
+-function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => ReturnType<typeof spawnSync>) {
+-  const preserved = sandbox('preserved')
+-  const acquiredAt = Math.floor(Date.now() / 1000) - 300
+-  const preservedResult = run(preserved.installRoot, String(acquiredAt))
+-
+-  assert.equal(preservedResult.status, 0, String(preservedResult.stderr || preservedResult.stdout))
+-  assert.equal(markerStartedAt(preserved.home), acquiredAt, 'the script must preserve the Desktop acquisition time')
+-
+-  const refreshed = sandbox('refreshed')
+-  fs.writeFileSync(path.join(refreshed.home, '.hermes-update-in-progress'), '999999\n1\n')
+-  const before = Math.floor(Date.now() / 1000)
+-  const refreshedResult = run(refreshed.installRoot, 'malformed')
+-  const after = Math.floor(Date.now() / 1000)
+-
+-  assert.equal(refreshedResult.status, 0, String(refreshedResult.stderr || refreshedResult.stdout))
+-  assert.ok(
+-    markerStartedAt(refreshed.home) >= before && markerStartedAt(refreshed.home) <= after,
+-    'an invalid hand-off timestamp must start a fresh claim'
+-  )
+-
+-  const oversized = sandbox('oversized')
+-  const oversizedBefore = Math.floor(Date.now() / 1000)
+-  const oversizedResult = run(oversized.installRoot, '99999999999999999999')
+-  const oversizedAfter = Math.floor(Date.now() / 1000)
+-
+-  assert.equal(oversizedResult.status, 0, String(oversizedResult.stderr || oversizedResult.stdout))
+-  assert.ok(
+-    markerStartedAt(oversized.home) >= oversizedBefore && markerStartedAt(oversized.home) <= oversizedAfter,
+-    'an oversized hand-off timestamp must start a fresh claim'
+-  )
+-}
  
 -test.skipIf(process.platform === 'win32')('POSIX hand-off preserves the Desktop marker acquisition time', () => {
 -  assertScriptHandoff(runPosix)
@@ -1029,18 +1121,8 @@ index a8f48e6a38..089f2d8a23 100644
 +  assert.match(String(result.stderr), /Updates are disabled/)
 +  assert.equal(fs.existsSync(path.join(home, '.hermes-update-in-progress')), false)
  })
- 
--test.skipIf(process.platform !== 'win32')('PowerShell hand-off preserves the Desktop marker acquisition time', () => {
--  assertScriptHandoff(runWindows)
-+test.skipIf(process.platform !== 'win32')('PowerShell hand-off refuses updates without creating a marker', () => {
-+  const { home, installRoot } = sandbox('disabled')
-+  const result = runWindows(installRoot, '1234567890')
-+  assert.equal(result.status, 2)
-+  assert.match(String(result.stderr), /Updates are disabled/)
-+  assert.equal(fs.existsSync(path.join(home, '.hermes-update-in-progress')), false)
- })
 diff --git a/apps/desktop/electron/zoom.test.ts b/apps/desktop/electron/zoom.test.ts
-index 9d973fc970..1506bf1b60 100644
+index 20bd5d70fb..a1b836b687 100644
 --- a/apps/desktop/electron/zoom.test.ts
 +++ b/apps/desktop/electron/zoom.test.ts
 @@ -6,6 +6,7 @@
@@ -1051,20 +1133,6 @@ index 9d973fc970..1506bf1b60 100644
  import { test, vi } from 'vitest'
  
  import {
-@@ -30,10 +31,10 @@ test('storage key stays stable so persisted zoom survives upgrades', () => {
-   assert.equal(ZOOM_STORAGE_KEY, 'hermes:desktop:zoomLevel')
- })
- 
--test('default zoom matches the Appearance 90% preset', () => {
-+test('default zoom matches the Appearance preset', () => {
-   assert.equal(ZOOM_STEP, 0.1)
--  assert.equal(zoomLevelToPercent(DEFAULT_ZOOM_LEVEL), 90)
--  assert.equal(DEFAULT_ZOOM_LEVEL, percentToZoomLevel(90))
-+  assert.equal(zoomLevelToPercent(DEFAULT_ZOOM_LEVEL), DEFAULT_ZOOM_PERCENT)
-+  assert.equal(DEFAULT_ZOOM_LEVEL, percentToZoomLevel(DEFAULT_ZOOM_PERCENT))
- })
- 
- test('clampZoomLevel rejects garbage and enforces bounds', () => {
 diff --git a/apps/desktop/electron/zoom.ts b/apps/desktop/electron/zoom.ts
 index 434ba02b05..ae4847ff5c 100644
 --- a/apps/desktop/electron/zoom.ts
@@ -1134,10 +1202,10 @@ index ad6ff57911..7f4feccc36 100644
  
  import { $rightRailActiveTabId } from '@/store/layout'
 diff --git a/apps/desktop/src/app/settings/appearance-settings.tsx b/apps/desktop/src/app/settings/appearance-settings.tsx
-index 25ff3a8396..0e7191339c 100644
+index 2c46095ab5..4b44a0ac1e 100644
 --- a/apps/desktop/src/app/settings/appearance-settings.tsx
 +++ b/apps/desktop/src/app/settings/appearance-settings.tsx
-@@ -164,7 +164,7 @@ function ThemePreview({ name, mode }: { name: string; mode: 'light' | 'dark' })
+@@ -169,7 +169,7 @@ function ThemePreview({ name, mode }: { name: string; mode: 'light' | 'dark' })
  }
  
  // UI scale presets, as zoom percentages. 100 is Chromium's actual-size
@@ -1147,7 +1215,7 @@ index 25ff3a8396..0e7191339c 100644
  // presets highlights nothing, and the row description keeps showing the
  // exact current percent.
 diff --git a/apps/desktop/src/store/zoom.ts b/apps/desktop/src/store/zoom.ts
-index 821563acc4..f60efb8f61 100644
+index 81816fb01d..98f560d397 100644
 --- a/apps/desktop/src/store/zoom.ts
 +++ b/apps/desktop/src/store/zoom.ts
 @@ -8,11 +8,12 @@
@@ -1167,10 +1235,10 @@ index 821563acc4..f60efb8f61 100644
  export function setZoomPercent(percent: number): void {
    window.hermesDesktop?.zoom?.setPercent(percent)
 diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
-index bf8f079ecb..53d5076552 100644
+index 029b290e75..7724dd8729 100644
 --- a/apps/desktop/src/styles.css
 +++ b/apps/desktop/src/styles.css
-@@ -3680,3 +3680,46 @@ html[data-hud-window] [data-slot='popover-content'] {
+@@ -3740,3 +3740,46 @@ html[data-hud-window] [data-slot='popover-content'] {
  [data-hud-shell] [data-slot='composer-bounds'] *::-webkit-scrollbar {
    display: none;
  }
@@ -1218,28 +1286,46 @@ index bf8f079ecb..53d5076552 100644
 +  border-color: #157878 !important;
 +}
 diff --git a/apps/desktop/src/themes/presets.test.ts b/apps/desktop/src/themes/presets.test.ts
-index 9ca84f510c..6208ac10b7 100644
+index 3bc94baefe..fb6bf7d565 100644
 --- a/apps/desktop/src/themes/presets.test.ts
 +++ b/apps/desktop/src/themes/presets.test.ts
-@@ -39,14 +39,56 @@ describe('theme typography emoji fallback (#40364)', () => {
+@@ -1,6 +1,6 @@
+ import { describe, expect, it } from 'vitest'
+ 
+-import { BUILTIN_THEME_LIST, DEFAULT_TYPOGRAPHY, nousTheme } from './presets'
++import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, EMOJI_FALLBACK, nousAltTheme, nousTheme } from './presets'
+ 
+ // #40364: none of the UI text/mono fonts carry emoji glyphs, so every font
+ // stack must end with a color-emoji fallback or emoji render as tofu on
+@@ -24,6 +24,12 @@ describe('theme typography emoji fallback (#40364)', () => {
+   it.each(stacks)('%s includes a color-emoji font', (_label, stack) => {
+     expect(stack).toMatch(/Apple Color Emoji|Segoe UI Emoji|Noto Color Emoji|(^|,\s*)emoji\b/)
    })
++
++  it('EMOJI_FALLBACK lists the major platform emoji fonts', () => {
++    expect(EMOJI_FALLBACK).toContain('Apple Color Emoji')
++    expect(EMOJI_FALLBACK).toContain('Segoe UI Emoji')
++    expect(EMOJI_FALLBACK).toContain('Noto Color Emoji')
++  })
  })
  
--// The pre-GitHub Nous palette stays available as nous-alt; the default name
--// still means GitHub chrome + brand blue.
-+// The pre-GitHub Nous palette stays available as nous-alt; nous is still
-+// GitHub chrome + brand blue (the Flexpair fork defaults to flexpair-dark).
- describe('nous-alt is the retired Nous, not the default', () => {
--  it('is registered under its own name and leaves nous as the default', () => {
--    expect(DEFAULT_SKIN_NAME).toBe('nous')
-+  it('is registered under its own name, apart from nous', () => {
-+    expect(DEFAULT_SKIN_NAME).toBe('flexpair-dark')
-     expect(BUILTIN_THEMES['nous-alt']).toBe(nousAltTheme)
-     expect(BUILTIN_THEMES.nous).not.toBe(nousAltTheme)
-     expect(nousAltTheme.darkColors?.background).toBe('#0D2F86')
-     expect(BUILTIN_THEMES.nous.darkColors?.background).not.toBe(nousAltTheme.darkColors?.background)
+ describe('theme typography Latin Extended fallback (#61392)', () => {
+@@ -61,3 +67,57 @@ describe('theme typography Latin Extended fallback (#61392)', () => {
+     expect(DEFAULT_TYPOGRAPHY.fontMono).toContain('Noto Sans Mono')
    })
  })
++
++// The pre-GitHub Nous palette stays available as nous-alt; nous is still
++// GitHub chrome + brand blue (the Flexpair fork defaults to flexpair-dark).
++describe('nous-alt is the retired Nous, not the default', () => {
++  it('is registered under its own name, apart from nous', () => {
++    expect(DEFAULT_SKIN_NAME).toBe('flexpair-dark')
++    expect(BUILTIN_THEMES['nous-alt']).toBe(nousAltTheme)
++    expect(BUILTIN_THEMES.nous).not.toBe(nousAltTheme)
++    expect(nousAltTheme.darkColors?.background).toBe('#0D2F86')
++    expect(BUILTIN_THEMES.nous.darkColors?.background).not.toBe(nousAltTheme.darkColors?.background)
++  })
++})
 +
 +// Flexpair fork: company themes are built in, flexpair-dark is the default, and
 +// every palette color is white, black, cyan (or a darkening) or a #157878 step.
@@ -1283,7 +1369,7 @@ index 9ca84f510c..6208ac10b7 100644
 +  })
 +})
 diff --git a/apps/desktop/src/themes/presets.ts b/apps/desktop/src/themes/presets.ts
-index 3c5b963f58..8b8ae27428 100644
+index f4f24f9426..f3952d37c8 100644
 --- a/apps/desktop/src/themes/presets.ts
 +++ b/apps/desktop/src/themes/presets.ts
 @@ -20,7 +20,7 @@
@@ -1295,7 +1381,7 @@ index 3c5b963f58..8b8ae27428 100644
  
  // Color-emoji fonts to append to every stack as a last resort. None of the UI
  // text/mono fonts carry emoji glyphs, so without this emoji render as tofu
-@@ -387,7 +387,134 @@ export const slateTheme: DesktopTheme = {
+@@ -395,7 +395,134 @@ export const slateTheme: DesktopTheme = {
    }
  }
  
@@ -1430,22 +1516,22 @@ index 3c5b963f58..8b8ae27428 100644
    nous: nousTheme,
    github: githubTheme,
    catppuccin: catppuccinTheme,
-@@ -404,4 +531,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
+@@ -412,4 +539,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
  export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
  
  /** Skin used when nothing is persisted or the persisted name is retired. */
 -export const DEFAULT_SKIN_NAME = 'nous'
 +export const DEFAULT_SKIN_NAME = 'flexpair-dark'
 diff --git a/apps/desktop/tsconfig.electron.json b/apps/desktop/tsconfig.electron.json
-index b0b82a2750..89f64b38de 100644
+index c8ed7be261..15ed2c8290 100644
 --- a/apps/desktop/tsconfig.electron.json
 +++ b/apps/desktop/tsconfig.electron.json
-@@ -16,6 +16,6 @@
+@@ -17,6 +17,6 @@
      "rootDir": "..",
      "outDir": "build/electron-types"
    },
--  "include": ["electron", "../shared/src/ansi.ts", "../shared/src/data-url-read-max.ts", "../shared/src/translucency.ts"],
-+  "include": ["electron", "../shared/src/ansi.ts", "../shared/src/data-url-read-max.ts", "../shared/src/desktop-zoom.ts", "../shared/src/translucency.ts"],
+-  "include": ["electron", "product-identity.cjs", "product-identity.d.cts", "update-feed.cjs", "update-feed.d.cts", "../shared/src/ansi.ts", "../shared/src/data-url-read-max.ts", "../shared/src/translucency.ts"],
++  "include": ["electron", "product-identity.cjs", "product-identity.d.cts", "update-feed.cjs", "update-feed.d.cts", "../shared/src/ansi.ts", "../shared/src/data-url-read-max.ts", "../shared/src/desktop-zoom.ts", "../shared/src/translucency.ts"],
    "exclude": ["src", "electron/**/*.e2e.mts"]
  }
 diff --git a/apps/shared/package.json b/apps/shared/package.json
@@ -1470,10 +1556,10 @@ index 0000000000..41686158df
 +export const DEFAULT_ZOOM_PERCENT = 150
 \ No newline at end of file
 diff --git a/apps/shared/src/index.ts b/apps/shared/src/index.ts
-index aada831da1..d571c8630b 100644
+index 35ddac34f6..3c949682d5 100644
 --- a/apps/shared/src/index.ts
 +++ b/apps/shared/src/index.ts
-@@ -58,6 +58,7 @@ export {
+@@ -60,6 +60,7 @@ export {
    DATA_URL_READ_MAX_MAX_MB,
    DATA_URL_READ_MIN_MAX_MB
  } from './data-url-read-max'
@@ -1498,130 +1584,321 @@ index 0000000000..ee529dd10d
 +Flexpair
 +# Installer fork PR #43
 diff --git a/hermes_cli/banner.py b/hermes_cli/banner.py
-index 39358fb0e0..42343a2f3c 100644
+index 8466f2e56f..c7ca1c85b0 100644
 --- a/hermes_cli/banner.py
 +++ b/hermes_cli/banner.py
-@@ -224,7 +224,9 @@ def _is_full_sha(value: Optional[str]) -> bool:
- _compare_payload_cache: Dict[tuple, dict] = {}
+@@ -4,8 +4,10 @@ import logging
+ import os
+ import re
+ import shutil
++import subprocess
+ import sys
+ import threading
++from urllib.parse import urlparse
+ from pathlib import Path
+ from hermes_cli import source_check
+ # Historical updater import (tests/compat/old_updater_surface.json). In-tree callers use the owner.
+@@ -143,6 +145,367 @@ def get_available_skills() -> Dict[str, List[str]]:
+     return {} if result is _UNCACHED else result
  
  
--def _github_compare(current_rev: str, target_rev: str) -> Optional[dict]:
++# === Update check ===
++
++# Passive checks hit GitHub at most once a day per install; a failed check retries after an hour
++# so a flaky line can't turn every startup into a request (nor stay wrong for a day).
++_UPDATE_CHECK_CACHE_SECONDS = 24 * 3600
++_UPDATE_CHECK_FAILURE_CACHE_SECONDS = 3600
++# Upstream tip seen by the most recent check; recorded in the cache file for the changelog.
++_last_target_rev: Optional[str] = None
++
++# Returned when an update is known to exist but commits can't be counted (e.g. nix builds).
++UPDATE_AVAILABLE_NO_COUNT = -1
++
++_UPSTREAM_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
++_OFFICIAL_REPO_CANONICAL = "github.com/nousresearch/hermes-agent"
++
++
++def _canonical_github_remote(url: str | None) -> str:
++    """Return ``host/owner/repo`` for common GitHub remote URL forms."""
++    if not url:
++        return ""
++    value = url.strip()
++    for ssh_prefix in ("git@github.com:", "ssh://git@github.com/"):
++        if value.startswith(ssh_prefix):
++            value = "github.com/" + value[len(ssh_prefix):]
++            break
++    else:
++        parsed = urlparse(value)
++        if parsed.netloc and parsed.path:
++            value = f"{parsed.netloc}{parsed.path}"
++    return value.strip().rstrip("/").removesuffix(".git").lower()
++
++
++def _is_official_ssh_remote(url: str | None) -> bool:
++    return bool(url) and url.strip().lower().startswith(("git@", "ssh://")) and (
++        _canonical_github_remote(url) == _OFFICIAL_REPO_CANONICAL)
++
++
++_GIT_TEXT_KW = {"text": True, "encoding": "utf-8", "errors": "replace"}
++
++
++def _git_run(args: list[str], *, cwd: Optional[Path] = None, timeout: int = 5, text: bool = True,
++             network: bool = False):
++    """Run ``git <args>`` with the shared subprocess boilerplate; None on any exception.
++
++    git output is UTF-8; on Windows ``text=True`` defaults to the ANSI code page and a byte like the
++    3rd of 🐛 in a commit subject crashes the stdlib reader thread (#52649), hence the explicit
++    encoding. ``network=True`` (ls-remote/fetch) detaches stdin and disables git/GCM prompts so a
++    passive update check can never hang on a ``Username for 'https://github.com':`` prompt.
++    """
++    from hermes_cli._subprocess_compat import noninteractive_git_env, windows_hide_flags
++
++    # The banner/update probes run from GUI-hosted backends too (desktop-spawned
++    # ``hermes serve``), where a bare git child flashes a console window.
++    kwargs: dict = {"creationflags": windows_hide_flags()}
++    if network:
++        kwargs.update({"stdin": subprocess.DEVNULL, "env": noninteractive_git_env()})
++    try:
++        return subprocess.run(
++            ["git", *args], capture_output=True, timeout=timeout, cwd=str(cwd) if cwd is not None else None,
++            **(_GIT_TEXT_KW if text else {}), **kwargs)
++    except Exception:
++        return None
++
++
++def _git_stdout(args: list[str], *, cwd: Path, timeout: int = 5, network: bool = False) -> Optional[str]:
++    result = _git_run(args, cwd=cwd, timeout=timeout, network=network)
++    if result is None or result.returncode != 0:
++        return None
++    return (result.stdout or "").strip()
++
++
++def _git_ok(args: list[str], **kw) -> bool:
++    """True when ``git <args>`` ran and exited 0 (output discarded)."""
++    result = _git_run(args, text=False, **kw)
++    return result is not None and result.returncode == 0
++
++
++def _git_count(args: list[str], *, cwd: Path) -> Optional[int]:
++    """``int`` of a successful ``git rev-list --count``-style command, else None."""
++    result = _git_run(args, cwd=cwd)
++    if result is not None and result.returncode == 0:
++        return _quiet(lambda: int(result.stdout.strip()))
++    return None
++
++
++def _is_full_sha(value: Optional[str]) -> bool:
++    return isinstance(value, str) and len(value) == 40 and all(c in "0123456789abcdefABCDEF" for c in value)
++
++
++_compare_payload_cache: Dict[tuple, dict] = {}
++
++
 +def _github_compare(
 +    current_rev: str, target_rev: str, repo_slug: Optional[str] = None
 +) -> Optional[dict]:
-     """Compare payload for ``current...target`` from the GitHub API; memoized per process.
- 
-     Shallow installer clones and API-only probes know the two tip SHAs but have no local history
-@@ -233,10 +235,11 @@ def _github_compare(current_rev: str, target_rev: str) -> Optional[dict]:
-     """
-     if not (_is_full_sha(current_rev) and _is_full_sha(target_rev)):
-         return None
--    key = (current_rev, target_rev)
++    """Compare payload for ``current...target`` from the GitHub API; memoized per process.
++
++    Shallow installer clones and API-only probes know the two tip SHAs but have no local history
++    to run ``rev-list --count`` or ``git log`` across; the payload carries both the count
++    (``ahead_by``) and the commit list the dashboard/desktop render as "what's changed".
++    """
++    if not (_is_full_sha(current_rev) and _is_full_sha(target_rev)):
++        return None
 +    repo_slug = repo_slug or _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
 +    key = (repo_slug, current_rev, target_rev)
-     if key in _compare_payload_cache:
-         return _compare_payload_cache[key]
--    url = f"https://api.github.com/repos/nousresearch/hermes-agent/compare/{current_rev}...{target_rev}"
++    if key in _compare_payload_cache:
++        return _compare_payload_cache[key]
 +    url = f"https://api.github.com/repos/{repo_slug}/compare/{current_rev}...{target_rev}"
- 
-     def _fetch():
-         import urllib.request
-@@ -252,9 +255,11 @@ def _github_compare(current_rev: str, target_rev: str) -> Optional[dict]:
-     return payload
- 
- 
--def _github_compare_behind(current_rev: str, target_rev: str) -> Optional[int]:
++
++    def _fetch():
++        import urllib.request
++        # api.github.com 403s requests without a User-Agent.
++        req = urllib.request.Request(
++            url, headers={"Accept": "application/vnd.github+json", "User-Agent": "hermes-cli-update-check"})
++        with urllib.request.urlopen(req, timeout=10) as resp:
++            return json.loads(resp.read().decode("utf-8"))
++    payload = _quiet(_fetch)
++    if not isinstance(payload, dict):
++        return None
++    _compare_payload_cache[key] = payload
++    return payload
++
++
 +def _github_compare_behind(
 +    current_rev: str, target_rev: str, repo_slug: Optional[str] = None
 +) -> Optional[int]:
-     """Exact behind-count via the GitHub compare API for uncountable graphs."""
--    payload = _github_compare(current_rev, target_rev)
++    """Exact behind-count via the GitHub compare API for uncountable graphs."""
 +    payload = _github_compare(current_rev, target_rev, repo_slug)
-     ahead = payload.get("ahead_by") if payload else None
-     return ahead if isinstance(ahead, int) and not isinstance(ahead, bool) and ahead >= 0 else None
- 
-@@ -267,9 +272,10 @@ def upstream_commits_behind(n: int = 20) -> List[Dict[str, Any]]:
-     """
-     cached = _read_json(get_hermes_home() / ".update_check") or {}
-     head_rev, target_rev = cached.get("head"), cached.get("target")
++    ahead = payload.get("ahead_by") if payload else None
++    return ahead if isinstance(ahead, int) and not isinstance(ahead, bool) and ahead >= 0 else None
++
++
++def upstream_commits_behind(n: int = 20) -> List[Dict[str, Any]]:
++    """Commits between the last checked HEAD and upstream tip, newest first; [] when unknown.
++
++    Reads the tips recorded by ``check_for_updates`` so it costs no extra request when the
++    compare payload is already memoized for this process.
++    """
++    cached = _read_json(get_hermes_home() / ".update_check") or {}
++    head_rev, target_rev = cached.get("head"), cached.get("target")
 +    repo_slug = cached.get("repo") or _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
-     if not head_rev or not target_rev or head_rev == target_rev:
-         return []
--    payload = _github_compare(head_rev, target_rev)
++    if not head_rev or not target_rev or head_rev == target_rev:
++        return []
 +    payload = _github_compare(head_rev, target_rev, repo_slug)
-     rows: List[Dict[str, Any]] = []
-     for entry in (payload or {}).get("commits", []) if isinstance(payload, dict) else []:
-         commit = entry.get("commit") or {}
-@@ -289,7 +295,12 @@ def upstream_commits_behind(n: int = 20) -> List[Dict[str, Any]]:
-     return rows[:n]
- 
- 
--def _tips_behind(head_rev: Optional[str], target_rev: Optional[str], repo_dir: Optional[Path] = None) -> Optional[int]:
++    rows: List[Dict[str, Any]] = []
++    for entry in (payload or {}).get("commits", []) if isinstance(payload, dict) else []:
++        commit = entry.get("commit") or {}
++        when = ((commit.get("committer") or {}).get("date") or "")
++        try:
++            from datetime import datetime
++            at = int(datetime.fromisoformat(when.replace("Z", "+00:00")).timestamp()) if when else 0
++        except ValueError:
++            at = 0
++        rows.append({
++            "sha": str(entry.get("sha", ""))[:7],
++            "summary": str(commit.get("message", "")).split("\n", 1)[0],
++            "author": str((commit.get("author") or {}).get("name", "")),
++            "at": at,
++        })
++    rows.reverse()  # compare returns oldest first
++    return rows[:n]
++
++
 +def _tips_behind(
 +    head_rev: Optional[str],
 +    target_rev: Optional[str],
 +    repo_dir: Optional[Path] = None,
 +    repo_slug: Optional[str] = None,
 +) -> Optional[int]:
-     """Behind-count from two tip SHAs: None if either is unknown, 0 when equal, else count/sentinel.
- 
-     With ``repo_dir``, a target that is already an ancestor of HEAD (local-ahead checkout) is 0 too.
-@@ -302,7 +313,11 @@ def _tips_behind(head_rev: Optional[str], target_rev: Optional[str], repo_dir: O
-     if head_rev == target_rev or (repo_dir is not None and _git_ok(
-             ["merge-base", "--is-ancestor", target_rev, "HEAD"], cwd=repo_dir)):
-         return 0
--    counted = _github_compare_behind(head_rev, target_rev)
++    """Behind-count from two tip SHAs: None if either is unknown, 0 when equal, else count/sentinel.
++
++    With ``repo_dir``, a target that is already an ancestor of HEAD (local-ahead checkout) is 0 too.
++    ``ahead_by == 0`` with differing tips means the remote tip is reachable from our HEAD — NOT
++    behind. A local-only HEAD 404s on the API, which degrades to ``UPDATE_AVAILABLE_NO_COUNT`` —
++    never a fabricated 1.
++    """
++    if not head_rev or not target_rev:
++        return None
++    if head_rev == target_rev or (repo_dir is not None and _git_ok(
++            ["merge-base", "--is-ancestor", target_rev, "HEAD"], cwd=repo_dir)):
++        return 0
 +    official_repo = _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
 +    if repo_slug and repo_slug != official_repo:
 +        counted = _github_compare_behind(head_rev, target_rev, repo_slug)
 +    else:
 +        counted = _github_compare_behind(head_rev, target_rev)
-     return counted if counted is not None else UPDATE_AVAILABLE_NO_COUNT
- 
- 
-@@ -356,8 +371,9 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
-     if not head_rev:
-         return None
-     canonical = _canonical_github_remote(origin_url)
++    return counted if counted is not None else UPDATE_AVAILABLE_NO_COUNT
++
++
++def _github_branch_tip(repo_slug: str, branch: str) -> Optional[str]:
++    """Tip SHA of ``branch`` on GitHub via the REST API (40-byte body, no git, no auth)."""
++    from urllib.parse import quote
++
++    url = f"https://api.github.com/repos/{repo_slug}/commits/{quote(branch, safe='')}"
++
++    def _fetch():
++        import urllib.request
++        req = urllib.request.Request(
++            url, headers={"Accept": "application/vnd.github.sha", "User-Agent": "hermes-cli-update-check"})
++        with urllib.request.urlopen(req, timeout=10) as resp:
++            return resp.read().decode("utf-8").strip()
++    sha = _quiet(_fetch)
++    return sha if _is_full_sha(sha) else None
++
++
++def _upstream_main_sha() -> Optional[str]:
++    """Tip SHA of upstream main; API first, HTTPS ``ls-remote`` (no auth, no prompts) as fallback."""
++    sha = _github_branch_tip(_OFFICIAL_REPO_CANONICAL.removeprefix("github.com/"), "main")
++    if sha:
++        return sha
++    result = _git_run(["ls-remote", _UPSTREAM_REPO_URL, "refs/heads/main"], timeout=10, network=True)
++    if result is None or result.returncode != 0 or not result.stdout:
++        return None
++    return result.stdout.split()[0] or None
++
++
++def _check_via_rev(local_rev: str) -> Optional[int]:
++    """Compare an embedded git revision to upstream main via the API (see ``_tips_behind``)."""
++    global _last_target_rev
++    _last_target_rev = _upstream_main_sha()
++    return _tips_behind(local_rev, _last_target_rev)
++
++
++def _check_via_local_git(repo_dir: Path) -> Optional[int]:
++    """Count commits behind origin/main in a local checkout.
++
++    Passive checks never run ``git fetch``: every CLI/TUI/gateway start used to negotiate a pack
++    with GitHub, and across the install base that was tens of millions of fetch requests a day
++    (GitHub asked us to poll the API instead). Two tip SHAs are enough — the remote one from the
++    API, the local one from ``rev-parse`` — and ``_tips_behind`` recovers the exact count through
++    the compare API when they differ. ``git fetch`` happens only inside ``hermes update``.
++    """
++    # Probe the origin URL under the config-isolated env: a global url.<https>.insteadOf rewrite
++    # otherwise makes an SSH origin masquerade as HTTPS (#104591).
++    origin_url = _git_stdout(["remote", "get-url", "origin"], cwd=repo_dir, network=True)
++    head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
++    if not head_rev:
++        return None
++    canonical = _canonical_github_remote(origin_url)
 +    repo_slug = canonical.removeprefix("github.com/") if canonical.startswith("github.com/") else None
-     if canonical.startswith("github.com/"):
--        target_rev = _github_branch_tip(canonical.removeprefix("github.com/"), "main")
++    if canonical.startswith("github.com/"):
 +        target_rev = _github_branch_tip(repo_slug or "", "main")
-     else:
-         # Non-GitHub origin: one ls-remote for the tip (ref advertisement only, no pack transfer).
-         result = _git_run(["ls-remote", "origin", "refs/heads/main"], cwd=repo_dir, timeout=10, network=True)
-@@ -367,7 +383,7 @@ def _check_via_local_git(repo_dir: Path) -> Optional[int]:
-     # Tip SHAs alone can't distinguish "behind" from a local commit AHEAD of origin/main, and
-     # misreporting an ahead checkout nudges the user into `hermes update`, which can wipe carried
-     # work — hence the ancestor check inside _tips_behind, against the FRESH upstream SHA.
--    return _tips_behind(head_rev, target_rev, repo_dir)
++    else:
++        # Non-GitHub origin: one ls-remote for the tip (ref advertisement only, no pack transfer).
++        result = _git_run(["ls-remote", "origin", "refs/heads/main"], cwd=repo_dir, timeout=10, network=True)
++        target_rev = result.stdout.split()[0] if result is not None and result.returncode == 0 and result.stdout else None
++    global _last_target_rev
++    _last_target_rev = target_rev
++    # Tip SHAs alone can't distinguish "behind" from a local commit AHEAD of origin/main, and
++    # misreporting an ahead checkout nudges the user into `hermes update`, which can wipe carried
++    # work — hence the ancestor check inside _tips_behind, against the FRESH upstream SHA.
 +    return _tips_behind(head_rev, target_rev, repo_dir, repo_slug=repo_slug)
- 
- 
- def _read_json(path: Path) -> Optional[dict]:
-@@ -382,6 +398,8 @@ def check_for_updates(*, passive: bool = False) -> Optional[int]:
-     If ``HERMES_REVISION`` is set (nix builds embed it), compare it to upstream main; otherwise
-     compare the local checkout's HEAD. Both go through the GitHub API, never ``git fetch``.
-     """
++
++
++def _read_json(path: Path) -> Optional[dict]:
++    """Parse ``path`` as a JSON object; None when missing, unreadable, or not a dict."""
++    blob = _quiet(lambda: json.loads(path.read_text(encoding="utf-8")))
++    return blob if isinstance(blob, dict) else None
++
++
++def check_for_updates(*, passive: bool = False) -> Optional[int]:
++    """Check whether a Hermes update is available.
++
++    If ``HERMES_REVISION`` is set (nix builds embed it), compare it to upstream main; otherwise
++    compare the local checkout's HEAD. Both go through the GitHub API, never ``git fetch``.
++    """
 +    return None  # Flexpair installs are pinned; do not probe for updates.
 +
-     def _read_config_opt_out():
-         from hermes_cli.config import load_config
-         return load_config().get("updates", {}).get("check", True) is False
-@@ -405,22 +423,73 @@ def check_for_updates(*, passive: bool = False) -> Optional[int]:
-     # stale "3 behind" must not survive the update it just prompted.
-     now = time.time()
-     repo_dir = None if embedded_rev else _resolve_repo_dir()
--    head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir) if repo_dir is not None else None
++    def _read_config_opt_out():
++        from hermes_cli.config import load_config
++        return load_config().get("updates", {}).get("check", True) is False
++
++    if passive and _quiet(_read_config_opt_out) is True:
++        return None
++
++    cache_file = get_hermes_home() / ".update_check"
++    embedded_rev = os.environ.get("HERMES_REVISION") or None
++    # Docker images have no working tree (the image excludes `.git`) and set no HERMES_REVISION.
++    # None makes both the Rich banner and the Ink badge show nothing, mirroring the dashboard's
++    # `/api/hermes/update/check` short-circuit so the surfaces agree.
++    def _install_method():
++        from hermes_cli.config import detect_install_method, get_project_root
++        return detect_install_method(get_project_root())
++
++    if _quiet(_install_method) in {"docker", "apt"}:
++        return None
++    # Cache is invalidated when the embedded rev OR installed version changed since the last check.
++    # For a git checkout the local HEAD is part of the key too: `hermes update` moves HEAD, and a
++    # stale "3 behind" must not survive the update it just prompted.
++    now = time.time()
++    repo_dir = None if embedded_rev else _resolve_repo_dir()
 +    head_rev = (
 +        _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
 +        if repo_dir is not None
 +        else None
 +    )
-     cached = _read_json(cache_file)
--    if cached is not None and cached.get("rev") == embedded_rev and cached.get("ver") == VERSION \
--            and cached.get("head") == head_rev:
--        ttl = _UPDATE_CHECK_CACHE_SECONDS if cached.get("behind") is not None else _UPDATE_CHECK_FAILURE_CACHE_SECONDS
++    cached = _read_json(cache_file)
 +    origin_url = (
 +        _git_stdout(
 +            ["remote", "get-url", "origin"], cwd=repo_dir, network=True
@@ -1657,18 +1934,14 @@ index 39358fb0e0..42343a2f3c 100644
 +            if cached.get("behind") is not None
 +            else _UPDATE_CHECK_FAILURE_CACHE_SECONDS
 +        )
-         if now - cached.get("ts", 0) < ttl:
-             return cached.get("behind")
++        if now - cached.get("ts", 0) < ttl:
++            return cached.get("behind")
 +    repo_slug = None
-     if embedded_rev:
-         behind = _check_via_rev(embedded_rev)
-     else:
-         # No checkout and no embedded revision — status can't be determined.
-         behind = _check_via_local_git(repo_dir) if repo_dir is not None else None
--    _quiet(lambda: cache_file.write_text(
--        json.dumps({"ts": now, "behind": behind, "rev": embedded_rev, "ver": VERSION,
--                    "head": head_rev or embedded_rev, "target": _last_target_rev}),
--        encoding="utf-8"))
++    if embedded_rev:
++        behind = _check_via_rev(embedded_rev)
++    else:
++        # No checkout and no embedded revision — status can't be determined.
++        behind = _check_via_local_git(repo_dir) if repo_dir is not None else None
 +        repo_slug = current_repo_slug
 +    _quiet(
 +        lambda: cache_file.write_text(
@@ -1687,14 +1960,17 @@ index 39358fb0e0..42343a2f3c 100644
 +            encoding="utf-8",
 +        )
 +    )
-     return behind
- 
++    return behind
++
++
+ def _resolve_repo_dir() -> Optional[Path]:
+     """The active Hermes git checkout, or None if this isn't a git install.
  
 diff --git a/hermes_cli/cli_config_load.py b/hermes_cli/cli_config_load.py
-index f9b368b483..668e39cfd3 100644
+index 78fa2ba350..a339b4c590 100644
 --- a/hermes_cli/cli_config_load.py
 +++ b/hermes_cli/cli_config_load.py
-@@ -213,7 +213,7 @@ def _cli_config_defaults():
+@@ -215,7 +215,7 @@ def _cli_config_defaults():
              # Also clear scrollback on redraw/resize recovery; off because users prefer history.
              "cli_rebuild_scrollback_on_redraw": False,
              "persist_prompts": True,  # one-line summary of resolved modal prompts into scrollback
@@ -1704,10 +1980,10 @@ index f9b368b483..668e39cfd3 100644
          "code_execution": {"timeout": 300, "max_tool_calls": 50},
          "auxiliary": {"vision": {"provider": "auto", "model": "", "base_url": "", "api_key": ""}},
 diff --git a/hermes_cli/config_defaults.py b/hermes_cli/config_defaults.py
-index 10d081553f..9ef978e651 100644
+index 098c7322be..1edb42d724 100644
 --- a/hermes_cli/config_defaults.py
 +++ b/hermes_cli/config_defaults.py
-@@ -871,7 +871,7 @@ DEFAULT_CONFIG = {
+@@ -874,7 +874,7 @@ DEFAULT_CONFIG = {
          # /focus off restores. Never affects what the model sees (focus_view.py).
          "focus_view": False,
          "focus_saved_tool_progress": "all",
@@ -1717,17 +1993,19 @@ index 10d081553f..9ef978e651 100644
          # responses/logs/tool outputs. en, zh, ja, de, es, fr, tr, uk; unknown → en.
          "language": "en",
 diff --git a/hermes_cli/main.py b/hermes_cli/main.py
-index 4026861eb2..b7e0364260 100644
+index 3007cd9c4d..99b894e1cd 100644
 --- a/hermes_cli/main.py
 +++ b/hermes_cli/main.py
-@@ -2398,7 +2398,14 @@ def _update_preflight_handled(args) -> bool:
+@@ -2466,10 +2466,14 @@ from hermes_cli.update_receipt import update_receipt_scope
  
- 
+ @update_receipt_scope()
  def cmd_update(args):
 -    """Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``."""
+-    from hermes_cli.update_owning_install import retarget_to_owning_install
 +    """Refuse bundled updates before reaching any update preflight or mutation."""
 +    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
-+
+ 
+-    retarget_to_owning_install(PROJECT_ROOT)
 +    refusal = evaluate_update_admission(PROJECT_ROOT)
 +    if refusal is not None:
 +        print(refusal.message)
@@ -1737,7 +2015,7 @@ index 4026861eb2..b7e0364260 100644
          return
      gateway_mode = getattr(args, "gateway", False)
 diff --git a/hermes_cli/skin_cmd.py b/hermes_cli/skin_cmd.py
-index 5af5668e4f..d8e8e02d7d 100644
+index 6f098a66e2..ef96840807 100644
 --- a/hermes_cli/skin_cmd.py
 +++ b/hermes_cli/skin_cmd.py
 @@ -24,7 +24,8 @@ def _skins_dir() -> Path:
@@ -1751,10 +2029,10 @@ index 5af5668e4f..d8e8e02d7d 100644
  
  def _use(name: str) -> None:
 diff --git a/hermes_cli/skin_engine.py b/hermes_cli/skin_engine.py
-index 76b1cd2b79..22df8d346b 100644
+index b859fcc828..1daffd27b1 100644
 --- a/hermes_cli/skin_engine.py
 +++ b/hermes_cli/skin_engine.py
-@@ -338,10 +338,53 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
+@@ -339,10 +339,53 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
  [#F29C38]⠀⠀⠀⠀⠀⠀⠀⠀⣰⡿⢿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀[/]
  [#F29C38]⠀⠀⠀⠀⠀⠀⠀⣼⡟⠀⠀⢻⣧⠀⠀⠀⠀⠀⠀⠀⠀[/]
  [dim #7A3511]⠀⠀⠀⠀⠀⠀⠀tail flame lit⠀⠀⠀⠀⠀⠀⠀⠀[/]""",
@@ -1810,7 +2088,7 @@ index 76b1cd2b79..22df8d346b 100644
  # Routed multiplex profiles: (name, skin) per home key. ``display.skin`` and ``<home>/skins/*.yaml``
  # are per profile, and the relay display name / TUI skin payload are read under each profile's
  # override — one module slot would be last-writer-wins across profiles. Unscoped keeps the module slot.
-@@ -461,15 +504,15 @@ def get_active_skin_name() -> str:
+@@ -463,15 +506,15 @@ def get_active_skin_name() -> str:
      home_key = _routed_home_key()
      if home_key is not None:
          entry = _active_skin_by_home.get(home_key)
@@ -1830,47 +2108,10 @@ index 76b1cd2b79..22df8d346b 100644
  
  def _active_branding(key: str, fallback: str) -> str:
 diff --git a/hermes_cli/update_cmd.py b/hermes_cli/update_cmd.py
-index be34f5bf20..a49211ebcd 100644
+index 2cfcabeda2..e5a037fb9b 100644
 --- a/hermes_cli/update_cmd.py
 +++ b/hermes_cli/update_cmd.py
-@@ -546,9 +546,16 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
-     is_shallow = _is_shallow_checkout(git_cmd)
-     depth_args = ["--depth", "1"] if is_shallow else []
- 
--    # Probe locally for an 'upstream' remote before a network fetch non-forks always fail.
-+    origin_url = _m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)
-+    origin_is_fork = _is_fork(origin_url)
-+    # Probe locally for an 'upstream' remote only for user forks; Flexpair is a
-+    # supported origin and must check the same distribution it applies.
-     fetch_result = None
--    if branch == "main" and _git_run(git_cmd, ["remote", "get-url", "upstream"]).returncode == 0:
-+    if (
-+        origin_is_fork
-+        and branch == "main"
-+        and _git_run(git_cmd, ["remote", "get-url", "upstream"]).returncode == 0
-+    ):
-         print("→ Fetching from upstream...")
-         fetch_result = _git_run(git_cmd, ["fetch"] + depth_args + ["upstream", branch], network=True)
-     if fetch_result is not None and fetch_result.returncode == 0:
-@@ -588,8 +595,16 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
-             print("✓ Already up to date.")
-             return
-         from hermes_cli.banner import _github_compare_behind
-+        origin_url = _m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)
-+        repo_slug = (
-+            _github_repo_slug(origin_url)
-+            if compare_branch.startswith("origin/")
-+            else None
-+        )
-         # counted == 0 means local-ahead, not behind; None means the API could not count.
--        _print_update_check_result(_github_compare_behind(head_sha, target_sha), compare_branch)
-+        _print_update_check_result(
-+            _github_compare_behind(head_sha, target_sha, repo_slug), compare_branch
-+        )
-         return
- 
-     rev_result = _git_run(git_cmd, ["rev-list", f"HEAD..{compare_branch}", "--count"], check=True)
-@@ -613,6 +628,18 @@ def _tip_shas(git_cmd, target_ref: str) -> tuple[str, str]:
+@@ -643,6 +643,18 @@ def _tip_shas(git_cmd, target_ref: str) -> tuple[str, str]:
      return tuple(_git_run(git_cmd, ["rev-parse", ref]).stdout.strip() for ref in ("HEAD", target_ref))
  
  
@@ -1889,39 +2130,22 @@ index be34f5bf20..a49211ebcd 100644
  def _print_update_check_result(behind: int | None, compare_branch: str) -> None:
      """Report ``--check``'s verdict: up to date, N commits behind, or behind by an unknown count."""
      if behind == 0:
-@@ -990,7 +1017,11 @@ def _prepare_checkout_for_update(
+@@ -983,7 +995,9 @@ def _prepare_checkout_for_update(
      apply_is_shallow = _is_shallow_checkout(git_cmd)
      if commit_count > 0 and apply_is_shallow:
-         from hermes_cli.banner import _github_compare_behind
--        counted = _github_compare_behind(*_tip_shas(git_cmd, f"origin/{branch}"))
-+        head_sha, target_sha = _tip_shas(git_cmd, f"origin/{branch}")
-+        repo_slug = _github_repo_slug(
-+            _m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)
-+        )
-+        counted = _github_compare_behind(head_sha, target_sha, repo_slug)
+         from hermes_cli.source_check import _github_compare_behind
+-        counted = _github_compare_behind(*_tip_shas(git_cmd, target_ref))
++        head_sha, target_sha = _tip_shas(git_cmd, target_ref)
++        repo_slug = _github_repo_slug(_m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)) if target_ref.startswith("origin/") else None
++        counted = _github_compare_behind(head_sha, target_sha, repo_slug) if repo_slug else _github_compare_behind(head_sha, target_sha)
          # counted == 0 means local-ahead: falls through to the up-to-date path.
          commit_count = counted if counted is not None else -1
  
-@@ -1550,6 +1581,14 @@ def _cmd_update_impl(args, gateway_mode: bool):
-     """Body of ``cmd_update`` — kept separate so the wrapper can always restore stdio even on
-     ``sys.exit``. Self-lock deferral deliberately does NOT run here (pre-fetch it stranded users
-     on the OLD checkout in an exit-2 loop); it runs right before the dependency sync."""
-+    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
-+
-+    refusal = evaluate_update_admission(_m().PROJECT_ROOT)
-+    if refusal is not None:
-+        print(refusal.message)
-+        record_refusal_receipt(refusal)
-+        sys.exit(2)
-+
-     opts = _resolve_update_options(args, gateway_mode)
-     gw_input_fn, assume_yes = opts.gw_input_fn, opts.assume_yes
- 
 diff --git a/hermes_cli/update_cmd_git.py b/hermes_cli/update_cmd_git.py
-index 0b32663651..9ceeca56c0 100644
+index 10be93f7a8..29b808d821 100644
 --- a/hermes_cli/update_cmd_git.py
 +++ b/hermes_cli/update_cmd_git.py
-@@ -168,11 +168,15 @@ def _print_parked_branch_kept_notice(current_branch: str, target_branch: str, un
+@@ -191,11 +191,15 @@ def _print_parked_branch_kept_notice(current_branch: str, target_branch: str, un
      )
  
  
@@ -1939,7 +2163,7 @@ index 0b32663651..9ceeca56c0 100644
  }
  OFFICIAL_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
  SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"
-@@ -188,11 +192,13 @@ def _is_fork(origin_url: Optional[str]) -> bool:
+@@ -211,11 +215,13 @@ def _is_fork(origin_url: Optional[str]) -> bool:
      if not origin_url:
          return False
  
@@ -1958,19 +2182,19 @@ index 0b32663651..9ceeca56c0 100644
  
  def _has_upstream_remote(git_cmd: list[str], cwd: Path) -> bool:
 diff --git a/hermes_cli/update_contract.py b/hermes_cli/update_contract.py
-index 0a29abd9e5..528d00259f 100644
+index 18c64ade20..96f2313901 100644
 --- a/hermes_cli/update_contract.py
 +++ b/hermes_cli/update_contract.py
-@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
+@@ -31,7 +31,7 @@ def is_commit_build(project_root: Path) -> bool:
  class UpdateRefusal:
      """Why an in-place update is refused, and what to run instead."""
  
--    code: str              # image-marker | image-marker-invalid | docker | nix | apt
+-    code: str              # image-marker | image-marker-invalid | docker | nix | apt | desktop-app | <steward>
 +    code: str              # updates-disabled (Flexpair fixed build)
      message: str           # full user-facing text (multi-line ok)
      update_command: str    # the one-line remediation command
  
-@@ -37,11 +37,14 @@ def _refusal(code: str, method: str, message: Optional[Callable[[str], str]] = N
+@@ -80,14 +80,14 @@ def _steward_refusal(steward: str) -> UpdateRefusal:
  
  
  def evaluate_update_admission(project_root: Path) -> Optional[UpdateRefusal]:
@@ -1979,57 +2203,63 @@ index 0a29abd9e5..528d00259f 100644
 -    ``None`` means the install is eligible for in-place update (git checkout or unknown-but-
 -    mutable). Never raises; on any internal error it falls back to the heuristic layer only.
 -    """
+-    if is_commit_build(project_root):
+-        return UpdateRefusal("commit-build", COMMIT_BUILD_UPDATE_MESSAGE, "")
 +    """Reject all bundled updates for the fixed Flexpair distribution."""
 +    return UpdateRefusal(
 +        code="updates-disabled",
 +        message="Updates are disabled in this Flexpair build; the installed version is fixed.",
 +        update_command="disabled",
 +    )
-+
-+    # Upstream admission logic remains below for reconciliation with newer upstream bases.
+ 
++    # Upstream admission logic is retained below for future reconciliation.
      # Layer 1: baked provenance marker — authoritative when present.
      try:
          from hermes_cli.image_provenance import read_image_provenance
 diff --git a/hermes_cli/web_routers/actions.py b/hermes_cli/web_routers/actions.py
-index 165364ba07..a6aae2ba6f 100644
+index 966662c569..690793b275 100644
 --- a/hermes_cli/web_routers/actions.py
 +++ b/hermes_cli/web_routers/actions.py
-@@ -219,6 +219,13 @@ def _update_refused(error: str, message: str, update_command: str) -> Dict[str,
+@@ -220,8 +220,12 @@ def _update_refused(error: str, message: str, update_command: str) -> Dict[str,
  @router.post("/api/hermes/update")
  async def update_hermes():
      """Kick off ``hermes update`` in the background."""
+-    if is_commit_build(_server_path("PROJECT_ROOT")):
+-        return _update_refused("commit-build", COMMIT_BUILD_UPDATE_MESSAGE, "")
 +    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
 +
 +    refusal = evaluate_update_admission(_server_path("PROJECT_ROOT"))
 +    if refusal is not None and refusal.code == "updates-disabled":
 +        record_refusal_receipt(refusal)
 +        return _update_refused("updates-disabled", refusal.message, refusal.update_command)
-+
+ 
      if _dashboard_local_update_managed_externally():
          message = _MANAGED_EXTERNALLY_MESSAGE + " The built-in local updater is disabled here."
-         return _update_refused("dashboard_update_managed_externally", message, "managed outside dashboard")
-@@ -266,6 +273,16 @@ async def check_hermes_update(force: bool = False, profile: Optional[str] = None
+@@ -271,12 +275,14 @@ async def check_hermes_update(force: bool = False, profile: Optional[str] = None
      non-applyable methods) and, for git installs that are behind, commits
      [{sha, summary, author, at}] (additive; existing consumers ignore it).
      """
+-    if is_commit_build(_server_path("PROJECT_ROOT")):
 +    from hermes_cli.update_contract import evaluate_update_admission
 +
 +    refusal = evaluate_update_admission(_server_path("PROJECT_ROOT"))
 +    if refusal is not None and refusal.code == "updates-disabled":
-+        return {
-+            "install_method": "fixed", "current_version": __version__, "behind": None,
+         return {
+-            "install_method": "desktop-app",
+-            "current_version": get_version_info().derived_version,
+-            "behind": None, "update_available": False, "can_apply": False,
+-            "update_command": "", "message": COMMIT_BUILD_UPDATE_MESSAGE,
++            "install_method": "fixed", "current_version": get_version_info().derived_version, "behind": None,
 +            "update_available": False, "can_apply": False,
 +            "update_command": refusal.update_command, "message": refusal.message,
-+        }
-+
+         }
+ 
      if _dashboard_local_update_managed_externally():
-         return {
-             "install_method": "managed-runtime", "current_version": __version__, "behind": None,
 diff --git a/hermes_cli/web_server_config.py b/hermes_cli/web_server_config.py
-index c1c8600f73..8ed649c8e6 100644
+index 741c43bca3..4e37dd4df8 100644
 --- a/hermes_cli/web_server_config.py
 +++ b/hermes_cli/web_server_config.py
-@@ -123,7 +123,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
+@@ -128,7 +128,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
          "OpenAI transcription model", "whisper-1", "gpt-4o-mini-transcribe", "gpt-4o-transcribe", "gpt-transcribe"
      ),
      "stt.elevenlabs.model_id": _select("ElevenLabs Scribe model", "scribe_v2", "scribe_v1"),
@@ -2188,175 +2418,116 @@ index 0000000000..6b86262cb9
 +if __name__ == "__main__":
 +    raise SystemExit(main())
 diff --git a/scripts/desktop-update/posix.sh b/scripts/desktop-update/posix.sh
-index b343cc1787..3ed6024b1e 100755
+index b1c86d26ed..8bce17a7ad 100755
 --- a/scripts/desktop-update/posix.sh
 +++ b/scripts/desktop-update/posix.sh
 @@ -1,4 +1,6 @@
- #!/bin/bash
+ #!/usr/bin/env bash
 +echo "Updates are disabled in this Flexpair build; the installed version is fixed." >&2
 +exit 2
  # posix.sh -- repo-owned macOS/Linux Desktop update hand-off.
  #
  # The whole job: wait for the Desktop to exit, run `hermes update`, tell the
 diff --git a/scripts/desktop-update/windows.ps1 b/scripts/desktop-update/windows.ps1
-index 17bb6b3235..5fa2eb29b0 100644
+index b4645aac15..6960ad4135 100644
 --- a/scripts/desktop-update/windows.ps1
 +++ b/scripts/desktop-update/windows.ps1
-@@ -55,6 +55,9 @@ param(
+@@ -57,6 +57,9 @@ param(
      [switch]$SelfTestWorkingDirectory
  )
  
 +Write-Error "Updates are disabled in this Flexpair build; the installed version is fixed."
 +exit 2
 +
- if (-not $SelfTestUi -and -not $SelfTestPipeDrain -and -not $InstallRoot) {
-     # Mandatory in spirit; relaxed in the signature only so the self-test
-     # switches can drive the UI / the pipe drain without a checkout.
+ if ($PSBoundParameters.ContainsKey("Branch") -and $PSBoundParameters.ContainsKey("Channel")) {
+     throw "-Branch and -Channel are mutually exclusive"
+ }
 diff --git a/scripts/install.ps1 b/scripts/install.ps1
-index 1d52aa90f1..7f846323bd 100644
+index 2fecfa6054..d2f7d1e2fe 100644
 --- a/scripts/install.ps1
 +++ b/scripts/install.ps1
-@@ -77,6 +77,10 @@ param(
+@@ -60,7 +60,7 @@ $script:BoundParams = $PSBoundParameters
+ # Under iex, script scope is the caller's session and outlives a run; start
+ # each run without the previous run's answer (see Set-LauncherUserPath).
+ $script:BinDirOnCallerPath = $null
+-$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/NousResearch/hermes-agent.git" }
++$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/Flexpair/hermes-agent.git" }
  
- $ErrorActionPreference = "Stop"
+ # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
+ # Derived from pm/lock.json. DO NOT EDIT BY HAND:
+@@ -1222,6 +1222,12 @@ if ($script:IsDotSourced) {
+ # switch is honored, so every contract below sees long-form paths.
+ Initialize-ResolvedPaths
  
-+# PowerShell is not a supported entry point for this Linux-only installer.
++# The source-only Flexpair fork cannot be installed from Windows.
 +Write-Error "Flexpair installation requires Linux; refusing to install on this OS."
-+exit 1
++if ($script:RunAsFile) { exit 1 }
++$global:LASTEXITCODE = 1
++return
 +
- # Suppress Invoke-WebRequest's per-chunk progress bar.  Windows PowerShell
- # 5.1's progress UI repaints synchronously on every received byte, which
- # pegs CPU on a single core and throttles downloads by 10-100x (a 57MB
-@@ -2280,6 +2284,7 @@ function Install-Repository {
-         }
- 
-         if ($repoValid) {
-+            throw "Updates are disabled in this Flexpair build; the existing installation is unchanged."
-             Write-Info "Existing installation found, updating..."
-             Push-Location $InstallDir
-             # Wrap the entire fetch+checkout block in EAP=Continue so git's
-@@ -5077,6 +5082,10 @@ if ($MyInvocation.InvocationName -eq ".") {
- }
- 
- try {
-+    if (-not $ProtocolVersion -and -not $ShowResolvedPaths -and -not $Manifest -and
-+        (Test-Path -LiteralPath $InstallDir)) {
-+        throw "Updates are disabled in this Flexpair build; the existing installation is unchanged."
-+    }
-     if ($Ensure -ne "") {
-         if ($PSBoundParameters.ContainsKey("Stage")) {
-             Write-Err "Cannot use -Ensure and -Stage simultaneously"
+ # Keep uv from discovering uv.toml / pyproject.toml config from whatever
+ # directory or user profile the installer runs under (mirrors install.sh).
+ $env:UV_NO_CONFIG = "1"
 diff --git a/scripts/install.sh b/scripts/install.sh
-index 096290221a..26696d3a47 100755
+index 3d86236d15..31e5e670f1 100755
 --- a/scripts/install.sh
 +++ b/scripts/install.sh
-@@ -2,8 +2,7 @@
- # ============================================================================
- # Hermes Agent Installer
- # ============================================================================
--# Installation script for Linux, macOS, and Android/Termux.
--# Uses uv for desktop/server installs and Python's stdlib venv + pip on Termux.
-+# Installation is supported only on Linux (not Android/Termux).
- #
- # Usage:
- #   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
-@@ -15,6 +14,13 @@
+@@ -14,13 +14,22 @@
+ #                         off a terminal and in CI)
+ set -u
  
- set -e
- 
-+# Reject unsupported hosts before changing the environment or touching an install.
++# Reject unsupported hosts before any dependency probe, download, or install.
 +if [ "$(uname -s)" != "Linux" ] || [ -n "${TERMUX_VERSION:-}" ] ||
 +   [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]; then
 +    printf '%s\n' 'Flexpair installation requires Linux; refusing to install on this OS.' >&2
 +    exit 1
 +fi
 +
- # Guard against environment leakage when the installer is launched from another
- # Python-driven tool session (e.g. Hermes terminal tool). A pre-set PYTHONPATH
- # can force pip/entrypoints to import a different checkout than the one being
-@@ -43,8 +49,8 @@ NC='\033[0m' # No Color
- BOLD='\033[1m'
+ # Prevent uv from discovering config files (uv.toml, pyproject.toml) from the
+ # wrong user's home directory when running under sudo -u <user>.  See #21269.
+ # pm's own venv sync re-isolates (pm/environment.py), so this bootstrap
+ # hygiene can't break the locked sync the way it used to before pm owned it.
+ export UV_NO_CONFIG=1
  
- # Configuration
--REPO_URL_SSH="git@github.com:NousResearch/hermes-agent.git"
--REPO_URL_HTTPS="https://github.com/NousResearch/hermes-agent.git"
+-REPO_URL="${HERMES_REPO_URL:-https://github.com/NousResearch/hermes-agent.git}"
++REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
 +REPO_URL_SSH="git@github.com:Flexpair/hermes-agent.git"
 +REPO_URL_HTTPS="https://github.com/Flexpair/hermes-agent.git"
- HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
- # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
- # FHS-style layout for root installs.  Track whether the user gave us an
-@@ -1522,9 +1528,17 @@ show_manual_install_hint() {
- # Installation
- # ============================================================================
+ BRANCH="main"
+ INSTALL_COMMIT=""
+ INSTALL_DIR="${HERMES_INSTALL_DIR:-}"
+@@ -417,6 +426,9 @@ stage_prerequisites() {
+ }
  
-+refuse_existing_install() {
+ stage_repository() {
 +    if [ -e "$INSTALL_DIR" ] || [ -L "$INSTALL_DIR" ]; then
-+        log_error "Updates are disabled in this Flexpair build; the existing installation is unchanged."
-+        return 1
++        fail "Updates are disabled in this Flexpair build; the existing installation is unchanged."
 +    fi
-+}
-+
- clone_repo() {
-     log_info "Installing to $INSTALL_DIR..."
- 
-+    refuse_existing_install || return 1
-     # An interrupted previous clone leaves a .git with no initial commit, where
-     # the update path's `git stash` / `git checkout` abort with "You do not
-     # have the initial commit yet" and fail the install (#40998). Move such a
-@@ -3770,6 +3784,7 @@ run_stage_body() {
-         repository)
-             detect_os
-             resolve_install_layout
-+            refuse_existing_install || return 1
-             check_git
-             clone_repo
-             ;;
-@@ -3902,6 +3917,7 @@ main() {
- 
-     detect_os
-     resolve_install_layout
-+    refuse_existing_install
-     install_uv
-     check_python
-     check_git
-@@ -3941,8 +3957,14 @@ main() {
- if [ "$MANIFEST_MODE" = true ]; then
-     emit_manifest
- elif [ -n "$STAGE_NAME" ]; then
-+    detect_os
-+    resolve_install_layout
-+    refuse_existing_install || exit 1
-     run_stage_protocol "$STAGE_NAME"
- elif [ -n "$ENSURE_DEPS" ]; then
-+    detect_os
-+    resolve_install_layout
-+    refuse_existing_install || exit 1
-     ensure_mode
- else
-     main
+     # An interrupted clone from an older installer can leave a .git with no
+     # initial commit, where stash/checkout abort ("You do not have the
+     # initial commit yet", #40998). Move it aside -- never delete it, it may
 diff --git a/setup-hermes.sh b/setup-hermes.sh
-index 149640c3c6..8849dcee8e 100755
+index b169bedc09..a97069e655 100755
 --- a/setup-hermes.sh
 +++ b/setup-hermes.sh
-@@ -19,6 +19,13 @@
+@@ -15,6 +15,13 @@
  
  set -e
  
-+# Developer setup must obey the same Linux-only installation policy.
++# Developer setup obeys the Linux-only installation policy before mutations.
 +if [ "$(uname -s)" != "Linux" ] || [ -n "${TERMUX_VERSION:-}" ] ||
 +   [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]; then
 +    printf '%s\n' 'Flexpair installation requires Linux; refusing to install on this OS.' >&2
 +    exit 1
 +fi
 +
- # Colors
- GREEN='\033[0;32m'
- YELLOW='\033[0;33m'
-@@ -29,6 +36,12 @@ NC='\033[0m'
+ # Setup and activation prepare the isolated test environment. Installers call
+ # pm.cli directly and never select it.
+ runtime_only=false
+@@ -36,6 +43,11 @@ NC='\033[0m'
  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
  cd "$SCRIPT_DIR"
  
-+# Never rebuild an existing checkout's environment on a second setup invocation.
 +if [ -e "$SCRIPT_DIR/venv" ] || [ -L "$SCRIPT_DIR/venv" ]; then
 +    printf '%s\n' 'Updates are disabled in this Flexpair build; the existing installation is unchanged.' >&2
 +    exit 1
@@ -2367,7 +2538,7 @@ index 149640c3c6..8849dcee8e 100755
  export UV_NO_CONFIG=1
 diff --git a/tests/ci/test_fork_ci_policy.py b/tests/ci/test_fork_ci_policy.py
 new file mode 100644
-index 0000000000..aee87942c4
+index 0000000000..1baa361262
 --- /dev/null
 +++ b/tests/ci/test_fork_ci_policy.py
 @@ -0,0 +1,104 @@
@@ -2377,7 +2548,7 @@ index 0000000000..aee87942c4
 +
 +from pathlib import Path
 +
-+import yaml
++from ruamel.yaml import YAML
 +
 +
 +REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -2385,7 +2556,7 @@ index 0000000000..aee87942c4
 +
 +
 +def _workflow(name: str) -> dict:
-+    data = yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
++    data = YAML(typ="safe").load((WORKFLOWS / name).read_text(encoding="utf-8"))
 +    return data
 +
 +
@@ -2441,7 +2612,7 @@ index 0000000000..aee87942c4
 +    job = _workflow("flexpair-linux-config.yml")["jobs"]["test"]
 +    commands = "\n".join(step.get("run", "") for step in job["steps"])
 +
-+    assert "tests/ci/test_supply_chain_scanner.py" in commands
++    assert "tests/ci" in commands
 +
 +
 +def test_linux_lane_runs_focused_fork_regressions() -> None:
@@ -2465,7 +2636,7 @@ index 0000000000..aee87942c4
 +
 +def test_full_linux_suite_is_weekly_manual_and_four_way_sliced() -> None:
 +    workflow = _workflow("flexpair-linux-full.yml")
-+    triggers = workflow[True]
++    triggers = workflow["on"]
 +    job = workflow["jobs"]["test"]
 +
 +    assert "workflow_dispatch" in triggers
@@ -2658,10 +2829,10 @@ index 0000000000..d340079923
 +    assert "found=true" in result.stdout
 +    assert "base64 decode + exec/eval combo" in findings.read_text(encoding="utf-8")
 diff --git a/tests/hermes_cli/test_cli_skin_integration.py b/tests/hermes_cli/test_cli_skin_integration.py
-index c094bcacfa..b2b31eb8d3 100644
+index 7fb564fa0c..ad7977046a 100644
 --- a/tests/hermes_cli/test_cli_skin_integration.py
 +++ b/tests/hermes_cli/test_cli_skin_integration.py
-@@ -31,6 +31,16 @@ def _make_cli_stub():
+@@ -31,6 +31,21 @@ def _make_cli_stub():
  
  class TestCliSkinPromptIntegration:
  
@@ -2675,9 +2846,14 @@ index c094bcacfa..b2b31eb8d3 100644
 +        assert get_active_skin().name == "flexpair-dark"
 +
 +
-     def test_ares_prompt_fragments_use_skin_symbol(self):
-         cli = _make_cli_stub()
++    def test_ares_prompt_fragments_use_skin_symbol(self):
++        cli = _make_cli_stub()
++
++        set_active_skin("ares")
++        assert cli._get_tui_prompt_fragments() == [("class:prompt", "⚔ ")]
  
+     def test_secret_prompt_fragments_preserve_secret_state(self):
+         cli = _make_cli_stub()
 diff --git a/tests/hermes_cli/test_flexpair_fixed_install.py b/tests/hermes_cli/test_flexpair_fixed_install.py
 new file mode 100644
 index 0000000000..4306952e10
@@ -2780,28 +2956,28 @@ index 0000000000..4306952e10
 +    assert "Updates are disabled" in result.stderr
 +    assert sentinel.read_text() == "unchanged"
 diff --git a/tests/hermes_cli/test_passive_update_opt_out.py b/tests/hermes_cli/test_passive_update_opt_out.py
-index 053bb1f4df..3aecdad8e7 100644
+index 9444956589..26cfcd12da 100644
 --- a/tests/hermes_cli/test_passive_update_opt_out.py
 +++ b/tests/hermes_cli/test_passive_update_opt_out.py
-@@ -1,8 +1,10 @@
+@@ -1,9 +1,53 @@
 -"""Passive opt-out keeps explicit update checks available."""
 +"""Fixed Flexpair builds do not check for updates, even when explicitly requested."""
- import json
++import json
  import subprocess
- import time
- 
-+import pytest
++import time
 +
++import pytest
+ 
  from hermes_constants import get_hermes_home
  
  
-@@ -13,16 +15,37 @@ def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
-     # The cache is keyed on the checkout's HEAD (an update moving HEAD invalidates it).
-     repo_dir = banner._resolve_repo_dir()
-     head = banner._git_stdout(["rev-parse", "HEAD"], cwd=repo_dir) if repo_dir else None
--    (home / ".update_check").write_text(json.dumps({
--        "ts": time.time(), "behind": 17, "rev": None, "ver": banner.VERSION, "head": head,
--    }), encoding="utf-8")
++def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
++    from hermes_cli import __version__, banner
++
++    home = get_hermes_home()
++    # The cache is keyed on the checkout's HEAD (an update moving HEAD invalidates it).
++    repo_dir = banner._resolve_repo_dir()
++    head = banner._git_stdout(["rev-parse", "HEAD"], cwd=repo_dir) if repo_dir else None
 +    origin = (
 +        banner._git_stdout(["remote", "get-url", "origin"], cwd=repo_dir)
 +        if repo_dir
@@ -2819,26 +2995,26 @@ index 053bb1f4df..3aecdad8e7 100644
 +                "ts": time.time(),
 +                "behind": 17,
 +                "rev": None,
-+                "ver": banner.VERSION,
++                "ver": __version__,
 +                "head": head,
 +                "repo": repo_slug,
 +            }
 +        ),
 +        encoding="utf-8",
 +    )
-     monkeypatch.delenv("HERMES_REVISION", raising=False)
-     config = home / "config.yaml"
-     config.write_text("updates:\n  check: true\n", encoding="utf-8")
--    assert banner.check_for_updates(passive=True) == 17
++    monkeypatch.delenv("HERMES_REVISION", raising=False)
++    config = home / "config.yaml"
++    config.write_text("updates:\n  check: true\n", encoding="utf-8")
 +    assert banner.check_for_updates(passive=True) is None
-     config.write_text("updates:\n  check: false\n", encoding="utf-8")
-     assert banner.check_for_updates(passive=True) is None
--    assert banner.check_for_updates() == 17
++    config.write_text("updates:\n  check: false\n", encoding="utf-8")
++    assert banner.check_for_updates(passive=True) is None
 +    assert banner.check_for_updates() is None
- 
- 
++
++
  def test_explicit_check_fetches_local_origin_despite_passive_opt_out(tmp_path, monkeypatch, capsys):
-@@ -39,7 +62,9 @@ def test_explicit_check_fetches_local_origin_despite_passive_opt_out(tmp_path, m
+     from hermes_cli import main
+     from hermes_cli.update_cmd import _cmd_update_check
+@@ -18,7 +62,9 @@ def test_explicit_check_fetches_local_origin_despite_passive_opt_out(tmp_path, m
      git("-C", remote, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "next")
      monkeypatch.setattr(main, "PROJECT_ROOT", local)
      (get_hermes_home() / "config.yaml").write_text("updates:\n  check: false\n", encoding="utf-8")
@@ -2852,7 +3028,7 @@ index 053bb1f4df..3aecdad8e7 100644
 +    assert "Updates are disabled" in output
 +    assert "Fetching from origin" not in output
 diff --git a/tests/hermes_cli/test_skin_cmd.py b/tests/hermes_cli/test_skin_cmd.py
-index 09cf29422a..e748f01c9e 100644
+index 0a4f6ee84c..025a93f1ee 100644
 --- a/tests/hermes_cli/test_skin_cmd.py
 +++ b/tests/hermes_cli/test_skin_cmd.py
 @@ -23,6 +23,14 @@ def _activate(name: str) -> None:
@@ -2871,13 +3047,14 @@ index 09cf29422a..e748f01c9e 100644
      (_skins() / "oasis.yaml").write_text(
          'name: oasis\ncolors:\n  background: "#08201f"\n  banner_title: "#f2dfb3"\n', encoding="utf-8"
 diff --git a/tests/hermes_cli/test_skin_engine.py b/tests/hermes_cli/test_skin_engine.py
-index 2b46d537ea..9b9b2128c9 100644
+index 9dba5bf01e..fdaad6b363 100644
 --- a/tests/hermes_cli/test_skin_engine.py
 +++ b/tests/hermes_cli/test_skin_engine.py
-@@ -15,6 +15,21 @@ def reset_skin_state():
+@@ -14,6 +14,30 @@ def reset_skin_state():
+     skin_engine._active_skin_name = "default"
  
  
- class TestSkinConfig:
++class TestSkinConfig:
 +    @pytest.mark.parametrize("config", [{}, {"display": {}}, {"display": {"skin": "  "}}])
 +    def test_empty_config_selects_company_default(self, config):
 +        from hermes_cli.config_defaults import DEFAULT_CONFIG
@@ -2893,9 +3070,17 @@ index 2b46d537ea..9b9b2128c9 100644
 +        init_skin_from_config({"display": {"skin": "default"}})
 +        assert get_active_skin().name == "default"
 +
-     def test_default_skin_has_required_fields(self):
-         from hermes_cli.skin_engine import load_skin
-         skin = load_skin("default")
++    def test_default_skin_has_required_fields(self):
++        from hermes_cli.skin_engine import load_skin
++        skin = load_skin("default")
++        assert skin.name == "default"
++        assert skin.tool_prefix == "┊"
++        assert "banner_title" in skin.colors
++        assert "banner_border" in skin.colors
++        assert "agent_name" in skin.branding
+ 
+ 
+ 
 diff --git a/tests/hermes_cli/test_skin_palettes.py b/tests/hermes_cli/test_skin_palettes.py
 index f69846ed4d..c82c8edf68 100644
 --- a/tests/hermes_cli/test_skin_palettes.py
@@ -2910,35 +3095,39 @@ index f69846ed4d..c82c8edf68 100644
  
  # A `light_colors`/`dark_colors` block is an OVERLAY on `colors`, not a full
 diff --git a/tests/hermes_cli/test_update_apply_shallow_count.py b/tests/hermes_cli/test_update_apply_shallow_count.py
-index 272b42ad87..0db3d1eea7 100644
+index 4dc19589ac..e5321beec8 100644
 --- a/tests/hermes_cli/test_update_apply_shallow_count.py
 +++ b/tests/hermes_cli/test_update_apply_shallow_count.py
-@@ -11,106 +11,100 @@ the subprocess layer (git) and the compare API — the count/print logic runs
- for real.
- """
+@@ -13,6 +13,9 @@ API — the network boundary — is faked.
+ from __future__ import annotations
  
+ import subprocess
 +from pathlib import Path
 +from types import SimpleNamespace
- from unittest.mock import MagicMock, patch
++from unittest.mock import MagicMock, patch
  
--import pytest
--
- import hermes_cli.update_cmd as update_cmd
+ import pytest
  
- SHA_A = "a" * 40
- SHA_B = "b" * 40
+@@ -61,7 +64,7 @@ def _checkout_behind(tmp_path, origin, monkeypatch, *, shallow):
+ def _count(monkeypatch, *, api):
+     consulted = []
  
+-    def fake_compare(head_sha, target_sha):
++    def fake_compare(head_sha, target_sha, repository=None):
+         consulted.append((head_sha, target_sha))
+         return api
  
--def _git_responder(*, shallow: bool, count: str):
--    """Answer the git subprocess calls the count block makes."""
--
--    def fake_run(cmd, **kwargs):
--        joined = " ".join(cmd)
--        if "rev-list" in joined and "--count" in joined:
--            return MagicMock(returncode=0, stdout=f"{count}\n", stderr="")
--        if "--is-shallow-repository" in joined:
--            return MagicMock(returncode=0, stdout=("true\n" if shallow else "false\n"), stderr="")
--        if "rev-parse HEAD" in joined:
+@@ -100,3 +103,97 @@ def test_shallow_local_ahead_is_up_to_date(tmp_path, origin, monkeypatch):
+     _checkout_behind(tmp_path, origin, monkeypatch, shallow=True)
+     count, _ = _count(monkeypatch, api=0)
+     assert count == 0
++
++
++
++SHA_A = "a" * 40
++SHA_B = "b" * 40
++
++
 +def _run_count_block(
 +    *,
 +    shallow: bool,
@@ -2957,76 +3146,22 @@ index 272b42ad87..0db3d1eea7 100644
 +                returncode=0, stdout=("true\n" if shallow else "false\n"), stderr=""
 +            )
 +        if args == ["rev-parse", "HEAD"]:
-             return MagicMock(returncode=0, stdout=f"{SHA_A}\n", stderr="")
--        if "rev-parse origin/main" in joined:
++            return MagicMock(returncode=0, stdout=f"{SHA_A}\n", stderr="")
 +        if args == ["rev-parse", "origin/main"]:
-             return MagicMock(returncode=0, stdout=f"{SHA_B}\n", stderr="")
--        return MagicMock(returncode=0, stdout="", stderr="")
--
--    return fake_run
++            return MagicMock(returncode=0, stdout=f"{SHA_B}\n", stderr="")
 +        raise AssertionError(f"unexpected git call: {args}")
- 
--
--def _run_count_block(*, shallow: bool, raw_count: str, api_count):
--    """Execute exactly the apply-path count block with a faked git layer."""
--    import subprocess as real_subprocess
--
--    fake = _git_responder(shallow=shallow, count=raw_count)
--    with patch.object(update_cmd, "subprocess") as sub:
--        sub.run = MagicMock(side_effect=fake)
--        sub.CalledProcessError = real_subprocess.CalledProcessError
--        with patch("hermes_cli.banner._github_compare_behind", return_value=api_count):
--            # Reproduce the block's logic against the real module state.
--            git_cmd = ["git"]
--            result = sub.run(
--                git_cmd + ["rev-list", "HEAD..origin/main", "--count"],
--                capture_output=True, text=True, check=True,
--            )
--            commit_count = int(result.stdout.strip())
--            apply_is_shallow = (
--                sub.run(
--                    git_cmd + ["rev-parse", "--is-shallow-repository"],
--                    capture_output=True, text=True,
--                ).stdout.strip()
--                == "true"
--            )
--            if commit_count > 0 and apply_is_shallow:
--                from hermes_cli.banner import _github_compare_behind
--
--                head_sha = sub.run(git_cmd + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
--                target_sha = sub.run(
--                    git_cmd + ["rev-parse", "origin/main"], capture_output=True, text=True
--                ).stdout.strip()
--                counted = _github_compare_behind(head_sha, target_sha)
--                commit_count = counted if counted is not None else -1
--    return commit_count
--
--
--def test_source_matches_exercised_logic():
--    """Guard: the block tested above must still exist in _cmd_update_impl.
--
--    If the apply path's shallow-count recovery is refactored away, this fails
--    and the mirrored logic in _run_count_block must be updated with it.
--    """
--    import inspect
--
--    src = inspect.getsource(update_cmd._prepare_checkout_for_update)
--    assert "apply_is_shallow" in src
--    assert "_github_compare_behind" in src
--    # The "count unknown" print stays in _cmd_update_impl, which consumes the plan.
--    assert "commit count unknown on this shallow checkout" in inspect.getsource(
--        update_cmd._cmd_update_impl
++
 +    main = SimpleNamespace(
 +        PROJECT_ROOT=Path.cwd(),
 +        _get_origin_url=MagicMock(return_value=origin),
 +        _stash_local_changes_if_needed=MagicMock(return_value=None),
-     )
++    )
 +    with patch.object(update_cmd, "_git_run", side_effect=fake_git), patch.object(
 +        update_cmd,
 +        "_apply_parked_branch_guard",
 +        return_value=(False, False, None),
 +    ), patch.object(update_cmd, "_m", return_value=main), patch(
-+        "hermes_cli.banner._github_compare_behind", return_value=api_count
++        "hermes_cli.source_check._github_compare_behind", return_value=api_count
 +    ) as compare:
 +        plan = update_cmd._prepare_checkout_for_update(
 +            ["git"],
@@ -3051,15 +3186,8 @@ index 272b42ad87..0db3d1eea7 100644
 +    """FAIL-BEFORE: reported the bogus 9980 as 'Found 9980 new commit(s)'."""
 +    count, _ = _run_count_block(shallow=True, raw_count="9980", api_count=12)
 +    assert count == 12
- 
- 
--def test_full_clone_keeps_exact_count():
--    assert _run_count_block(shallow=False, raw_count="7", api_count=None) == 7
--
--
--def test_shallow_bogus_count_recovers_via_compare_api():
--    """FAIL-BEFORE: reported the bogus 9980 as 'Found 9980 new commit(s)'."""
--    assert _run_count_block(shallow=True, raw_count="9980", api_count=12) == 12
++
++
 +def test_shallow_flexpair_uses_flexpair_compare_api() -> None:
 +    count, compare = _run_count_block(
 +        shallow=True,
@@ -3069,43 +3197,44 @@ index 272b42ad87..0db3d1eea7 100644
 +    )
 +    assert count == 12
 +    compare.assert_called_once_with(SHA_A, SHA_B, "flexpair/hermes-agent")
- 
- 
--def test_shallow_bogus_count_offline_reports_unknown():
--    assert _run_count_block(shallow=True, raw_count="9980", api_count=None) == -1
++
++
 +def test_shallow_bogus_count_offline_reports_unknown() -> None:
 +    count, _ = _run_count_block(shallow=True, raw_count="9980", api_count=None)
 +    assert count == -1
- 
- 
--def test_shallow_local_ahead_treated_as_up_to_date():
--    assert _run_count_block(shallow=True, raw_count="3", api_count=0) == 0
++
++
 +def test_shallow_local_ahead_treated_as_up_to_date() -> None:
 +    count, _ = _run_count_block(shallow=True, raw_count="3", api_count=0)
 +    assert count == 0
- 
- 
--def test_shallow_zero_count_short_circuits_without_api():
--    with patch("hermes_cli.banner._github_compare_behind") as api:
--        got = _run_count_block(shallow=True, raw_count="0", api_count=None)
++
++
 +def test_shallow_zero_count_short_circuits_without_api() -> None:
 +    got, compare = _run_count_block(shallow=True, raw_count="0", api_count=None)
-     # The block only consults the API when count > 0; a 0 count is trustworthy
-     # (HEAD == origin tip counts 0 even on shallow graphs).
-     assert got == 0
++    # The block only consults the API when count > 0; a 0 count is trustworthy
++    # (HEAD == origin tip counts 0 even on shallow graphs).
++    assert got == 0
 +    compare.assert_not_called()
 diff --git a/tests/hermes_cli/test_update_behind_count_recovery.py b/tests/hermes_cli/test_update_behind_count_recovery.py
-index 930dd9ef3e..75c6e3db1d 100644
+index dbfbc440ba..dfa358f984 100644
 --- a/tests/hermes_cli/test_update_behind_count_recovery.py
 +++ b/tests/hermes_cli/test_update_behind_count_recovery.py
-@@ -43,11 +43,16 @@ class _FakeResponse:
+@@ -13,7 +13,7 @@ indicator said 1). The fix has two halves:
+ """
+ 
+ import json
+-from unittest.mock import patch
++from unittest.mock import MagicMock, patch
+ 
+ import pytest
+ 
+@@ -37,10 +37,15 @@ class _FakeResponse:
          return False
  
  
 -def _patch_urlopen(payload):
 +def _patch_urlopen(payloads):
-     banner._compare_payload_cache.clear()
-+    if isinstance(payloads, dict):
++    if not isinstance(payloads, list):
 +        payloads = [payloads]
 +    responses = [
 +        _FakeResponse(json.dumps(payload).encode()) for payload in payloads
@@ -3117,77 +3246,83 @@ index 930dd9ef3e..75c6e3db1d 100644
      )
  
  
-@@ -116,6 +121,25 @@ def test_check_via_rev_recovers_exact_count():
-     compare.assert_called_once_with(SHA_A, SHA_B)
- 
- 
-+def test_compare_cache_is_scoped_by_repository() -> None:
-+    with _patch_urlopen(
-+        [
-+            {"ahead_by": 61, "status": "ahead"},
-+            {"ahead_by": 7, "status": "ahead"},
-+        ]
-+    ) as urlopen:
-+        assert (
-+            banner._github_compare_behind(SHA_A, SHA_B, "flexpair/hermes-agent")
-+            == 61
-+        )
-+        assert (
-+            banner._github_compare_behind(SHA_A, SHA_B, "nousresearch/hermes-agent")
-+            == 7
-+        )
-+
-+    assert urlopen.call_count == 2
-+
-+
- def test_check_via_rev_falls_back_to_sentinel_offline():
-     """FAIL-BEFORE (class): this path returned a fabricated 1 via callers."""
-     with _upstream_tip(SHA_B), patch.object(banner, "_github_compare_behind", return_value=None):
 diff --git a/tests/hermes_cli/test_update_check.py b/tests/hermes_cli/test_update_check.py
-index 46b4eee937..bd937f70ba 100644
---- a/tests/hermes_cli/test_update_check.py
+new file mode 100644
+index 0000000000..47ea436bca
+--- /dev/null
 +++ b/tests/hermes_cli/test_update_check.py
-@@ -33,7 +33,12 @@ def git_repo(tmp_path, monkeypatch):
-     return repo_dir
- 
- 
--def _stub_git(monkeypatch, *, head=SHA_A, origin="https://github.com/NousResearch/hermes-agent.git"):
+@@ -0,0 +1,227 @@
++"""Tests for the update check mechanism in hermes_cli.banner.
++
++Passive checks go through the GitHub REST API — never ``git fetch``. Every CLI, TUI and desktop
++start used to fetch; across the install base that was tens of millions of fetch requests a day
++and GitHub asked us to poll the API instead. These tests pin that contract plus the cache
++policy that keeps the API traffic to one request a day per install.
++"""
++
++import json
++import threading
++import time
++from unittest.mock import MagicMock, patch
++
++import pytest
++
++import hermes_cli.banner as banner
++
++SHA_A = "a" * 40
++SHA_B = "b" * 40
++
++
++@pytest.fixture
++def git_repo(tmp_path, monkeypatch):
++    """A fake checkout the update check resolves to, with git calls stubbed out."""
++    repo_dir = tmp_path / "hermes-agent"
++    repo_dir.mkdir()
++    (repo_dir / ".git").mkdir()
++    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
++    monkeypatch.delenv("HERMES_REVISION", raising=False)
++    monkeypatch.setattr(banner, "_resolve_repo_dir", lambda: repo_dir)
++    monkeypatch.setattr("hermes_cli.config.detect_install_method", lambda root: "git")
++    monkeypatch.setattr("hermes_cli.config.get_project_root", lambda: repo_dir)
++    return repo_dir
++
++
 +def _stub_git(
 +    monkeypatch,
 +    *,
 +    head=SHA_A,
 +    origin="https://github.com/NousResearch/hermes-agent.git",
 +):
-     calls = []
- 
-     def fake_run(args, **kwargs):
-@@ -45,6 +50,10 @@ def _stub_git(monkeypatch, *, head=SHA_A, origin="https://github.com/NousResearc
-             return MagicMock(returncode=0, stdout=f"{origin}\n")
-         if sub == "merge-base":
-             return MagicMock(returncode=1, stdout="")
++    calls = []
++
++    def fake_run(args, **kwargs):
++        calls.append(list(args))
++        sub = args[1]
++        if sub == "rev-parse":
++            return MagicMock(returncode=0, stdout=f"{head}\n")
++        if sub == "remote":
++            return MagicMock(returncode=0, stdout=f"{origin}\n")
++        if sub == "merge-base":
++            return MagicMock(returncode=1, stdout="")
 +        if sub == "fetch":
 +            return MagicMock(returncode=0, stdout="", stderr="")
 +        if sub == "rev-list":
 +            return MagicMock(returncode=0, stdout="0\n", stderr="")
-         raise AssertionError(f"passive check must not run git {sub}: {args}")
- 
-     monkeypatch.setattr(banner.subprocess, "run", fake_run)
-@@ -52,18 +61,73 @@ def _stub_git(monkeypatch, *, head=SHA_A, origin="https://github.com/NousResearc
- 
- 
- def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
--    """The whole point: no ``git fetch`` / ``ls-remote`` for a GitHub origin, exact count via compare."""
++        raise AssertionError(f"passive check must not run git {sub}: {args}")
++
++    monkeypatch.setattr(banner.subprocess, "run", fake_run)
++    return calls
++
++
++def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
 +    """No fetch for GitHub origins; exact count comes from the compare API."""
-     calls = _stub_git(monkeypatch, head=SHA_A)
-     tip = MagicMock(return_value=SHA_B)
-     monkeypatch.setattr(banner, "_github_branch_tip", tip)
--    monkeypatch.setattr(banner, "_github_compare_behind", lambda cur, tgt: 61)
++    calls = _stub_git(monkeypatch, head=SHA_A)
++    tip = MagicMock(return_value=SHA_B)
++    monkeypatch.setattr(banner, "_github_branch_tip", tip)
 +    monkeypatch.setattr(
 +        banner, "_github_compare_behind", lambda cur, tgt, repo=None: 61
 +    )
- 
--    assert banner.check_for_updates() == 61
--    tip.assert_called_once_with("nousresearch/hermes-agent", "main")
++
 +    assert banner.check_for_updates() is None
 +    tip.assert_not_called()
 +    assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
@@ -3225,10 +3360,8 @@ index 46b4eee937..bd937f70ba 100644
 +    tip.assert_not_called()
 +    compare.assert_not_called()
 +    assert not (git_repo.parent / ".update_check").exists()
-     assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
- 
--    cached = json.loads((git_repo.parent / ".update_check").read_text())
--    assert (cached["head"], cached["target"], cached["behind"]) == (SHA_A, SHA_B, 61)
++    assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
++
 +
 +def test_flexpair_origin_ignores_existing_upstream_remote(git_repo, monkeypatch):
 +    calls = _stub_git(
@@ -3249,45 +3382,105 @@ index 46b4eee937..bd937f70ba 100644
 +
 +    assert not any(call[1] == "fetch" for call in calls)
 +    assert not any("upstream" in call for call in calls)
- 
- 
- def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
-@@ -77,16 +141,19 @@ def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
-     monkeypatch.setattr(banner, "_github_branch_tip", tip)
- 
-     def write_cache(*, ts, head, behind):
--        cache_file.write_text(json.dumps(
--            {"ts": ts, "behind": behind, "rev": None, "ver": __version__, "head": head}))
++
++
++def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
++    """A fresh cache answers without any network; ``hermes update`` moving HEAD busts it at once;
++    an inconclusive (None) result is retried after the shorter failure window, not never."""
++    from hermes_cli import __version__
++
++    cache_file = git_repo.parent / ".update_check"
++    _stub_git(monkeypatch, head=SHA_A)
++    tip = MagicMock(return_value=None)
++    monkeypatch.setattr(banner, "_github_branch_tip", tip)
++
++    def write_cache(*, ts, head, behind):
 +        cache_file.write_text(
 +            json.dumps(
 +                {"ts": ts, "behind": behind, "rev": None, "ver": __version__, "head": head}
 +            )
 +        )
- 
-     write_cache(ts=time.time() - banner._UPDATE_CHECK_CACHE_SECONDS + 60, head=SHA_A, behind=3)
--    assert banner.check_for_updates() == 3
-+    assert banner.check_for_updates() is None
-     tip.assert_not_called()
- 
-     write_cache(ts=time.time(), head=SHA_B, behind=3)  # cached for a different HEAD
--    assert banner.check_for_updates() is None  # API unreachable → inconclusive, re-asked
--    tip.assert_called_once()
++
++    write_cache(ts=time.time() - banner._UPDATE_CHECK_CACHE_SECONDS + 60, head=SHA_A, behind=3)
 +    assert banner.check_for_updates() is None
 +    tip.assert_not_called()
- 
-     tip.reset_mock()
-     write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS + 60, head=SHA_A, behind=None)
-@@ -95,7 +162,7 @@ def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
- 
-     write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS - 1, head=SHA_A, behind=None)
-     banner.check_for_updates()
--    tip.assert_called_once()
++
++    write_cache(ts=time.time(), head=SHA_B, behind=3)  # cached for a different HEAD
++    assert banner.check_for_updates() is None
 +    tip.assert_not_called()
- 
- 
- def test_prefetch_non_blocking(monkeypatch):
++
++    tip.reset_mock()
++    write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS + 60, head=SHA_A, behind=None)
++    assert banner.check_for_updates() is None
++    tip.assert_not_called()
++
++    write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS - 1, head=SHA_A, behind=None)
++    banner.check_for_updates()
++    tip.assert_not_called()
++
++
++def test_prefetch_non_blocking(monkeypatch):
++    """prefetch_update_check() should return immediately without blocking."""
++    # Reset module state; force the real (non-pytest) thread path.
++    banner._update_result = None
++    banner._update_check_done = threading.Event()
++    monkeypatch.setattr(banner, "_skip_background_prefetch", lambda: False)
++
++    with patch.object(banner.source_check, "check_for_updates", return_value={"behind": 5}):
++        start = time.monotonic()
++        banner.prefetch_update_check()
++        assert time.monotonic() - start < 1.0
++        banner._update_check_done.wait(timeout=5)
++        assert banner._update_result == 5
++
++
++def test_prefetch_update_check_is_noop_under_pytest():
++    """Under pytest the prefetch must NOT start the git-spawning daemon
++    thread: a process-wide ``patch("subprocess.run")`` in an unrelated test
++    can capture the thread's ``git fetch``/``rev-parse`` spawns, flaking the
++    unrelated test's call_args assertions (seen in
++    tests/tui_gateway/test_subprocess_encoding.py and
++    test_bot_relay_methods.py on CI, 2026-08-28)."""
++    banner._update_result = None
++    banner._update_check_done = threading.Event()
++
++    before = {t.ident for t in threading.enumerate()}
++    with patch.object(banner, "check_for_updates") as mock_check:
++        banner.prefetch_update_check()
++        # The done event is set synchronously so get_update_result() callers
++        # don't burn their timeout waiting on a check that will never run.
++        assert banner._update_check_done.is_set()
++        mock_check.assert_not_called()
++    after = {t.ident for t in threading.enumerate()}
++    assert after <= before, "prefetch_update_check spawned a thread under pytest"
++
++
++def test_prefetch_banner_data_is_noop_under_pytest(monkeypatch):
++    """Same stray-git-spawn class: prefetch_banner_data must not start its
++    daemon thread under pytest."""
++    monkeypatch.setattr(banner, "_banner_data_prefetch_started", False)
++    with patch.object(banner, "get_git_banner_state") as mock_state:
++        banner.prefetch_banner_data()
++        # Give a hypothetical stray thread a beat to run — nothing should.
++        time.sleep(0.05)
++        mock_state.assert_not_called()
++    assert banner._banner_data_prefetch_started is True
++
++
++def test_upstream_main_sha_ls_remote_fallback_disables_git_prompts(monkeypatch):
++    """When the API is unreachable the HTTPS ls-remote fallback must never inherit the terminal."""
++    monkeypatch.setattr(banner, "_github_branch_tip", lambda slug, branch: None)
++    completed = MagicMock(returncode=1, stdout="", stderr="auth required")
++    run = MagicMock(return_value=completed)
++    monkeypatch.setattr(banner.subprocess, "run", run)
++
++    assert banner._upstream_main_sha() is None
++    kwargs = run.call_args.kwargs
++    assert kwargs["stdin"] is banner.subprocess.DEVNULL
++    assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
++    assert kwargs["env"]["GCM_INTERACTIVE"] == "Never"
 diff --git a/tests/hermes_cli/test_update_contract.py b/tests/hermes_cli/test_update_contract.py
-index 9f6adce2b5..fe4a6bb13d 100644
+index b24bf2fd3c..c731ac574a 100644
 --- a/tests/hermes_cli/test_update_contract.py
 +++ b/tests/hermes_cli/test_update_contract.py
 @@ -98,8 +98,8 @@ def test_admission_marker_refuses_even_on_git_checkout(tmp_path, monkeypatch):
@@ -3333,21 +3526,45 @@ index 9f6adce2b5..fe4a6bb13d 100644
 +    assert refusal is not None and refusal.code == "updates-disabled"
  
  
- def test_admission_apt_and_nix_refuse(tmp_path, monkeypatch):
-@@ -145,7 +146,7 @@ def test_admission_apt_and_nix_refuse(tmp_path, monkeypatch):
+ def test_admission_nix_refuses(tmp_path, monkeypatch):
+@@ -144,7 +145,7 @@ def test_admission_nix_refuses(tmp_path, monkeypatch):
  
-         monkeypatch.setattr("hermes_cli.config.detect_install_method", _detect)
-         refusal = evaluate_update_admission(tmp_path)
--        assert refusal is not None and refusal.code == code
-+        assert refusal is not None and refusal.code == "updates-disabled"
+     monkeypatch.setattr("hermes_cli.config.detect_install_method", _detect)
+     refusal = evaluate_update_admission(tmp_path)
+-    assert refusal is not None and refusal.code == "nix"
++    assert refusal is not None and refusal.code == "updates-disabled"
  
  
  # ---------------------------------------------------------------------------
+@@ -191,6 +192,7 @@ def _sealed_tree(tmp_path: Path, distribution: str) -> Path:
+     return root
+ 
+ 
++@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
+ def test_admission_source_checkout_on_termux_host_refuses_with_apt_hint(tmp_path, monkeypatch):
+     """A git checkout is normally admitted, but not on a Termux host: the
+     lock has no Android wheels, so a source sync would build sdists on the
+@@ -210,6 +212,7 @@ def test_admission_source_checkout_on_termux_host_refuses_with_apt_hint(tmp_path
+     assert evaluate_update_admission(tmp_path) is None, "the same checkout off Termux stays updatable"
+ 
+ 
++@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
+ def test_admission_apt_termux_refuses_with_pkg_upgrade(tmp_path, monkeypatch):
+     """A sealed apt-termux tree (no .git) is refused by the steward gate:
+     the package manager owns the code tree, so remediation is pkg upgrade
+@@ -228,6 +231,7 @@ def test_admission_apt_termux_refuses_with_pkg_upgrade(tmp_path, monkeypatch):
+     assert "pkg upgrade hermes-agent" in refusal.update_command
+ 
+ 
++@pytest.mark.skip(reason="Flexpair fixed build disables every bundled update, including Termux")
+ def test_admission_apt_termux_command_comes_from_steward_table(tmp_path, monkeypatch):
+     """The apt-termux remediation command is read from the config module's
+     ``_UPDATE_COMMAND_BY_METHOD`` table (the same one every install method
 diff --git a/tests/hermes_cli/test_web_server.py b/tests/hermes_cli/test_web_server.py
-index 0256d3da65..2445b0aace 100644
+index d5ab94e995..6299716b76 100644
 --- a/tests/hermes_cli/test_web_server.py
 +++ b/tests/hermes_cli/test_web_server.py
-@@ -2764,6 +2764,15 @@ class TestWebServerEndpoints:
+@@ -2628,6 +2628,15 @@ CONFIG_SCHEMA = ProviderConfigSchema(
  
  class TestBuildSchemaFromConfig:
  
@@ -3361,8 +3578,97 @@ index 0256d3da65..2445b0aace 100644
 +        assert "default" in options
 +
  
-     def test_overrides_applied(self):
-         from hermes_cli.web_server_config import CONFIG_SCHEMA
+     def test_timezone_field_is_searchable_select(self):
+         """timezone must ship as a searchable, clearable select of IANA ids.
+diff --git a/tests/scripts/install/test_install_diverged_rescue_ref.py b/tests/scripts/install/test_install_diverged_rescue_ref.py
+index b6da914a40..6824dc268e 100644
+--- a/tests/scripts/install/test_install_diverged_rescue_ref.py
++++ b/tests/scripts/install/test_install_diverged_rescue_ref.py
+@@ -53,24 +53,12 @@ def _diverged_managed_checkout(tmp_path: Path) -> tuple[Path, str]:
+     return managed, local_sha
+ 
+ 
+-def _assert_local_commit_parked(repo: Path, local_sha: str, output: str) -> None:
+-    assert _git(repo, "rev-parse", "HEAD") == _git(repo, "rev-parse", "origin/main")
+-    refs = dict(
+-        line.split()[::-1] for line in _git(
+-            repo, "for-each-ref", "--format=%(refname) %(objectname)",
+-            "refs/hermes-update-backups/").splitlines())
+-    ref = refs.get(local_sha)
+-    assert ref and ref.startswith("refs/hermes-update-backups/diverged-main-"), refs
+-    assert ref in output, "the installer must print where the commits went"
+-    assert _git(repo, "log", "--format=%H", f"origin/main..{ref}").split() == [local_sha]
+-
+-
+ @pytest.mark.live_system_guard_bypass
+ @pytest.mark.skipif(
+     shutil.which("git") is None or shutil.which("bash") is None,
+     reason="needs git and bash",
+ )
+-def test_install_sh_repository_stage_parks_local_commits_before_reset(tmp_path: Path) -> None:
++def test_install_sh_repository_stage_refuses_without_reset(tmp_path: Path) -> None:
+     managed, local_sha = _diverged_managed_checkout(tmp_path)
+     env = os.environ | {
+         "HERMES_HOME": str(tmp_path / "hermes-home"),
+@@ -82,8 +70,10 @@ def test_install_sh_repository_stage_parks_local_commits_before_reset(tmp_path:
+         cwd=tmp_path, env=env, capture_output=True, text=True,
+     )
+ 
+-    assert result.returncode == 0, result.stderr
+-    _assert_local_commit_parked(managed, local_sha, result.stdout + result.stderr)
++    assert result.returncode != 0
++    assert "Updates are disabled" in result.stderr
++    assert _git(managed, "rev-parse", "HEAD") == local_sha
++    assert not _git(managed, "for-each-ref", "--format=%(refname)", "refs/hermes-update-backups/")
+ 
+ 
+ @pytest.mark.live_system_guard_bypass
+@@ -91,7 +81,7 @@ def test_install_sh_repository_stage_parks_local_commits_before_reset(tmp_path:
+     shutil.which("git") is None or POWERSHELL is None,
+     reason="needs git and PowerShell",
+ )
+-def test_install_ps1_repository_stage_parks_local_commits_before_reset(tmp_path: Path) -> None:
++def test_install_ps1_repository_stage_refuses_without_reset(tmp_path: Path) -> None:
+     managed, local_sha = _diverged_managed_checkout(tmp_path)
+     env = os.environ.copy()
+     if os.name != "nt":
+@@ -120,5 +110,7 @@ def test_install_ps1_repository_stage_parks_local_commits_before_reset(tmp_path:
+         cwd=tmp_path, env=env, capture_output=True, text=True,
+     )
+ 
+-    assert result.returncode == 0, result.stdout + result.stderr
+-    _assert_local_commit_parked(managed, local_sha, result.stdout + result.stderr)
++    assert result.returncode != 0
++    assert "Flexpair installation requires Linux" in result.stdout + result.stderr
++    assert _git(managed, "rev-parse", "HEAD") == local_sha
++    assert not _git(managed, "for-each-ref", "--format=%(refname)", "refs/hermes-update-backups/")
+diff --git a/tests/scripts/install/test_install_sh_existing_destination.py b/tests/scripts/install/test_install_sh_existing_destination.py
+index 6958f00fbb..35d01bad56 100644
+--- a/tests/scripts/install/test_install_sh_existing_destination.py
++++ b/tests/scripts/install/test_install_sh_existing_destination.py
+@@ -40,17 +40,18 @@ def test_unrelated_destination_is_refused_untouched(tmp_path, shape):
+     before = sorted(str(p.relative_to(dest)) for p in dest.rglob("*")) if dest.is_dir() else dest.read_text()
+     result = _stage_repository(tmp_path, dest)
+     assert result.returncode != 0
+-    assert "not a Hermes git checkout" in result.stderr
++    assert "Updates are disabled" in result.stderr
+     after = sorted(str(p.relative_to(dest)) for p in dest.rglob("*")) if dest.is_dir() else dest.read_text()
+     assert after == before, "refusal must not nest a tree/ inside or alter the destination"
+     assert not (dest / "tree").exists()
+     assert not list(tmp_path.glob(".hermes-clone-*"))
+ 
+ 
+-def test_empty_destination_directory_becomes_the_checkout(tmp_path):
++def test_empty_destination_directory_is_preserved(tmp_path):
+     dest = tmp_path / "install"
+     dest.mkdir()
+     result = _stage_repository(tmp_path, dest)
+-    assert result.returncode == 0, result.stdout + result.stderr
+-    assert (dest / "README").read_text() == "complete checkout\n", "checkout is AT the destination, not under tree/"
++    assert result.returncode != 0
++    assert "Updates are disabled" in result.stderr
++    assert list(dest.iterdir()) == []
+     assert not (dest / "tree").exists()
 diff --git a/tests/scripts/install/test_install_sh_repository_defaults.py b/tests/scripts/install/test_install_sh_repository_defaults.py
 new file mode 100644
 index 0000000000..b9559d035f
@@ -3410,12 +3716,147 @@ index 0000000000..b9559d035f
 +
 +    assert result.returncode == 0, result.stderr
 +    assert tuple(result.stdout.splitlines()) == EXPECTED_URLS
+diff --git a/tests/scripts/install/test_install_sh_repository_stage.py b/tests/scripts/install/test_install_sh_repository_stage.py
+index c5fe4256ef..ec52e75786 100644
+--- a/tests/scripts/install/test_install_sh_repository_stage.py
++++ b/tests/scripts/install/test_install_sh_repository_stage.py
+@@ -56,19 +56,20 @@ def test_piped_one_liner_runs_the_installer():
+     assert json.loads(result.stdout)["protocol_version"] == 1
+ 
+ 
+-def test_rerun_parks_local_work_before_updating(tmp_path):
++def test_rerun_preserves_local_work_without_updating(tmp_path):
+     origin = _origin(tmp_path / "origin")
+     assert _stage(tmp_path, origin).returncode == 0
+     install = tmp_path / "install"
+     (install / "README").write_text("local edit")
+     _commit(origin, "two")
+     result = _stage(tmp_path, origin)
+-    assert result.returncode == 0, result.stdout + result.stderr
+-    assert (install / "README").read_text() == "two"
+-    assert "local edit" in _git(install, "stash", "show", "-p", "stash@{0}")
++    assert result.returncode != 0
++    assert "Updates are disabled" in result.stderr
++    assert (install / "README").read_text() == "local edit"
++    assert not _git(install, "stash", "list")
+ 
+ 
+-def test_rerun_stops_when_local_work_cannot_be_parked(tmp_path):
++def test_rerun_stops_before_attempting_to_stash_local_work(tmp_path):
+     origin = _origin(tmp_path / "origin")
+     assert _stage(tmp_path, origin).returncode == 0
+     install = tmp_path / "install"
+@@ -78,8 +79,10 @@ def test_rerun_stops_when_local_work_cannot_be_parked(tmp_path):
+     failing_stash = 'git() { [ "${3:-}" = stash ] && return 1; command git "$@"; }'
+     result = _stage(tmp_path, origin, prelude=failing_stash)
+     assert result.returncode != 0
++    assert "Updates are disabled" in result.stderr
+     assert (install / "README").read_text() == "local edit"
+     assert _git(install, "rev-parse", "HEAD") == before
++    assert not _git(install, "stash", "list")
+ 
+ 
+ def test_commit_pin_must_come_from_the_installed_branch(tmp_path):
+@@ -92,25 +95,27 @@ def test_commit_pin_must_come_from_the_installed_branch(tmp_path):
+     refused = _stage(tmp_path, origin, commit=off_branch)
+     assert refused.returncode != 0
+     assert "is not on branch main" in refused.stdout + refused.stderr
++    before = _git(tmp_path / "install", "rev-parse", "HEAD")
+     pinned = _stage(tmp_path, origin, commit=on_branch)
+-    assert pinned.returncode == 0, pinned.stdout + pinned.stderr
+-    assert _git(tmp_path / "install", "rev-parse", "HEAD") == on_branch
++    assert pinned.returncode != 0
++    assert "Updates are disabled" in pinned.stderr
++    assert _git(tmp_path / "install", "rev-parse", "HEAD") == before
+ 
+ 
+-def test_commitless_checkout_is_moved_aside_and_recloned(tmp_path):
++def test_commitless_checkout_is_left_untouched(tmp_path):
+     origin = _origin(tmp_path / "origin")
+     install = tmp_path / "install"
+     install.mkdir()
+     _git(install, "init", "-q")
+     (install / "keep").write_text("user file")
+     result = _stage(tmp_path, origin)
+-    assert result.returncode == 0, result.stdout + result.stderr
+-    assert (install / "README").read_text() == "one"
+-    [broken] = tmp_path.glob("install.broken-*")
+-    assert (broken / "keep").read_text() == "user file"
++    assert result.returncode != 0
++    assert "Updates are disabled" in result.stderr
++    assert (install / "keep").read_text() == "user file"
++    assert not list(tmp_path.glob("install.broken-*"))
+ 
+ 
+-def test_unmerged_index_is_cleared_then_stashed(tmp_path):
++def test_unmerged_index_is_left_untouched(tmp_path):
+     origin = _origin(tmp_path / "origin")
+     assert _stage(tmp_path, origin).returncode == 0
+     install = tmp_path / "install"
+@@ -123,22 +128,23 @@ def test_unmerged_index_is_cleared_then_stashed(tmp_path):
+     assert _git(install, "ls-files", "--unmerged")
+     _commit(origin, "two")
+     result = _stage(tmp_path, origin)
+-    assert result.returncode == 0, result.stdout + result.stderr
+-    assert (install / "README").read_text() == "two"
+-    assert not _git(install, "ls-files", "--unmerged")
++    assert result.returncode != 0
++    assert "Updates are disabled" in result.stderr
++    assert _git(install, "ls-files", "--unmerged")
+ 
+ 
+-def test_rerun_follows_an_explicit_repo_url(tmp_path):
++def test_rerun_does_not_change_explicit_repo_url(tmp_path):
+     first = _origin(tmp_path / "first")
+     assert _stage(tmp_path, first).returncode == 0
+     moved = tmp_path / "moved"
+     subprocess.run(["git", "clone", "-q", str(first), str(moved)], check=True)
+     tip = _commit(moved, "moved")
+     result = _stage(tmp_path, moved)
+-    assert result.returncode == 0, result.stdout + result.stderr
++    assert result.returncode != 0
++    assert "Updates are disabled" in result.stderr
+     install = tmp_path / "install"
+-    assert _git(install, "rev-parse", "HEAD") == tip
+-    assert _git(install, "remote", "get-url", "origin") == moved.as_posix()
++    assert _git(install, "rev-parse", "HEAD") != tip
++    assert _git(install, "remote", "get-url", "origin") == first.as_posix()
+ 
+ 
+ @pytest.mark.parametrize("reported, accepted", [("0.6.17", False), ("99.0.0", True)])
+diff --git a/tests/scripts/install/test_install_sh_termux_refusal.py b/tests/scripts/install/test_install_sh_termux_refusal.py
+index d42c4646b2..c1bbaa3bac 100644
+--- a/tests/scripts/install/test_install_sh_termux_refusal.py
++++ b/tests/scripts/install/test_install_sh_termux_refusal.py
+@@ -1,4 +1,4 @@
+-"""install.sh sends Termux hosts to the APT package instead of building a source install."""
++"""The Linux-only Flexpair installer refuses Termux before touching the install."""
+ import os
+ from pathlib import Path
+ import subprocess
+@@ -9,14 +9,14 @@ INSTALL_SH = Path(__file__).resolve().parent.parent.parent.parent / "scripts" /
+ 
+ 
+ @pytest.mark.parametrize("marker", [{"TERMUX_VERSION": "0.118.0"}, {"PREFIX": "/data/data/com.termux/files/usr"}])
+-def test_termux_host_is_refused_before_any_stage_with_apt_hint(tmp_path, marker):
++def test_termux_host_is_refused_before_any_stage(tmp_path, marker):
+     env = {k: v for k, v in os.environ.items() if k not in ("TERMUX_VERSION", "PREFIX")}
+     env.update(marker, HOME=tmp_path.as_posix(), HERMES_HOME=(tmp_path / "home").as_posix(),
+                HERMES_INSTALL_DIR=(tmp_path / "install").as_posix())
+     result = subprocess.run(["bash", INSTALL_SH.as_posix(), "--stage", "prerequisites"],
+                             env=env, capture_output=True, text=True, timeout=30)
+     assert result.returncode != 0
+-    assert "pkg install hermes-agent" in result.stderr
++    assert "requires Linux" in result.stderr
+     assert not (tmp_path / "install").exists()
+ 
+ 
 diff --git a/tests/tui_gateway/test_protocol.py b/tests/tui_gateway/test_protocol.py
-index d64edd29dc..2fa72b28cd 100644
+index 3df44602d0..3ea7e54e37 100644
 --- a/tests/tui_gateway/test_protocol.py
 +++ b/tests/tui_gateway/test_protocol.py
-@@ -1520,6 +1520,34 @@ def test_skin_live_switch_end_to_end(server, tmp_path, monkeypatch):
-     assert emitted[0][1]["colors"]["banner_title"] == "#00ffcc"
+@@ -1647,6 +1647,35 @@ def test_skin_live_switch_end_to_end(server, tmp_path, monkeypatch):
+     assert emitted[0][1]["customCSS"] == ".chat-input { font-size: 16px; }"
  
  
 +def test_empty_config_broadcasts_company_skin(server, tmp_path, monkeypatch):
@@ -3424,6 +3865,7 @@ index d64edd29dc..2fa72b28cd 100644
 +
 +    monkeypatch.setattr(skin_engine, "get_hermes_home", lambda: tmp_path)
 +    monkeypatch.setattr(server, "_hermes_home", tmp_path)
++    monkeypatch.setattr(server, "_stdio_is_rpc_channel", True)
 +    monkeypatch.setattr(server, "_last_skin_sig", None, raising=False)
 +    server._cfg_cache = server._cfg_sig = server._cfg_path = None
 +    emitted = []
@@ -3450,10 +3892,10 @@ index d64edd29dc..2fa72b28cd 100644
      """A skin the agent changes mid-turn goes live once per real move: a name
      switch (incl. switch-then-revert) OR an in-place color edit to the active skin
 diff --git a/tui_gateway/change_watcher.py b/tui_gateway/change_watcher.py
-index 071ee77c20..5cc8e18b5a 100644
+index 2632709430..8eafd7de22 100644
 --- a/tui_gateway/change_watcher.py
 +++ b/tui_gateway/change_watcher.py
-@@ -56,7 +56,7 @@ def _newest_mtime_ns(paths) -> int | None:
+@@ -58,7 +58,7 @@ def _newest_mtime_ns(paths) -> int | None:
  def _skin_sig() -> tuple[str, float | None]:
      """(active skin name, its user-file mtime). Built-ins have no file, so only
      their name moves; a user skin's mtime lets an in-place color edit repaint too."""
@@ -3463,10 +3905,10 @@ index 071ee77c20..5cc8e18b5a 100644
          return name, (_watcher_home() / "skins" / f"{name}.yaml").stat().st_mtime
      except OSError:
 diff --git a/tui_gateway/methods_config.py b/tui_gateway/methods_config.py
-index 63489d8cad..249ed0c70a 100644
+index 3a631c1872..5626b47421 100644
 --- a/tui_gateway/methods_config.py
 +++ b/tui_gateway/methods_config.py
-@@ -124,6 +124,10 @@ def _display_word(key: str, default: str, allowed) -> str:
+@@ -177,6 +177,10 @@ def _display_word(key: str, default: str, allowed) -> str:
      raw = str(_display_raw().get(key, default) or "").strip().lower()
      return raw if raw in allowed else default
  
@@ -3477,7 +3919,7 @@ index 63489d8cad..249ed0c70a 100644
  
  _THINKING_MODES = frozenset({"collapsed", "truncated", "full"})
  
-@@ -206,7 +210,7 @@ _CONFIG_GETTERS = {
+@@ -261,7 +265,7 @@ _CONFIG_GETTERS = {
      "project": _cfg_get_project,
      "full": lambda params: {"config": _load_cfg()},
      "prompt": lambda params: {"prompt": _load_cfg().get("custom_prompt", "")},
@@ -3487,10 +3929,10 @@ index 63489d8cad..249ed0c70a 100644
      "indicator": lambda params: {
          "value": _display_word("tui_status_indicator", DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES)},
 diff --git a/website/docs/user-guide/configuration.md b/website/docs/user-guide/configuration.md
-index baef49f522..c34df76578 100644
+index 73efc481bf..45c64b15f1 100644
 --- a/website/docs/user-guide/configuration.md
 +++ b/website/docs/user-guide/configuration.md
-@@ -2156,7 +2156,7 @@ display:
+@@ -2171,7 +2171,7 @@ display:
    interim_assistant_messages: true  # Gateway: send natural mid-turn assistant updates as separate messages
    suppress_warning_notifications: false  # Opt-in: hide automatic warning/diagnostic notices (see messaging guide)
    show_commentary: true   # Codex models: deliver commentary-channel progress narration as visible mid-turn updates
@@ -3500,7 +3942,7 @@ index baef49f522..c34df76578 100644
    compact: false          # Compact output mode (less whitespace)
    cli_multiline_shortcuts: true  # CLI: Ctrl+J, \ + Enter, and supported Shift+Enter insert newlines (false = legacy c-j submit fallback)
 diff --git a/website/docs/user-guide/features/skins.md b/website/docs/user-guide/features/skins.md
-index eb8ecf32e1..6576313dff 100644
+index 5fb780757b..0f052b4162 100644
 --- a/website/docs/user-guide/features/skins.md
 +++ b/website/docs/user-guide/features/skins.md
 @@ -25,9 +25,11 @@ Or set the default skin in `~/.hermes/config.yaml`:
@@ -3525,3 +3967,637 @@ index eb8ecf32e1..6576313dff 100644
  
  ## Complete list of configurable keys
  
+diff --git a/agent/i18n.py b/agent/i18n.py
+index d1e725855..3e82aaae1 100644
+--- a/agent/i18n.py
++++ b/agent/i18n.py
+@@ -16,8 +16,10 @@ from typing import Any
+ 
+ logger = logging.getLogger(__name__)
+ 
++# Local removal: "zh" / "zh-hant" deleted (China-market locales).
++# locales/zh.yaml + zh-hant.yaml are removed; requests for them fall back to "en".
+ SUPPORTED_LANGUAGES: tuple[str, ...] = (
+-    "en", "zh", "zh-hant", "ja", "de", "es", "fr", "tr", "uk",
++    "en", "ja", "de", "es", "fr", "tr", "uk",
+     "af", "ko", "it", "ga", "pt", "ru", "hu", "ar",
+ )
+ DEFAULT_LANGUAGE = "en"
+@@ -28,9 +30,7 @@ DEFAULT_LANGUAGE = "en"
+ # the pt catalog (no separate br one).
+ _LANGUAGE_ALIASES: dict[str, str] = {
+     "english": "en", "en-us": "en", "en-gb": "en",
+-    "chinese": "zh", "mandarin": "zh", "zh-cn": "zh", "zh-hans": "zh", "zh-sg": "zh",
+-    "traditional-chinese": "zh-hant", "traditional_chinese": "zh-hant",
+-    "zh-tw": "zh-hant", "zh-hk": "zh-hant", "zh-mo": "zh-hant",
++    # Local removal: chinese/* aliases deleted (fell back to "en" via default).
+     "japanese": "ja", "jp": "ja", "ja-jp": "ja",
+     "german": "de", "deutsch": "de", "de-de": "de", "de-at": "de", "de-ch": "de",
+     "spanish": "es", "español": "es", "espanol": "es", "es-es": "es", "es-mx": "es", "es-ar": "es",
+diff --git a/gateway/config.py b/gateway/config.py
+index f1cfcf914..e0c526631 100644
+--- a/gateway/config.py
++++ b/gateway/config.py
+@@ -255,12 +255,18 @@ class Platform(Enum):
+         """Directory names of bundled platform plugins under ``plugins/platforms/``, plus a map of
+         manifest ``name:`` keys that differ from their directory (alias -> directory name). Aliases
+         never shadow a directory name, so the directory stays the canonical platform value."""
++        # Local removal: China-market messaging platforms.
++        # dingtalk (Alibaba), feishu (ByteDance Feishu; shares code with
++        # international Lark -- removing this dir removes Lark as well),
++        # wecom (Tencent WeCom / Enterprise WeChat, incl. wecom_callback).
++        _REMOVED_CN_PLATFORMS = {"dingtalk", "feishu", "wecom"}
+         try:
+             platforms_dir = Path(__file__).parent.parent / "plugins" / "platforms"
+             dirs = [
+                 child for child in (platforms_dir.iterdir() if platforms_dir.is_dir() else ())
+                 if child.is_dir() and (child / "__init__.py").exists()
+                 and ((child / "plugin.yaml").exists() or (child / "plugin.yml").exists())
++                and child.name.lower() not in _REMOVED_CN_PLATFORMS
+             ]
+             names = {child.name.lower() for child in dirs}
+             aliases = {}
+diff --git a/gateway/run.py b/gateway/run.py
+index 6c9556d10..2eb5fd07b 100644
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -3329,13 +3329,16 @@ def _builtin_adapter_import(module: str, adapter_name: str, requirement: str):
+ 
+ 
+ # platform -> (module, adapter class, requirements probe, warning on probe failure).
++# Local removal: China-market builtin adapters (Tencent) deleted here:
++# Platform.WEIXIN (WeChat/iLink), Platform.QQBOT (QQ Bot),
++# Platform.YUANBAO (Tencent Yuanbao). Source files
++# (gateway/platforms/weixin.py, qqbot/, yuanbao*.py) stay on disk but are
++# never instantiated. Existing configs using them log a warning and skip.
+ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
+     Platform.WHATSAPP_CLOUD: ("whatsapp_cloud", "WhatsAppCloudAdapter", "check_whatsapp_cloud_requirements",
+                               "WhatsApp Cloud: aiohttp/httpx missing — reinstall hermes-agent"),
+     Platform.SIGNAL: ("signal", "SignalAdapter", "check_signal_requirements",
+                       "Signal: runtime requirements not met"),
+-    Platform.WEIXIN: ("weixin", "WeixinAdapter", "check_weixin_requirements",
+-                      "Weixin: aiohttp/cryptography not installed"),
+     Platform.API_SERVER: ("api_server", "APIServerAdapter", "check_api_server_requirements",
+                           "API Server: aiohttp not installed"),
+     Platform.WEBHOOK: ("webhook", "WebhookAdapter", "check_webhook_requirements",
+@@ -3344,14 +3347,19 @@ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
+                                "MSGraph webhook: aiohttp not installed"),
+     Platform.BLUEBUBBLES: ("bluebubbles", "BlueBubblesAdapter", "check_bluebubbles_requirements",
+                            "BlueBubbles: aiohttp/httpx missing or BLUEBUBBLES_SERVER_URL/BLUEBUBBLES_PASSWORD not configured"),
+-    Platform.QQBOT: ("qqbot", "QQAdapter", "check_qq_requirements",
+-                     "QQBot: aiohttp/httpx missing or QQ_APP_ID/QQ_CLIENT_SECRET not configured"),
+-    Platform.YUANBAO: ("yuanbao", "YuanbaoAdapter", "WEBSOCKETS_AVAILABLE",
+-                       "Yuanbao: websockets not installed. Run: pip install websockets")}
++}
++_REMOVED_CN_BUILTIN_PLATFORMS = frozenset({"weixin", "qqbot", "yuanbao"})
+ 
+ 
+ def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[BasePlatformAdapter]:
+     """Instantiate a core (non-plugin) adapter, or None when its requirements are unmet/unknown."""
++    try:
++        _platform_value = platform.value if isinstance(platform, Platform) else str(platform)
++    except Exception:
++        _platform_value = str(platform)
++    if _platform_value in _REMOVED_CN_BUILTIN_PLATFORMS:
++        logger.warning("Skipping removed China-market platform '%s'", _platform_value)
++        return None
+     spec = _BUILTIN_ADAPTERS.get(platform)
+     if spec is None:
+         return None
+diff --git a/hermes_cli/auth.py b/hermes_cli/auth.py
+index 33e017bfc..a2d917753 100644
+--- a/hermes_cli/auth.py
++++ b/hermes_cli/auth.py
+@@ -181,7 +181,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+     ProviderConfig(
+         "xai-oauth", "xAI Grok OAuth (SuperGrok / Premium+)", "oauth_external",
+         inference_base_url=DEFAULT_XAI_OAUTH_BASE_URL),
+-    ProviderConfig("qwen-oauth", "Qwen OAuth", "oauth_external", inference_base_url=DEFAULT_QWEN_BASE_URL),
+     ("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1", ("LM_API_KEY",), "LM_BASE_URL"),
+     ("copilot", "GitHub Copilot", DEFAULT_GITHUB_MODELS_BASE_URL,
+      ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"), "COPILOT_API_BASE_URL"),
+@@ -190,24 +189,9 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+         inference_base_url=DEFAULT_COPILOT_ACP_BASE_URL, base_url_env_var="COPILOT_ACP_BASE_URL"),
+     ("gemini", "Google AI Studio", "https://generativelanguage.googleapis.com/v1beta",
+      ("GOOGLE_API_KEY", "GEMINI_API_KEY"), "GEMINI_BASE_URL"),
+-    ("zai", "Z.AI / GLM", "https://api.z.ai/api/paas/v4",
+-     ("GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"), "GLM_BASE_URL"),
+-    # Legacy platform.moonshot.ai keys use this endpoint (OpenAI-compat); sk-kimi- (Kimi Code)
+-    # keys are auto-redirected to api.kimi.com/coding by _resolve_kimi_base_url().
+-    ("kimi-coding", "Kimi / Moonshot", "https://api.moonshot.ai/v1",
+-     ("KIMI_API_KEY", "KIMI_CODING_API_KEY"), "KIMI_BASE_URL"),
+-    ("kimi-coding-cn", "Kimi / Moonshot (China)", "https://api.moonshot.cn/v1", ("KIMI_CN_API_KEY",)),
+-    ("stepfun", "StepFun Step Plan", STEPFUN_STEP_PLAN_INTL_BASE_URL, ("STEPFUN_API_KEY",), "STEPFUN_BASE_URL"),
+     ("arcee", "Arcee AI", "https://api.arcee.ai/api/v1", ("ARCEEAI_API_KEY",), "ARCEE_BASE_URL"),
+     ("gmi", "GMI Cloud", "https://api.gmi-serving.com/v1", ("GMI_API_KEY",), "GMI_BASE_URL"),
+     ("actual", "Actual Computer", DEFAULT_ACTUAL_BASE_URL, ("ACTUAL_API_KEY",), "ACTUAL_BASE_URL"),
+-    ("minimax", "MiniMax", "https://api.minimax.io/anthropic", ("MINIMAX_API_KEY",), "MINIMAX_BASE_URL"),
+-    ProviderConfig(
+-        "minimax-oauth", "MiniMax (OAuth \u00b7 minimax.io)", "oauth_minimax",
+-        portal_base_url=MINIMAX_OAUTH_GLOBAL_BASE, inference_base_url=MINIMAX_OAUTH_GLOBAL_INFERENCE,
+-        client_id=MINIMAX_OAUTH_CLIENT_ID, scope=MINIMAX_OAUTH_SCOPE,
+-        extra={"region": "global", "cn_portal_base_url": MINIMAX_OAUTH_CN_BASE,
+-               "cn_inference_base_url": MINIMAX_OAUTH_CN_INFERENCE}),
+     # CLAUDE_CODE_OAUTH_TOKEN is NOT an API key despite auth_type="api_key": `claude setup-token`
+     # yields an `sk-ant-oat01…` OAuth token (401s as x-api-key, 429s as bare Bearer). It stays in
+     # this tuple because the tuple doubles as the credential-DISCOVERY list
+@@ -215,13 +199,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+     # path by prefix. Only ANTHROPIC_API_KEY and ANTHROPIC_TOKEN are usable as literal API keys.
+     ("anthropic", "Anthropic", "https://api.anthropic.com",
+      ("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"), "ANTHROPIC_BASE_URL"),
+-    ("alibaba", "Qwen Cloud", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+-     ("DASHSCOPE_API_KEY",), "DASHSCOPE_BASE_URL"),
+-    ("alibaba-coding-plan", "Alibaba Cloud (Coding Plan)", "https://coding-intl.dashscope.aliyuncs.com/v1",
+-     ("ALIBABA_CODING_PLAN_API_KEY", "DASHSCOPE_API_KEY"), "ALIBABA_CODING_PLAN_BASE_URL"),
+-    ("minimax-cn", "MiniMax (China)", "https://api.minimaxi.com/anthropic", ("MINIMAX_CN_API_KEY",),
+-     "MINIMAX_CN_BASE_URL"),
+-    ("deepseek", "DeepSeek", "https://api.deepseek.com/v1", ("DEEPSEEK_API_KEY",), "DEEPSEEK_BASE_URL"),
+     ("xai", "xAI", "https://api.x.ai/v1", ("XAI_API_KEY",), "XAI_BASE_URL"),
+     ("nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1", ("NVIDIA_API_KEY",), "NVIDIA_BASE_URL"),
+     ("ai-gateway", "Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", ("AI_GATEWAY_API_KEY",),
+@@ -234,11 +211,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+      "OPENCODE_GO_BASE_URL"),
+     ("kilocode", "Kilo Code", "https://api.kilo.ai/api/gateway", ("KILOCODE_API_KEY",), "KILOCODE_BASE_URL"),
+     ("huggingface", "Hugging Face", "https://router.huggingface.co/v1", ("HF_TOKEN",), "HF_BASE_URL"),
+-    ("xiaomi", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1", ("XIAOMI_API_KEY",), "XIAOMI_BASE_URL"),
+-    ("tencent-tokenhub", "Tencent TokenHub", "https://tokenhub.tencentmaas.com/v1", ("TOKENHUB_API_KEY",),
+-     "TOKENHUB_BASE_URL"),
+-    ("tencent-tokenplan", "Tencent TokenPlan", "https://api.lkeap.cloud.tencent.com/plan/anthropic",
+-     ("TOKENPLAN_API_KEY",), "TOKENPLAN_BASE_URL"),
+     ("ollama-cloud", "Ollama Cloud", DEFAULT_OLLAMA_CLOUD_BASE_URL, ("OLLAMA_API_KEY",), "OLLAMA_BASE_URL"),
+     ("bedrock", "AWS Bedrock", "https://bedrock-runtime.us-east-1.amazonaws.com", (), "BEDROCK_BASE_URL",
+      "aws_sdk"),
+@@ -1378,33 +1350,20 @@ def _refuse_env_adoption_if_config_corrupt() -> None:
+ # (plugins/model-providers/<name>/) are layered on at call time; this hardcoded
+ # table remains authoritative for existing names.
+ _PROVIDER_ALIASES: Dict[str, str] = {
+-    "glm": "zai", "z-ai": "zai", "z.ai": "zai", "zhipu": "zai",
+     "google": "gemini", "google-gemini": "gemini", "google-ai-studio": "gemini",
+     "x-ai": "xai", "x.ai": "xai", "grok": "xai",
+     "xai-oauth": "xai-oauth", "x-ai-oauth": "xai-oauth",
+     "grok-oauth": "xai-oauth", "xai-grok-oauth": "xai-oauth",
+-    "kimi": "kimi-coding", "kimi-for-coding": "kimi-coding", "moonshot": "kimi-coding",
+-    "kimi-cn": "kimi-coding-cn", "moonshot-cn": "kimi-coding-cn",
+-    "step": "stepfun", "stepfun-coding-plan": "stepfun",
+     "arcee-ai": "arcee", "arceeai": "arcee",
+     "gmi-cloud": "gmi", "gmicloud": "gmi",
+     "actual-computer": "actual", "actualcomputer": "actual", "aci": "actual",
+-    "minimax-china": "minimax-cn", "minimax_cn": "minimax-cn",
+-    "minimax-portal": "minimax-oauth", "minimax-global": "minimax-oauth", "minimax_oauth": "minimax-oauth",
+-    "alibaba_coding": "alibaba-coding-plan", "alibaba-coding": "alibaba-coding-plan",
+-    "alibaba_coding_plan": "alibaba-coding-plan",
+     "claude": "anthropic", "claude-code": "anthropic",
+     "github": "copilot", "github-copilot": "copilot",
+     "github-models": "copilot", "github-model": "copilot",
+     "github-copilot-acp": "copilot-acp", "copilot-acp-agent": "copilot-acp",
+     "aigateway": "ai-gateway", "vercel": "ai-gateway", "vercel-ai-gateway": "ai-gateway",
+     "opencode": "opencode-zen", "zen": "opencode-zen",
+-    "qwen-portal": "qwen-oauth", "qwen-cli": "qwen-oauth", "qwen-oauth": "qwen-oauth",
+     "hf": "huggingface", "hugging-face": "huggingface", "huggingface-hub": "huggingface",
+-    "mimo": "xiaomi", "xiaomi-mimo": "xiaomi",
+-    "tencent": "tencent-tokenhub", "tokenhub": "tencent-tokenhub",
+-    "tencent-cloud": "tencent-tokenhub", "tencentmaas": "tencent-tokenhub",
+-    "tokenplan": "tencent-tokenplan", "tencent-lkeap": "tencent-tokenplan",
+     "aws": "bedrock", "aws-bedrock": "bedrock", "amazon-bedrock": "bedrock", "amazon": "bedrock",
+     "go": "opencode-go", "opencode-go-sub": "opencode-go",
+     "kilo": "kilocode", "kilo-code": "kilocode", "kilo-gateway": "kilocode",
+@@ -1930,10 +1889,6 @@ OAUTH_PROVIDER_FLOWS: Dict[str, OAuthProviderFlow] = {
+         "xai-oauth", "resolve_xai_oauth_runtime_credentials", "get_xai_oauth_auth_status",
+         terminal_refresh_codes=frozenset({"xai_refresh_failed", "xai_auth_missing_refresh_token"}),
+         logout_from_config=True),
+-    "qwen-oauth": OAuthProviderFlow(
+-        "qwen-oauth", "resolve_qwen_runtime_credentials", "get_qwen_auth_status"),
+-    "minimax-oauth": OAuthProviderFlow(
+-        "minimax-oauth", "resolve_minimax_oauth_runtime_credentials", "get_minimax_oauth_auth_status"),
+ }
+ 
+ 
+@@ -1998,16 +1953,13 @@ def _provider_env_base_url(pconfig: ProviderConfig) -> str:
+ 
+ 
+ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
+-    """Status snapshot for API-key providers (z.ai, Kimi, MiniMax)."""
++    """Status snapshot for API-key providers."""
+     pconfig = _registry_lookup(provider_id)
+     if not pconfig or pconfig.auth_type != "api_key":
+         return {"configured": False}
+     api_key, key_source = _resolve_api_key_provider_secret(provider_id, pconfig)
+     env_url = _provider_env_base_url(pconfig)
+-    if provider_id in {"kimi-coding", "kimi-coding-cn"}:
+-        base_url = _resolve_kimi_base_url(api_key, pconfig.inference_base_url, env_url)
+-    else:
+-        base_url = env_url or pconfig.inference_base_url
++    base_url = env_url or pconfig.inference_base_url
+     actual_local_noauth = False
+     if provider_id == "actual":
+         base_url = normalize_actual_base_url(base_url)
+@@ -2219,9 +2171,6 @@ def _copilot_runtime_base_url(api_key: str, default: str, env_url: str) -> str:
+ # Providers whose runtime base URL is not simply env-override-or-registry-default:
+ # ``(api_key, registry_default, env_override) -> base_url``.
+ _API_KEY_BASE_URL_RESOLVERS: Dict[str, Callable[[str, str, str], str]] = {
+-    "kimi-coding": _resolve_kimi_base_url,
+-    "kimi-coding-cn": _resolve_kimi_base_url,
+-    "zai": _resolve_zai_base_url,
+     "copilot": _copilot_runtime_base_url,
+     "lmstudio": lambda *a: _normalize_lmstudio_runtime_base_url(_default_api_key_base_url(*a)),
+     "actual": lambda *a: normalize_actual_base_url(_default_api_key_base_url(*a))}
+diff --git a/hermes_cli/auth_commands.py b/hermes_cli/auth_commands.py
+index 75d52b7aa..bf3f94c76 100644
+--- a/hermes_cli/auth_commands.py
++++ b/hermes_cli/auth_commands.py
+@@ -27,7 +27,7 @@ from hermes_cli.secret_prompt import masked_secret_prompt
+ 
+ 
+ # Providers that support OAuth login in addition to API keys.
+-_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter"}
++_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "openrouter"}
+ # ...and default to it when ``--type`` is omitted. OpenRouter stays API-key-first: the documented
+ # ``hermes auth add openrouter --api-key sk-or-...`` must keep working with no ``--type``.
+ _OAUTH_DEFAULT_PROVIDERS = _OAUTH_CAPABLE_PROVIDERS - {"openrouter"}
+@@ -207,14 +207,6 @@ def _anthropic_oauth_login(args) -> dict:
+     return creds
+ 
+ 
+-def _qwen_oauth_login(args) -> dict:
+-    from hermes_cli.auth_qwen import _mark_qwen_oauth_active
+-
+-    creds = auth_mod.resolve_qwen_runtime_credentials(refresh_if_expiring=False)
+-    _mark_qwen_oauth_active(creds)
+-    return creds
+-
+-
+ @dataclass(frozen=True)
+ class _OAuthAddSpec:
+     """Per-provider parameters for the generic ``hermes auth add <provider> --type oauth`` path."""
+@@ -271,19 +263,6 @@ _OAUTH_ADD_SPECS: dict[str, _OAuthAddSpec] = {
+             "base_url": creds.get("base_url") or auth_mod.DEFAULT_XAI_OAUTH_BASE_URL,
+             "last_refresh": creds.get("last_refresh")},
+         activate_first=True),
+-    "qwen-oauth": _OAuthAddSpec(
+-        login=_qwen_oauth_login,
+-        token=lambda creds: creds["api_key"],
+-        source=f"{SOURCE_MANUAL}:qwen_cli",
+-        fields=lambda creds, provider: {"base_url": creds.get("base_url")}),
+-    "minimax-oauth": _OAuthAddSpec(
+-        login=lambda args: auth_mod._minimax_oauth_login(
+-            open_browser=not getattr(args, "no_browser", False),
+-            timeout_seconds=getattr(args, "timeout", None) or 15.0),
+-        token=lambda creds: creds["access_token"],
+-        source=f"{SOURCE_MANUAL}:minimax_oauth",
+-        fields=lambda creds, provider: {
+-            "refresh_token": creds.get("refresh_token"), "base_url": creds.get("inference_base_url")}),
+     "openrouter": _OAuthAddSpec(
+         login=lambda args: auth_mod._openrouter_pkce_login(
+             open_browser=not getattr(args, "no_browser", False),
+diff --git a/hermes_cli/gateway_setup_wizard.py b/hermes_cli/gateway_setup_wizard.py
+index 9f702a1cf..e8541674a 100644
+--- a/hermes_cli/gateway_setup_wizard.py
++++ b/hermes_cli/gateway_setup_wizard.py
+@@ -50,7 +50,6 @@ _PLATFORMS = [
+         ],
+     },
+     {"key": "signal", "label": "Signal", "emoji": "📡", "token_var": "SIGNAL_HTTP_URL"},
+-    {"key": "weixin", "label": "Weixin / WeChat", "emoji": "💬", "token_var": "WEIXIN_ACCOUNT_ID"},
+     {
+         "key": "bluebubbles", "label": "BlueBubbles (iMessage)",
+         "emoji": "💬", "token_var": "BLUEBUBBLES_SERVER_URL",
+@@ -81,43 +80,6 @@ _PLATFORMS = [
+              "help": "Phone number or Apple ID to deliver cron results and notifications to."},
+         ],
+     },
+-    {
+-        "key": "qqbot", "label": "QQ Bot", "emoji": "🐧", "token_var": "QQ_APP_ID",
+-        "setup_instructions": [
+-            "1. Register a QQ Bot application at q.qq.com",
+-            "2. Note your App ID and App Secret from the application page",
+-            "3. Enable the required intents (C2C, Group, Guild messages)",
+-            "4. Configure sandbox or publish the bot",
+-        ],
+-        "vars": [
+-            {"name": "QQ_APP_ID", "prompt": "QQ Bot App ID", "password": False,
+-             "help": "Your QQ Bot App ID from q.qq.com."},
+-            {"name": "QQ_CLIENT_SECRET", "prompt": "QQ Bot App Secret", "password": True,
+-             "help": "Your QQ Bot App Secret from q.qq.com."},
+-            {"name": "QQ_ALLOWED_USERS",
+-             "prompt": "Allowed user OpenIDs (comma-separated, leave empty for open access)",
+-             "password": False, "is_allowlist": True,
+-             "help": "Optional — restrict DM access to specific user OpenIDs."},
+-            {"name": "QQBOT_HOME_CHANNEL",
+-             "prompt": "Home channel (user/group OpenID for cron delivery, or empty)", "password": False,
+-             "help": "OpenID to deliver cron results and notifications to."},
+-        ],
+-    },
+-    {
+-        "key": "yuanbao", "label": "Yuanbao", "emoji": "💎", "token_var": "YUANBAO_APP_ID",
+-        "setup_instructions": [
+-            "1. Download the Yuanbao app from https://yuanbao.tencent.com/",
+-            "2. In the app, go to PAI → My Bot and create a new bot",
+-            "3. After the bot is created, copy the App ID and App Secret",
+-            "4. Enter them below and Hermes will connect automatically over WebSocket",
+-        ],
+-        "vars": [
+-            {"name": "YUANBAO_APP_ID", "prompt": "App ID", "password": False,
+-             "help": "The App ID from your Yuanbao IM Bot credentials."},
+-            {"name": "YUANBAO_APP_SECRET", "prompt": "App Secret", "password": True,
+-             "help": "The App Secret (used for HMAC signing) from your Yuanbao IM Bot."},
+-        ],
+-    },
+ ]
+ 
+ 
+diff --git a/hermes_cli/main.py b/hermes_cli/main.py
+index 99b894e1c..69aa2c065 100644
+--- a/hermes_cli/main.py
++++ b/hermes_cli/main.py
+@@ -755,15 +755,11 @@ from hermes_cli.model_setup_flows import (
+     _model_flow_nous,
+     _model_flow_openai_codex,
+     _model_flow_xai_oauth,
+-    _model_flow_qwen_oauth,
+-    _model_flow_minimax_oauth,
+     _model_flow_custom,
+     _model_flow_azure_foundry,
+     _model_flow_named_custom,
+     _model_flow_copilot,
+     _model_flow_copilot_acp,
+-    _model_flow_kimi,
+-    _model_flow_stepfun,
+     _model_flow_bedrock,
+     _model_flow_vertex,
+     _model_flow_api_key_provider,
+@@ -1994,14 +1990,10 @@ _PROVIDER_MODEL_FLOWS = {
+     "nous": lambda c, m, a: _model_flow_nous(c, m, args=a),
+     "openai-codex": lambda c, m, a: _model_flow_openai_codex(c, m),
+     "xai-oauth": lambda c, m, a: _model_flow_xai_oauth(c, m, args=a),
+-    "qwen-oauth": lambda c, m, a: _model_flow_qwen_oauth(c, m),
+-    "minimax-oauth": lambda c, m, a: _model_flow_minimax_oauth(c, m, args=a),
+     "copilot-acp": lambda c, m, a: _model_flow_copilot_acp(c, m),
+     "copilot": lambda c, m, a: _model_flow_copilot(c, m),
+     "custom": lambda c, m, a: _model_flow_custom(c),
+     "anthropic": lambda c, m, a: _model_flow_anthropic(c, m),
+-    "kimi-coding": lambda c, m, a: _model_flow_kimi(c, m),
+-    "stepfun": lambda c, m, a: _model_flow_stepfun(c, m),
+     "bedrock": lambda c, m, a: _model_flow_bedrock(c, m),
+     "vertex": lambda c, m, a: _model_flow_vertex(c, m),
+     "azure-foundry": lambda c, m, a: _model_flow_azure_foundry(c, m),
+diff --git a/hermes_cli/plugin_catalog.py b/hermes_cli/plugin_catalog.py
+index 0f81d1b71..08bc17112 100644
+--- a/hermes_cli/plugin_catalog.py
++++ b/hermes_cli/plugin_catalog.py
+@@ -196,6 +196,19 @@ def _removed_from_list(raw_list: Any) -> List[RemovedEntry]:
+ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]:
+     """Every valid ``*.yaml`` entry in the catalog dir (``removed.yaml`` excluded), sorted by file name.
+     Malformed entries are skipped with a warning — never raises."""
++    # Local removal: China-market catalog entries.
++    # wechat-social-assistant (WeChat), volcengine-voice (ByteDance Doubao),
++    # dashscope-image/-video (Alibaba), minimax-image/-video (MiniMax),
++    # kimi-code-delegate (Moonshot Kimi), deepseek-whale (DeepSeek),
++    # hermes-zh (Simplified-Chinese UI pack), cjk_sanitizer (CJK filter),
++    # desensitize (Chinese-context PII, siliconflow.cn fallback).
++    _REMOVED_CN_CATALOG_FILES = frozenset({
++        "wechat-social-assistant.yaml", "volcengine-voice.yaml",
++        "dashscope-image.yaml", "dashscope-video.yaml",
++        "minimax-image.yaml", "minimax-video.yaml",
++        "kimi-code-delegate.yaml", "deepseek-whale.yaml",
++        "hermes-zh.yaml", "cjk_sanitizer.yaml", "desensitize.yaml",
++    })
+     root = catalog_dir or get_catalog_dir()
+     if not root.is_dir():
+         return []
+@@ -203,6 +216,8 @@ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]
+     for path in sorted(root.glob("*.yaml")):
+         if path.name == "removed.yaml":
+             continue
++        if path.name in _REMOVED_CN_CATALOG_FILES:
++            continue
+         data = _read_yaml(path)
+         entry = entry_from_mapping(data, str(path)) if data is not None else None
+         if entry is not None:
+diff --git a/hermes_cli/plugins_discovery.py b/hermes_cli/plugins_discovery.py
+index e9645e51f..9decd89c3 100644
+--- a/hermes_cli/plugins_discovery.py
++++ b/hermes_cli/plugins_discovery.py
+@@ -248,6 +248,20 @@ def gate_manifest(
+             f"{RELAY_PLUGINS_CONFIG_ENV} instead"
+         )
+         return _placeholder(error, logging.WARNING, "Refusing to load removed Hermes Relay plugin '%s'; %s", error)
++    # Local removal: China-market platform plugins (all install sources:
++    # bundled, user ~/.hermes/plugins, project .hermes/plugins, entry points).
++    # dingtalk (Alibaba), feishu (ByteDance; also disables Lark
++    # international, same adapter), wecom (Tencent Enterprise WeChat).
++    _REMOVED_CN_PLATFORM_KEYS = frozenset({
++        "platforms/dingtalk", "platforms/feishu", "platforms/wecom",
++        "dingtalk-platform", "feishu-platform", "wecom-platform",
++        "dingtalk", "feishu", "wecom",
++    })
++    manifest_path = str(manifest.path or "")
++    if (names & _REMOVED_CN_PLATFORM_KEYS
++            or any(k in manifest_path for k in ("/platforms/dingtalk", "/platforms/feishu", "/platforms/wecom"))):
++        error = "removed — China-market platform disabled by local patch"
++        return _placeholder(error, logging.WARNING, "Refusing to load removed China-market plugin '%s'; %s", error)
+     if names & disabled:
+         return _placeholder("disabled via config", logging.DEBUG, "Skipping disabled plugin '%s'")
+     # Exclusive plugins (memory providers) have their own activation path; record only.
+diff --git a/hermes_cli/tools_config.py b/hermes_cli/tools_config.py
+index 95ded5341..58ca3a4cb 100644
+--- a/hermes_cli/tools_config.py
++++ b/hermes_cli/tools_config.py
+@@ -91,7 +91,6 @@ CONFIGURABLE_TOOLSETS = [
+     ("spotify",          "🎵 Spotify",                  "playback, search, playlists, library"),
+     ("discord",         "💬 Discord (read/participate)", "fetch messages, search members, create thread"),
+     ("discord_admin",   "🛡️  Discord Server Admin",    "list channels/roles, pin, assign roles"),
+-    ("yuanbao",          "🤖 Yuanbao",                  "group info, member queries, DM"),
+     ("computer_use",     "🖱️  Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"),
+ ]
+ 
+@@ -399,7 +398,7 @@ TOOLSET_ENV_REQUIREMENTS = {"vision": [("OPENROUTER_API_KEY", "https://openroute
+ # --- Platform / Toolset Helpers ---
+ _PLATFORM_ENABLE_ENV_VARS = (
+     ("telegram", "TELEGRAM_BOT_TOKEN"), ("discord", "DISCORD_BOT_TOKEN"), ("slack", "SLACK_BOT_TOKEN"),
+-    ("whatsapp", "WHATSAPP_ENABLED"), ("qqbot", "QQ_APP_ID"))
++    ("whatsapp", "WHATSAPP_ENABLED"))
+ 
+ 
+ def _get_enabled_platforms() -> List[str]:
+@@ -666,7 +665,7 @@ def _prune_toolsets_stripped_by_disabled(enabled_toolsets: Set[str], disabled_na
+ 
+ 
+ def _recover_platform_native_toolsets(enabled_toolsets: Set[str], platform: str, *, skip: Set[str]) -> None:
+-    """Add non-configurable platform toolsets (discord, feishu_*) in place: in the default composite but not in
++    """Add non-configurable platform toolsets (discord) in place: in the default composite but not in
+     CONFIGURABLE_TOOLSETS, so never in a checklist or saved list. Runs for BOTH ``_get_platform_tools`` branches."""
+     from toolsets import resolve_toolset, TOOLSETS
+ 
+diff --git a/providers/__init__.py b/providers/__init__.py
+index 373bd507a..7d5eae3ac 100644
+--- a/providers/__init__.py
++++ b/providers/__init__.py
+@@ -94,6 +94,18 @@ _BUNDLED_PLUGINS_DIR = (
+ )
+ 
+ 
++# Local removal: China-market model providers (vendors headquartered in
++# mainland China). Both the international and the explicit *-cn endpoints are
++# skipped, because the vendor itself is China-specific.
++# Covers: alibaba (+ -cn, token-plan, token-plan-cn), alibaba-coding-plan
++# (+ -cn), deepseek, kimi-coding (+ -cn / Moonshot), minimax (+ -cn, -oauth),
++# qwen-oauth (Alibaba Qwen), stepfun, xiaomi (MiMo), zai (Zhipu Z.AI / GLM).
++_REMOVED_CN_MODEL_PROVIDERS = frozenset({
++    "alibaba", "alibaba-coding-plan", "deepseek", "kimi-coding", "minimax",
++    "qwen-oauth", "stepfun", "xiaomi", "zai",
++})
++
++
+ def _sync_auth_registry() -> None:
+     """Mirror profiles into the ``hermes_cli`` snapshots (auth registry, picker catalog) that are loaded.
+ 
+@@ -601,6 +613,9 @@ def _run_discovery_steps() -> None:
+         for child in sorted(_BUNDLED_PLUGINS_DIR.iterdir()):
+             if not child.is_dir() or child.name.startswith(("_", ".")):
+                 continue
++            if child.name in _REMOVED_CN_MODEL_PROVIDERS:
++                logger.debug("Skipping removed China-market provider '%s'", child.name)
++                continue
+             _import_plugin_dir(child, "bundled")
+ 
+     # 2. Legacy single-file profiles at providers/<name>.py. Kept for
+diff --git a/tools/send_message_tool.py b/tools/send_message_tool.py
+index 48c7e9646..d243ed295 100644
+--- a/tools/send_message_tool.py
++++ b/tools/send_message_tool.py
+@@ -16,7 +16,7 @@ from tools.send_message_senders import (
+     _AUDIO_EXTS, _DEFAULT_CAPTION_LIMIT, _IMAGE_EXTS, _NO_DELIVERABLE, _VIDEO_EXTS, _VOICE_EXTS,
+     _adapter_media_method, _error, _live_adapter, _media_caption_split, _plugin_standalone_sender,
+     _registry_standalone_send, _resolve_slack_user_target, _sanitize_error_text, _send_bluebubbles,
+-    _send_matrix_via_adapter, _send_qqbot, _send_signal, _send_telegram, _send_weixin, _send_yuanbao)
++    _send_matrix_via_adapter, _send_signal, _send_telegram)
+ from tools.registry import tool_error
+ 
+ # NOTE: ``send_message`` is intentionally NOT registered as an agent-callable model tool
+@@ -659,41 +659,34 @@ def _via_adapter_route(p, pc, cid, chunk, media, tid, fd):
+ # Native-media chunked routes for built-in platforms; media rides on the final chunk, non-final
+ # chunks get the sentinel. platform -> (media required, sentinel, sender(platform, pconfig,
+ # chat_id, chunk, media, thread_id, force_document)). Matrix: ALL sends use the native adapter
+-# (E2EE text). Signal: attachments ride the JSON-RPC param. Yuanbao / WeCom: media needs the
+-# running gateway. Slack text: live adapter (multi-workspace, ignored_channels gates) else the
++# (E2EE text). Signal: attachments ride the JSON-RPC param. Slack text: live adapter
++# (multi-workspace, ignored_channels gates) else the
+ # plugin's standalone sender. Names resolve at call time so tests can monkeypatch ``_send_signal``.
+ _CHUNKED_ROUTES = {
+     "matrix": (False, [], lambda p, pc, cid, chunk, media, tid, fd: _send_matrix_via_adapter(
+         pc, cid, chunk, media_files=media, thread_id=tid)),
+     "signal": (True, [], lambda p, pc, cid, chunk, media, tid, fd: _send_signal(
+         pc.extra, cid, chunk, media_files=media)),
+-    "yuanbao": (True, None, lambda p, pc, cid, chunk, media, tid, fd: _send_yuanbao(cid, chunk, media_files=media)),
+-    "slack": (False, [], _via_adapter_route),
+-    "wecom": (True, None, _via_adapter_route)}
++    "slack": (False, [], _via_adapter_route)}
+ 
+ # Text-only senders for built-in platforms (generic path; media is dropped with a
+ # warning). Signature: (pconfig, chat_id, chunk, thread_id) -> result.
+ _TEXT_SENDERS = {
+     **{name: partial(_registry_standalone_send, name)
+-       for name in ("whatsapp", "email", "sms", "dingtalk", "feishu", "wecom")},
++       for name in ("whatsapp", "email", "sms")},
+     "signal": lambda pc, cid, chunk, tid: _send_signal(pc.extra, cid, chunk),
+-    "bluebubbles": lambda pc, cid, chunk, tid: _send_bluebubbles(pc.extra, cid, chunk),
+-    "qqbot": lambda pc, cid, chunk, tid: _send_qqbot(pc, cid, chunk),
+-    "yuanbao": lambda pc, cid, chunk, tid: _send_yuanbao(cid, chunk)}
++    "bluebubbles": lambda pc, cid, chunk, tid: _send_bluebubbles(pc.extra, cid, chunk)}
+ 
+-_MEDIA_PLATFORMS_NOTE = "telegram, discord, matrix, weixin, signal, yuanbao, feishu, whatsapp and slack"
++_MEDIA_PLATFORMS_NOTE = "telegram, discord, matrix, signal, whatsapp and slack"
+ 
+ 
+ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None,
+                             force_document=False, mentions=None, args=None):
+     """Route to the platform sender, chunking long text with the adapters' splitter. Order matters:
+-    Weixin first (its native helper must not be blocked by unrelated optional imports such as
+-    lark-oapi), Telegram (chunks itself), plugin standalone media, native chunked, generic text."""
++    Telegram (chunks itself), plugin standalone media, native chunked, generic text."""
+     from gateway.config import Platform
+     platform_name = platform.value if hasattr(platform, "value") else str(platform)
+     media_files = media_files or []
+-    if platform == Platform.WEIXIN:
+-        return await _send_weixin(pconfig, chat_id, message, media_files=media_files)
+     # Telegram chunks internally on the *formatted* text (escaping inflates length).
+     if platform == Platform.TELEGRAM:
+         return await _send_telegram(
+diff --git a/toolsets.py b/toolsets.py
+index 89386334b..a013bfc86 100644
+--- a/toolsets.py
++++ b/toolsets.py
+@@ -43,11 +43,6 @@ _HERMES_CORE_TOOLS = [
+ # Webhook payloads are untrusted third-party content: no file/system execution.
+ _HERMES_WEBHOOK_SAFE_TOOLS = ["web_search", "web_extract", "vision_analyze", "clarify"]
+ _HA_TOOLS = ["ha_list_entities", "ha_get_state", "ha_list_services", "ha_call_service"]
+-_FEISHU_TOOLS = [
+-    "feishu_doc_read", "feishu_drive_list_comments", "feishu_drive_list_comment_replies",
+-    "feishu_drive_reply_comment", "feishu_drive_add_comment",
+-]
+-_YUANBAO_TOOLS = ["yb_query_group_info", "yb_query_group_members", "yb_send_dm", "yb_search_sticker", "yb_send_sticker"]
+ 
+ 
+ def _ts(description, tools=(), includes=(), **extra):
+@@ -172,9 +167,6 @@ TOOLSETS = {
+     ),
+     "discord": _ts("Discord read and participate tools (fetch messages, search members, create threads)", ["discord"]),
+     "discord_admin": _ts("Discord server management (list channels/roles, pin messages, assign roles)", ["discord_admin"]),
+-    "yuanbao": _ts("Yuanbao platform tools - group info, member queries, DM, stickers", _YUANBAO_TOOLS),
+-    "feishu_doc": _ts("Read Feishu/Lark document content", ["feishu_doc_read"]),
+-    "feishu_drive": _ts("Feishu/Lark document comment operations (list, reply, add)", _FEISHU_TOOLS[1:]),
+     "spotify": _ts(
+         "Native Spotify playback, search, playlist, album, and library tools",
+         ["spotify_playback", "spotify_devices", "spotify_queue", "spotify_search",
+@@ -228,18 +220,6 @@ TOOLSETS = {
+     "hermes-email": _bundle("Email bot toolset - interact with Hermes via email (IMAP/SMTP)"),
+     "hermes-mattermost": _bundle("Mattermost bot toolset - self-hosted team messaging (full access)"),
+     "hermes-matrix": _bundle("Matrix bot toolset - decentralized encrypted messaging (full access)"),
+-    "hermes-dingtalk": _bundle("DingTalk bot toolset - enterprise messaging platform (full access)"),
+-    "hermes-feishu": _bundle("Feishu/Lark bot toolset - enterprise messaging via Feishu/Lark (full access)", _FEISHU_TOOLS),
+-    "hermes-weixin": _bundle("Weixin bot toolset - personal WeChat messaging via iLink (full access)"),
+-    "hermes-qqbot": _bundle("QQBot toolset - QQ messaging via Official Bot API v2 (full access)"),
+-    "hermes-wecom": _bundle("WeCom bot toolset - enterprise WeChat messaging (full access)"),
+-    "hermes-wecom-callback": _bundle("WeCom callback toolset - enterprise self-built app messaging (full access)"),
+-    "hermes-yuanbao": {
+-        "description": "Yuanbao Bot 元宝消息平台工具集 - 群信息、成员查询、私聊、贴纸表情",
+-        "tools": _HERMES_CORE_TOOLS + _YUANBAO_TOOLS,
+-        "module": "tools.yuanbao_tools",
+-        "includes": [],
+-    },
+     "hermes-sms": _bundle("SMS bot toolset - interact with Hermes via SMS (Twilio)"),
+     "hermes-webhook": _ts("Webhook toolset - receive and process external webhook events", _HERMES_WEBHOOK_SAFE_TOOLS),
+     "hermes-gateway": _ts(
+@@ -248,9 +228,8 @@ TOOLSETS = {
+         includes=[
+             "hermes-telegram", "hermes-discord", "hermes-whatsapp", "hermes-slack",
+             "hermes-signal", "hermes-bluebubbles", "hermes-homeassistant", "hermes-email",
+-            "hermes-sms", "hermes-mattermost", "hermes-matrix", "hermes-dingtalk",
+-            "hermes-feishu", "hermes-wecom", "hermes-wecom-callback", "hermes-weixin",
+-            "hermes-qqbot", "hermes-webhook", "hermes-yuanbao",
++            "hermes-sms", "hermes-mattermost", "hermes-matrix",
++            "hermes-webhook",
+         ],
+     ),
+ }
+diff --git a/hermes_cli/web_server_messaging.py b/hermes_cli/web_server_messaging.py
+index 487771ffd..4ede1139c 100644
+--- a/hermes_cli/web_server_messaging.py
++++ b/hermes_cli/web_server_messaging.py
+@@ -253,7 +253,16 @@ def _messaging_platform_catalog() -> tuple[dict[str, Any], ...]:
+     seen: set[str] = set()
+     entries: list[dict[str, Any]] = []
+     builtin = [m.value for m in Platform.__members__.values() if m.value != "local"]
++    # Local removal: China-market platforms never get UI cards, even though the
++    # Platform enum keeps the members so old configs fail gracefully (warning +
++    # skip at adapter instantiation instead of an unknown-platform crash).
++    _REMOVED_CN_PLATFORM_IDS = frozenset({
++        "dingtalk", "feishu", "wecom", "wecom_callback",
++        "weixin", "qqbot", "yuanbao",
++    })
+     for pid in builtin + list(plugin_map):
++        if pid in _REMOVED_CN_PLATFORM_IDS:
++            continue
+         if pid in seen:
+             continue
+         seen.add(pid)

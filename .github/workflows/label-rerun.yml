@@ -1,8 +1,8 @@
 name: Label rerun
 
-# When the ``ci-reviewed`` label is added to a PR, rerun all failed jobs in
-# the latest CI run. This re-evaluates ``review-labels`` (which now sees the
-# label) and GitHub reruns the dependent ``all-checks-pass`` gate.
+# Upstream uses the ``ci-reviewed`` label to rerun failed CI jobs after
+# maintainer review. The Linux-only fork does not use that label gate, so this
+# upstream workflow remains present for synchronization but is disabled here.
 #
 # ``gh run rerun`` only works on a completed run. Thus this waits when the
 # run is still in progress. The wait is now short. The two slowest jobs are
@@ -28,7 +28,7 @@ concurrency:
 jobs:
   rerun-review-labels:
     name: Rerun review-labels job
-    if: github.event.label.name == 'ci-reviewed'
+    if: false
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:

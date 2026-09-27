@@ -14,6 +14,30 @@ def reset_skin_state():
     skin_engine._active_skin_name = "default"
 
 
+class TestSkinConfig:
+    @pytest.mark.parametrize("config", [{}, {"display": {}}, {"display": {"skin": "  "}}])
+    def test_empty_config_selects_company_default(self, config):
+        from hermes_cli.config_defaults import DEFAULT_CONFIG
+        from hermes_cli.skin_engine import init_skin_from_config, get_active_skin, get_active_skin_name
+
+        init_skin_from_config(config)
+        assert get_active_skin_name() == DEFAULT_CONFIG["display"]["skin"] == "flexpair-dark"
+        assert get_active_skin().name == "flexpair-dark"
+
+    def test_explicit_classic_skin_still_works(self):
+        from hermes_cli.skin_engine import init_skin_from_config, get_active_skin
+
+        init_skin_from_config({"display": {"skin": "default"}})
+        assert get_active_skin().name == "default"
+
+    def test_default_skin_has_required_fields(self):
+        from hermes_cli.skin_engine import load_skin
+        skin = load_skin("default")
+        assert skin.name == "default"
+        assert skin.tool_prefix == "┊"
+        assert "banner_title" in skin.colors
+        assert "banner_border" in skin.colors
+        assert "agent_name" in skin.branding
 
 
 

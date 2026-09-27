@@ -755,15 +755,11 @@ from hermes_cli.model_setup_flows import (
     _model_flow_nous,
     _model_flow_openai_codex,
     _model_flow_xai_oauth,
-    _model_flow_qwen_oauth,
-    _model_flow_minimax_oauth,
     _model_flow_custom,
     _model_flow_azure_foundry,
     _model_flow_named_custom,
     _model_flow_copilot,
     _model_flow_copilot_acp,
-    _model_flow_kimi,
-    _model_flow_stepfun,
     _model_flow_bedrock,
     _model_flow_vertex,
     _model_flow_api_key_provider,
@@ -1994,14 +1990,10 @@ _PROVIDER_MODEL_FLOWS = {
     "nous": lambda c, m, a: _model_flow_nous(c, m, args=a),
     "openai-codex": lambda c, m, a: _model_flow_openai_codex(c, m),
     "xai-oauth": lambda c, m, a: _model_flow_xai_oauth(c, m, args=a),
-    "qwen-oauth": lambda c, m, a: _model_flow_qwen_oauth(c, m),
-    "minimax-oauth": lambda c, m, a: _model_flow_minimax_oauth(c, m, args=a),
     "copilot-acp": lambda c, m, a: _model_flow_copilot_acp(c, m),
     "copilot": lambda c, m, a: _model_flow_copilot(c, m),
     "custom": lambda c, m, a: _model_flow_custom(c),
     "anthropic": lambda c, m, a: _model_flow_anthropic(c, m),
-    "kimi-coding": lambda c, m, a: _model_flow_kimi(c, m),
-    "stepfun": lambda c, m, a: _model_flow_stepfun(c, m),
     "bedrock": lambda c, m, a: _model_flow_bedrock(c, m),
     "vertex": lambda c, m, a: _model_flow_vertex(c, m),
     "azure-foundry": lambda c, m, a: _model_flow_azure_foundry(c, m),
@@ -2466,10 +2458,14 @@ from hermes_cli.update_receipt import update_receipt_scope
 
 @update_receipt_scope()
 def cmd_update(args):
-    """Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``."""
-    from hermes_cli.update_owning_install import retarget_to_owning_install
+    """Refuse bundled updates before reaching any update preflight or mutation."""
+    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
 
-    retarget_to_owning_install(PROJECT_ROOT)
+    refusal = evaluate_update_admission(PROJECT_ROOT)
+    if refusal is not None:
+        print(refusal.message)
+        record_refusal_receipt(refusal)
+    sys.exit(2)
     if _update_preflight_handled(args):
         return
     gateway_mode = getattr(args, "gateway", False)

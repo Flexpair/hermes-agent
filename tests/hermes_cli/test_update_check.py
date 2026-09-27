@@ -1,0 +1,227 @@
+"""Tests for the update check mechanism in hermes_cli.banner.
+
+Passive checks go through the GitHub REST API — never ``git fetch``. Every CLI, TUI and desktop
+start used to fetch; across the install base that was tens of millions of fetch requests a day
+and GitHub asked us to poll the API instead. These tests pin that contract plus the cache
+policy that keeps the API traffic to one request a day per install.
+"""
+
+import json
+import threading
+import time
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+import hermes_cli.banner as banner
+
+SHA_A = "a" * 40
+SHA_B = "b" * 40
+
+
+@pytest.fixture
+def git_repo(tmp_path, monkeypatch):
+    """A fake checkout the update check resolves to, with git calls stubbed out."""
+    repo_dir = tmp_path / "hermes-agent"
+    repo_dir.mkdir()
+    (repo_dir / ".git").mkdir()
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.delenv("HERMES_REVISION", raising=False)
+    monkeypatch.setattr(banner, "_resolve_repo_dir", lambda: repo_dir)
+    monkeypatch.setattr("hermes_cli.config.detect_install_method", lambda root: "git")
+    monkeypatch.setattr("hermes_cli.config.get_project_root", lambda: repo_dir)
+    return repo_dir
+
+
+def _stub_git(
+    monkeypatch,
+    *,
+    head=SHA_A,
+    origin="https://github.com/NousResearch/hermes-agent.git",
+):
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(list(args))
+        sub = args[1]
+        if sub == "rev-parse":
+            return MagicMock(returncode=0, stdout=f"{head}\n")
+        if sub == "remote":
+            return MagicMock(returncode=0, stdout=f"{origin}\n")
+        if sub == "merge-base":
+            return MagicMock(returncode=1, stdout="")
+        if sub == "fetch":
+            return MagicMock(returncode=0, stdout="", stderr="")
+        if sub == "rev-list":
+            return MagicMock(returncode=0, stdout="0\n", stderr="")
+        raise AssertionError(f"passive check must not run git {sub}: {args}")
+
+    monkeypatch.setattr(banner.subprocess, "run", fake_run)
+    return calls
+
+
+def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
+    """No fetch for GitHub origins; exact count comes from the compare API."""
+    calls = _stub_git(monkeypatch, head=SHA_A)
+    tip = MagicMock(return_value=SHA_B)
+    monkeypatch.setattr(banner, "_github_branch_tip", tip)
+    monkeypatch.setattr(
+        banner, "_github_compare_behind", lambda cur, tgt, repo=None: 61
+    )
+
+    assert banner.check_for_updates() is None
+    tip.assert_not_called()
+    assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
+
+    assert not (git_repo.parent / ".update_check").exists()
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://github.com/Flexpair/hermes-agent.git",
+        "git@github.com:Flexpair/hermes-agent.git",
+        "https://github.com/flexpair/hermes-agent.git",
+    ],
+)
+def test_flexpair_origin_is_not_treated_as_a_user_fork(origin):
+    """The supported Flexpair distribution must stay on its own origin."""
+    from hermes_cli.update_cmd_git import _is_fork
+
+    assert _is_fork(origin) is False
+
+
+def test_flexpair_origin_uses_flexpair_api_compare(git_repo, monkeypatch):
+    calls = _stub_git(
+        monkeypatch,
+        head=SHA_A,
+        origin="https://github.com/Flexpair/hermes-agent.git",
+    )
+    tip = MagicMock(return_value=SHA_B)
+    compare = MagicMock(return_value=61)
+    monkeypatch.setattr(banner, "_github_branch_tip", tip)
+    monkeypatch.setattr(banner, "_github_compare_behind", compare)
+
+    assert banner.check_for_updates() is None
+    tip.assert_not_called()
+    compare.assert_not_called()
+    assert not (git_repo.parent / ".update_check").exists()
+    assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
+
+
+def test_flexpair_origin_ignores_existing_upstream_remote(git_repo, monkeypatch):
+    calls = _stub_git(
+        monkeypatch,
+        head=SHA_A,
+        origin="https://github.com/Flexpair/hermes-agent.git",
+    )
+    monkeypatch.setattr(
+        "hermes_cli.update_cmd._is_shallow_checkout", lambda _git_cmd: False
+    )
+    monkeypatch.setattr(banner, "_github_compare_behind", lambda *args: 0)
+
+    from hermes_cli.update_cmd import _cmd_update_check
+
+    with pytest.raises(SystemExit) as error:
+        _cmd_update_check()
+    assert error.value.code == 2
+
+    assert not any(call[1] == "fetch" for call in calls)
+    assert not any("upstream" in call for call in calls)
+
+
+def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
+    """A fresh cache answers without any network; ``hermes update`` moving HEAD busts it at once;
+    an inconclusive (None) result is retried after the shorter failure window, not never."""
+    from hermes_cli import __version__
+
+    cache_file = git_repo.parent / ".update_check"
+    _stub_git(monkeypatch, head=SHA_A)
+    tip = MagicMock(return_value=None)
+    monkeypatch.setattr(banner, "_github_branch_tip", tip)
+
+    def write_cache(*, ts, head, behind):
+        cache_file.write_text(
+            json.dumps(
+                {"ts": ts, "behind": behind, "rev": None, "ver": __version__, "head": head}
+            )
+        )
+
+    write_cache(ts=time.time() - banner._UPDATE_CHECK_CACHE_SECONDS + 60, head=SHA_A, behind=3)
+    assert banner.check_for_updates() is None
+    tip.assert_not_called()
+
+    write_cache(ts=time.time(), head=SHA_B, behind=3)  # cached for a different HEAD
+    assert banner.check_for_updates() is None
+    tip.assert_not_called()
+
+    tip.reset_mock()
+    write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS + 60, head=SHA_A, behind=None)
+    assert banner.check_for_updates() is None
+    tip.assert_not_called()
+
+    write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS - 1, head=SHA_A, behind=None)
+    banner.check_for_updates()
+    tip.assert_not_called()
+
+
+def test_prefetch_non_blocking(monkeypatch):
+    """prefetch_update_check() should return immediately without blocking."""
+    # Reset module state; force the real (non-pytest) thread path.
+    banner._update_result = None
+    banner._update_check_done = threading.Event()
+    monkeypatch.setattr(banner, "_skip_background_prefetch", lambda: False)
+
+    with patch.object(banner.source_check, "check_for_updates", return_value={"behind": 5}):
+        start = time.monotonic()
+        banner.prefetch_update_check()
+        assert time.monotonic() - start < 1.0
+        banner._update_check_done.wait(timeout=5)
+        assert banner._update_result == 5
+
+
+def test_prefetch_update_check_is_noop_under_pytest():
+    """Under pytest the prefetch must NOT start the git-spawning daemon
+    thread: a process-wide ``patch("subprocess.run")`` in an unrelated test
+    can capture the thread's ``git fetch``/``rev-parse`` spawns, flaking the
+    unrelated test's call_args assertions (seen in
+    tests/tui_gateway/test_subprocess_encoding.py and
+    test_bot_relay_methods.py on CI, 2026-08-28)."""
+    banner._update_result = None
+    banner._update_check_done = threading.Event()
+
+    before = {t.ident for t in threading.enumerate()}
+    with patch.object(banner, "check_for_updates") as mock_check:
+        banner.prefetch_update_check()
+        # The done event is set synchronously so get_update_result() callers
+        # don't burn their timeout waiting on a check that will never run.
+        assert banner._update_check_done.is_set()
+        mock_check.assert_not_called()
+    after = {t.ident for t in threading.enumerate()}
+    assert after <= before, "prefetch_update_check spawned a thread under pytest"
+
+
+def test_prefetch_banner_data_is_noop_under_pytest(monkeypatch):
+    """Same stray-git-spawn class: prefetch_banner_data must not start its
+    daemon thread under pytest."""
+    monkeypatch.setattr(banner, "_banner_data_prefetch_started", False)
+    with patch.object(banner, "get_git_banner_state") as mock_state:
+        banner.prefetch_banner_data()
+        # Give a hypothetical stray thread a beat to run — nothing should.
+        time.sleep(0.05)
+        mock_state.assert_not_called()
+    assert banner._banner_data_prefetch_started is True
+
+
+def test_upstream_main_sha_ls_remote_fallback_disables_git_prompts(monkeypatch):
+    """When the API is unreachable the HTTPS ls-remote fallback must never inherit the terminal."""
+    monkeypatch.setattr(banner, "_github_branch_tip", lambda slug, branch: None)
+    completed = MagicMock(returncode=1, stdout="", stderr="auth required")
+    run = MagicMock(return_value=completed)
+    monkeypatch.setattr(banner.subprocess, "run", run)
+
+    assert banner._upstream_main_sha() is None
+    kwargs = run.call_args.kwargs
+    assert kwargs["stdin"] is banner.subprocess.DEVNULL
+    assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+    assert kwargs["env"]["GCM_INTERACTIVE"] == "Never"
