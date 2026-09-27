@@ -57,6 +57,9 @@ param(
     [switch]$SelfTestWorkingDirectory
 )
 
+Write-Error "Updates are disabled in this Flexpair build; the installed version is fixed."
+exit 2
+
 if ($PSBoundParameters.ContainsKey("Branch") -and $PSBoundParameters.ContainsKey("Channel")) {
     throw "-Branch and -Channel are mutually exclusive"
 }

@@ -2466,10 +2466,14 @@ from hermes_cli.update_receipt import update_receipt_scope
 
 @update_receipt_scope()
 def cmd_update(args):
-    """Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``."""
-    from hermes_cli.update_owning_install import retarget_to_owning_install
+    """Refuse bundled updates before reaching any update preflight or mutation."""
+    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
 
-    retarget_to_owning_install(PROJECT_ROOT)
+    refusal = evaluate_update_admission(PROJECT_ROOT)
+    if refusal is not None:
+        print(refusal.message)
+        record_refusal_receipt(refusal)
+    sys.exit(2)
     if _update_preflight_handled(args):
         return
     gateway_mode = getattr(args, "gateway", False)

@@ -220,8 +220,12 @@ def _update_refused(error: str, message: str, update_command: str) -> Dict[str, 
 @router.post("/api/hermes/update")
 async def update_hermes():
     """Kick off ``hermes update`` in the background."""
-    if is_commit_build(_server_path("PROJECT_ROOT")):
-        return _update_refused("commit-build", COMMIT_BUILD_UPDATE_MESSAGE, "")
+    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
+
+    refusal = evaluate_update_admission(_server_path("PROJECT_ROOT"))
+    if refusal is not None and refusal.code == "updates-disabled":
+        record_refusal_receipt(refusal)
+        return _update_refused("updates-disabled", refusal.message, refusal.update_command)
 
     if _dashboard_local_update_managed_externally():
         message = _MANAGED_EXTERNALLY_MESSAGE + " The built-in local updater is disabled here."
@@ -271,12 +275,14 @@ async def check_hermes_update(force: bool = False, profile: Optional[str] = None
     non-applyable methods) and, for git installs that are behind, commits
     [{sha, summary, author, at}] (additive; existing consumers ignore it).
     """
-    if is_commit_build(_server_path("PROJECT_ROOT")):
+    from hermes_cli.update_contract import evaluate_update_admission
+
+    refusal = evaluate_update_admission(_server_path("PROJECT_ROOT"))
+    if refusal is not None and refusal.code == "updates-disabled":
         return {
-            "install_method": "desktop-app",
-            "current_version": get_version_info().derived_version,
-            "behind": None, "update_available": False, "can_apply": False,
-            "update_command": "", "message": COMMIT_BUILD_UPDATE_MESSAGE,
+            "install_method": "fixed", "current_version": get_version_info().derived_version, "behind": None,
+            "update_available": False, "can_apply": False,
+            "update_command": refusal.update_command, "message": refusal.message,
         }
 
     if _dashboard_local_update_managed_externally():

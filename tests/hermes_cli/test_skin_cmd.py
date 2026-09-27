@@ -23,6 +23,14 @@ def _activate(name: str) -> None:
     (get_hermes_home() / "config.yaml").write_text(f"display:\n  skin: {name}\n", encoding="utf-8")
 
 
+def test_unconfigured_skin_uses_company_default():
+    assert skin_cmd._active_skin() == "flexpair-dark"
+
+def test_whitespace_skin_uses_company_default():
+    _activate('"   "')
+    assert skin_cmd._active_skin() == "flexpair-dark"
+
+
 def test_set_edits_active_user_skin_in_place_preserving_everything_else():
     (_skins() / "oasis.yaml").write_text(
         'name: oasis\ncolors:\n  background: "#08201f"\n  banner_title: "#f2dfb3"\n', encoding="utf-8"

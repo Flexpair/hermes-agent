@@ -60,7 +60,7 @@ $script:BoundParams = $PSBoundParameters
 # Under iex, script scope is the caller's session and outlives a run; start
 # each run without the previous run's answer (see Set-LauncherUserPath).
 $script:BinDirOnCallerPath = $null
-$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/NousResearch/hermes-agent.git" }
+$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/Flexpair/hermes-agent.git" }
 
 # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
 # Derived from pm/lock.json. DO NOT EDIT BY HAND:
@@ -1221,6 +1221,12 @@ if ($script:IsDotSourced) {
 # The normalization prologue runs exactly once per real entry, before any
 # switch is honored, so every contract below sees long-form paths.
 Initialize-ResolvedPaths
+
+# The source-only Flexpair fork cannot be installed from Windows.
+Write-Error "Flexpair installation requires Linux; refusing to install on this OS."
+if ($script:RunAsFile) { exit 1 }
+$global:LASTEXITCODE = 1
+return
 
 # Keep uv from discovering uv.toml / pyproject.toml config from whatever
 # directory or user profile the installer runs under (mirrors install.sh).

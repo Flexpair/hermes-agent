@@ -215,10 +215,10 @@ index 7e6b916f2a..be77421e80 100644
    release:
 diff --git a/.github/workflows/flexpair-linux-config.yml b/.github/workflows/flexpair-linux-config.yml
 new file mode 100644
-index 0000000000..929a20b275
+index 0000000000..c9f6ed2888
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-config.yml
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,57 @@
 +name: Flexpair Linux config regression tests
 +
 +on:
@@ -228,12 +228,12 @@ index 0000000000..929a20b275
 +  contents: read
 +
 +concurrency:
-+  group: flexpair-linux-config-${{ github.event.pull_request.number || github.ref }}
-+  cancel-in-progress: true
++  group: flexpair-linux-config-${{ github.sha }}
++  cancel-in-progress: false
 +
 +jobs:
 +  test:
-+    name: Config, installer, and CI tests
++    name: Patched installer and update paths
 +    runs-on: ubuntu-latest
 +    timeout-minutes: 15
 +    steps:
@@ -264,27 +264,13 @@ index 0000000000..929a20b275
 +
 +      - name: Run focused fork regressions
 +        run: |
-+          config_tests=()
-+          while IFS= read -r test_file; do
-+            config_tests+=("$test_file")
-+          done < <(
-+            find tests/hermes_cli -maxdepth 1 -type f \
-+              \( -name 'test_*config*.py' -o -name 'test_*validation*.py' \) \
-+              -print | sort
-+          )
-+          if (( ${#config_tests[@]} == 0 )); then
-+            echo "::error::No CLI configuration tests found"
-+            exit 1
-+          fi
 +          uv run --no-sync scripts/run_tests.sh \
-+            "${config_tests[@]}" \
++            tests/hermes_cli/test_flexpair_fixed_install.py \
++            tests/hermes_cli/test_update_contract.py \
 +            tests/hermes_cli/test_update_check.py \
-+            tests/hermes_cli/test_update_apply_shallow_count.py \
-+            tests/hermes_cli/test_update_behind_count_recovery.py \
 +            tests/hermes_cli/test_passive_update_opt_out.py \
-+            tests/ci/test_supply_chain_scanner.py \
-+            tests/scripts/install \
-+            tests/ci
++            tests/hermes_cli/test_setup_hermes_script.py \
++            tests/scripts/install/test_install_sh_repository_defaults.py
 +        env:
 +          HERMES_TEST_WORKERS: "8"
 +          OPENROUTER_API_KEY: ""
@@ -352,6 +338,74 @@ index 0000000000..b9f6931476
 +          OPENAI_API_KEY: ""
 +          NOUS_API_KEY: ""
 \ No newline at end of file
+diff --git a/.github/workflows/flexpair-patch-replay.yml b/.github/workflows/flexpair-patch-replay.yml
+new file mode 100644
+index 0000000000..36be1b88d7
+--- /dev/null
++++ b/.github/workflows/flexpair-patch-replay.yml
+@@ -0,0 +1,62 @@
++name: Flexpair patch replay
++
++on:
++  push:
++    branches: ['*-patched']
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  regressions:
++    name: Linux config, installer, and freeze regressions
++    uses: ./.github/workflows/flexpair-linux-config.yml
++
++  desktop-freeze:
++    name: Desktop update refusal
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
++        with:
++          node-version: 26
++          cache: npm
++      - run: npm ci --ignore-scripts
++      - run: npm exec --workspace apps/desktop -- vitest run --project electron electron/update-handoff-marker.test.ts
++
++  replay:
++    name: Patch reproduces branch tree
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout complete history
++        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
++        with:
++          fetch-depth: 0
++      - name: Replay patch from original base
++        shell: bash
++        run: |
++          set -euo pipefail
++          test -f flexpair.patch
++          # --follow finds the original addition across patch-file renames.
++          creation=$(git log --follow --diff-filter=A --format=%H HEAD -- flexpair.patch)
++          test "$(printf '%s\n' "$creation" | wc -l)" -eq 1
++          base=$(git rev-parse "${creation}^" 2>/dev/null)
++          index=$(mktemp "${RUNNER_TEMP}/flexpair-index.XXXXXX")
++          trap 'rm -f "$index"' EXIT
++          rm -f "$index"
++          export GIT_INDEX_FILE="$index"
++          git read-tree "$base"
++          git apply --cached --check flexpair.patch
++          git apply --cached flexpair.patch
++          replayed=$(git write-tree)
++          git read-tree HEAD
++          git update-index --force-remove flexpair.patch
++          expected=$(git write-tree)
++          if [[ "$replayed" != "$expected" ]]; then
++            git diff --stat "$replayed" "$expected"
++            echo '::error::flexpair.patch does not reproduce the patched branch tree'
++            exit 1
++          fi
++          echo "Patch reproduces tree $expected from base $base"
 diff --git a/.github/workflows/js-autofix.yml b/.github/workflows/js-autofix.yml
 deleted file mode 100644
 index bd4ee6d1c9..0000000000
@@ -907,6 +961,84 @@ index 6fe1253cdb..c25551a6f4 100644
      await appWindow.evaluate(win => win.emit('focus'))
      await expect.poll(() => appWindow.evaluate(win => win.webContents.getZoomFactor())).toBeCloseTo(1)
      await later.click({ timeout: 5_000 })
+diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
+index 6779b7ac93..05f3f95a40 100644
+--- a/apps/desktop/electron/main.ts
++++ b/apps/desktop/electron/main.ts
+@@ -3334,7 +3334,15 @@ async function resolveHealedBranch(updateRoot, branch) {
+ // update changes HEAD, which busts the cache immediately). `git fetch` runs only
+ // inside applyUpdates. `force` (menu item, Settings "Check now") skips the
+ // cache; the renderer's background poller never passes it.
++function updatesAreDisabled(): boolean {
++  return true
++}
++
+ async function checkUpdates({ force = false }: { force?: boolean } = {}) {
++  if (updatesAreDisabled()) {
++    return { supported: false, reason: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
++  }
++
+   const updateRoot = resolveUpdateRoot()
+   let { branch } = readDesktopUpdateConfig()
+   const gitDir = path.join(updateRoot, '.git')
+@@ -4180,6 +4188,10 @@ async function releaseBackendLock(updateRoot, tag) {
+ // Detection (checkUpdates / commit changelog / "N behind") stays in the UI;
+ // only this apply action changed.
+ async function applyUpdates(opts: { stopSafeBlockers?: boolean } = {}) {
++  if (updatesAreDisabled()) {
++    return { ok: false, error: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
++  }
++
+   if (updateInFlight) {
+     throw new Error('An update is already in progress.')
+   }
+@@ -16425,6 +16437,9 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
+ // dials, drains only exact Desktop-owned processes, runs the launcher outside
+ // those serves, proves the correlated receipt, and restores every prior scope.
+ async function requestManagedSshUpdate(rawId) {
++  if (updatesAreDisabled()) {
++    return refusedManagedSshUpdate(String(rawId || '').trim(), crypto.randomUUID(), 'Updates are disabled in this Flexpair build.')
++  }
+   const connectionId = String(rawId || '').trim()
+   const existing = managedConnectionUpdates.get(connectionId)
+ 
+@@ -16476,6 +16491,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
+ // app's own update pipeline; Desktop-managed SSH uses the transactional
+ // drain/update/restore lifecycle; URL remotes POST their backend updater.
+ ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
++  if (updatesAreDisabled()) {
++    return { ok: false, error: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
++  }
+   const registry = readDesktopConnectionsRegistry()
+ 
+   // Optional renderer-side exclusions: the everything-update flow dispatches
+diff --git a/apps/desktop/electron/update-handoff-marker.test.ts b/apps/desktop/electron/update-handoff-marker.test.ts
+index a8f48e6a38..089f2d8a23 100644
+--- a/apps/desktop/electron/update-handoff-marker.test.ts
++++ b/apps/desktop/electron/update-handoff-marker.test.ts
+@@ -98,10 +98,18 @@ function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => R
+   )
+ }
+ 
+-test.skipIf(process.platform === 'win32')('POSIX hand-off preserves the Desktop marker acquisition time', () => {
+-  assertScriptHandoff(runPosix)
++test.skipIf(process.platform === 'win32')('POSIX hand-off refuses updates without creating a marker', () => {
++  const { home, installRoot } = sandbox('disabled')
++  const result = runPosix(installRoot, '1234567890')
++  assert.equal(result.status, 2)
++  assert.match(String(result.stderr), /Updates are disabled/)
++  assert.equal(fs.existsSync(path.join(home, '.hermes-update-in-progress')), false)
+ })
+ 
+-test.skipIf(process.platform !== 'win32')('PowerShell hand-off preserves the Desktop marker acquisition time', () => {
+-  assertScriptHandoff(runWindows)
++test.skipIf(process.platform !== 'win32')('PowerShell hand-off refuses updates without creating a marker', () => {
++  const { home, installRoot } = sandbox('disabled')
++  const result = runWindows(installRoot, '1234567890')
++  assert.equal(result.status, 2)
++  assert.match(String(result.stderr), /Updates are disabled/)
++  assert.equal(fs.existsSync(path.join(home, '.hermes-update-in-progress')), false)
+ })
 diff --git a/apps/desktop/electron/zoom.test.ts b/apps/desktop/electron/zoom.test.ts
 index 9d973fc970..1506bf1b60 100644
 --- a/apps/desktop/electron/zoom.test.ts
@@ -1366,7 +1498,7 @@ index 0000000000..ee529dd10d
 +Flexpair
 +# Installer fork PR #43
 diff --git a/hermes_cli/banner.py b/hermes_cli/banner.py
-index 39358fb0e0..2be76e26c1 100644
+index 39358fb0e0..42343a2f3c 100644
 --- a/hermes_cli/banner.py
 +++ b/hermes_cli/banner.py
 @@ -224,7 +224,9 @@ def _is_full_sha(value: Optional[str]) -> bool:
@@ -1467,7 +1599,16 @@ index 39358fb0e0..2be76e26c1 100644
  
  
  def _read_json(path: Path) -> Optional[dict]:
-@@ -405,22 +421,73 @@ def check_for_updates(*, passive: bool = False) -> Optional[int]:
+@@ -382,6 +398,8 @@ def check_for_updates(*, passive: bool = False) -> Optional[int]:
+     If ``HERMES_REVISION`` is set (nix builds embed it), compare it to upstream main; otherwise
+     compare the local checkout's HEAD. Both go through the GitHub API, never ``git fetch``.
+     """
++    return None  # Flexpair installs are pinned; do not probe for updates.
++
+     def _read_config_opt_out():
+         from hermes_cli.config import load_config
+         return load_config().get("updates", {}).get("check", True) is False
+@@ -405,22 +423,73 @@ def check_for_updates(*, passive: bool = False) -> Optional[int]:
      # stale "3 behind" must not survive the update it just prompted.
      now = time.time()
      repo_dir = None if embedded_rev else _resolve_repo_dir()
@@ -1575,6 +1716,26 @@ index 10d081553f..9ef978e651 100644
          # UI language for static messages (approval prompts, some gateway slash replies); not agent
          # responses/logs/tool outputs. en, zh, ja, de, es, fr, tr, uk; unknown → en.
          "language": "en",
+diff --git a/hermes_cli/main.py b/hermes_cli/main.py
+index 4026861eb2..b7e0364260 100644
+--- a/hermes_cli/main.py
++++ b/hermes_cli/main.py
+@@ -2398,7 +2398,14 @@ def _update_preflight_handled(args) -> bool:
+ 
+ 
+ def cmd_update(args):
+-    """Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``."""
++    """Refuse bundled updates before reaching any update preflight or mutation."""
++    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
++
++    refusal = evaluate_update_admission(PROJECT_ROOT)
++    if refusal is not None:
++        print(refusal.message)
++        record_refusal_receipt(refusal)
++    sys.exit(2)
+     if _update_preflight_handled(args):
+         return
+     gateway_mode = getattr(args, "gateway", False)
 diff --git a/hermes_cli/skin_cmd.py b/hermes_cli/skin_cmd.py
 index 5af5668e4f..d8e8e02d7d 100644
 --- a/hermes_cli/skin_cmd.py
@@ -1669,7 +1830,7 @@ index 76b1cd2b79..22df8d346b 100644
  
  def _active_branding(key: str, fallback: str) -> str:
 diff --git a/hermes_cli/update_cmd.py b/hermes_cli/update_cmd.py
-index be34f5bf20..8aa222d150 100644
+index be34f5bf20..a49211ebcd 100644
 --- a/hermes_cli/update_cmd.py
 +++ b/hermes_cli/update_cmd.py
 @@ -546,9 +546,16 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
@@ -1741,6 +1902,21 @@ index be34f5bf20..8aa222d150 100644
          # counted == 0 means local-ahead: falls through to the up-to-date path.
          commit_count = counted if counted is not None else -1
  
+@@ -1550,6 +1581,14 @@ def _cmd_update_impl(args, gateway_mode: bool):
+     """Body of ``cmd_update`` — kept separate so the wrapper can always restore stdio even on
+     ``sys.exit``. Self-lock deferral deliberately does NOT run here (pre-fetch it stranded users
+     on the OLD checkout in an exit-2 loop); it runs right before the dependency sync."""
++    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
++
++    refusal = evaluate_update_admission(_m().PROJECT_ROOT)
++    if refusal is not None:
++        print(refusal.message)
++        record_refusal_receipt(refusal)
++        sys.exit(2)
++
+     opts = _resolve_update_options(args, gateway_mode)
+     gw_input_fn, assume_yes = opts.gw_input_fn, opts.assume_yes
+ 
 diff --git a/hermes_cli/update_cmd_git.py b/hermes_cli/update_cmd_git.py
 index 0b32663651..9ceeca56c0 100644
 --- a/hermes_cli/update_cmd_git.py
@@ -1781,6 +1957,74 @@ index 0b32663651..9ceeca56c0 100644
  
  
  def _has_upstream_remote(git_cmd: list[str], cwd: Path) -> bool:
+diff --git a/hermes_cli/update_contract.py b/hermes_cli/update_contract.py
+index 0a29abd9e5..528d00259f 100644
+--- a/hermes_cli/update_contract.py
++++ b/hermes_cli/update_contract.py
+@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
+ class UpdateRefusal:
+     """Why an in-place update is refused, and what to run instead."""
+ 
+-    code: str              # image-marker | image-marker-invalid | docker | nix | apt
++    code: str              # updates-disabled (Flexpair fixed build)
+     message: str           # full user-facing text (multi-line ok)
+     update_command: str    # the one-line remediation command
+ 
+@@ -37,11 +37,14 @@ def _refusal(code: str, method: str, message: Optional[Callable[[str], str]] = N
+ 
+ 
+ def evaluate_update_admission(project_root: Path) -> Optional[UpdateRefusal]:
+-    """Return an :class:`UpdateRefusal` when in-place update must not run.
+-
+-    ``None`` means the install is eligible for in-place update (git checkout or unknown-but-
+-    mutable). Never raises; on any internal error it falls back to the heuristic layer only.
+-    """
++    """Reject all bundled updates for the fixed Flexpair distribution."""
++    return UpdateRefusal(
++        code="updates-disabled",
++        message="Updates are disabled in this Flexpair build; the installed version is fixed.",
++        update_command="disabled",
++    )
++
++    # Upstream admission logic remains below for reconciliation with newer upstream bases.
+     # Layer 1: baked provenance marker — authoritative when present.
+     try:
+         from hermes_cli.image_provenance import read_image_provenance
+diff --git a/hermes_cli/web_routers/actions.py b/hermes_cli/web_routers/actions.py
+index 165364ba07..a6aae2ba6f 100644
+--- a/hermes_cli/web_routers/actions.py
++++ b/hermes_cli/web_routers/actions.py
+@@ -219,6 +219,13 @@ def _update_refused(error: str, message: str, update_command: str) -> Dict[str,
+ @router.post("/api/hermes/update")
+ async def update_hermes():
+     """Kick off ``hermes update`` in the background."""
++    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
++
++    refusal = evaluate_update_admission(_server_path("PROJECT_ROOT"))
++    if refusal is not None and refusal.code == "updates-disabled":
++        record_refusal_receipt(refusal)
++        return _update_refused("updates-disabled", refusal.message, refusal.update_command)
++
+     if _dashboard_local_update_managed_externally():
+         message = _MANAGED_EXTERNALLY_MESSAGE + " The built-in local updater is disabled here."
+         return _update_refused("dashboard_update_managed_externally", message, "managed outside dashboard")
+@@ -266,6 +273,16 @@ async def check_hermes_update(force: bool = False, profile: Optional[str] = None
+     non-applyable methods) and, for git installs that are behind, commits
+     [{sha, summary, author, at}] (additive; existing consumers ignore it).
+     """
++    from hermes_cli.update_contract import evaluate_update_admission
++
++    refusal = evaluate_update_admission(_server_path("PROJECT_ROOT"))
++    if refusal is not None and refusal.code == "updates-disabled":
++        return {
++            "install_method": "fixed", "current_version": __version__, "behind": None,
++            "update_available": False, "can_apply": False,
++            "update_command": refusal.update_command, "message": refusal.message,
++        }
++
+     if _dashboard_local_update_managed_externally():
+         return {
+             "install_method": "managed-runtime", "current_version": __version__, "behind": None,
 diff --git a/hermes_cli/web_server_config.py b/hermes_cli/web_server_config.py
 index c1c8600f73..8ed649c8e6 100644
 --- a/hermes_cli/web_server_config.py
@@ -1943,11 +2187,94 @@ index 0000000000..6b86262cb9
 +
 +if __name__ == "__main__":
 +    raise SystemExit(main())
+diff --git a/scripts/desktop-update/posix.sh b/scripts/desktop-update/posix.sh
+index b343cc1787..3ed6024b1e 100755
+--- a/scripts/desktop-update/posix.sh
++++ b/scripts/desktop-update/posix.sh
+@@ -1,4 +1,6 @@
+ #!/bin/bash
++echo "Updates are disabled in this Flexpair build; the installed version is fixed." >&2
++exit 2
+ # posix.sh -- repo-owned macOS/Linux Desktop update hand-off.
+ #
+ # The whole job: wait for the Desktop to exit, run `hermes update`, tell the
+diff --git a/scripts/desktop-update/windows.ps1 b/scripts/desktop-update/windows.ps1
+index 17bb6b3235..5fa2eb29b0 100644
+--- a/scripts/desktop-update/windows.ps1
++++ b/scripts/desktop-update/windows.ps1
+@@ -55,6 +55,9 @@ param(
+     [switch]$SelfTestWorkingDirectory
+ )
+ 
++Write-Error "Updates are disabled in this Flexpair build; the installed version is fixed."
++exit 2
++
+ if (-not $SelfTestUi -and -not $SelfTestPipeDrain -and -not $InstallRoot) {
+     # Mandatory in spirit; relaxed in the signature only so the self-test
+     # switches can drive the UI / the pipe drain without a checkout.
+diff --git a/scripts/install.ps1 b/scripts/install.ps1
+index 1d52aa90f1..7f846323bd 100644
+--- a/scripts/install.ps1
++++ b/scripts/install.ps1
+@@ -77,6 +77,10 @@ param(
+ 
+ $ErrorActionPreference = "Stop"
+ 
++# PowerShell is not a supported entry point for this Linux-only installer.
++Write-Error "Flexpair installation requires Linux; refusing to install on this OS."
++exit 1
++
+ # Suppress Invoke-WebRequest's per-chunk progress bar.  Windows PowerShell
+ # 5.1's progress UI repaints synchronously on every received byte, which
+ # pegs CPU on a single core and throttles downloads by 10-100x (a 57MB
+@@ -2280,6 +2284,7 @@ function Install-Repository {
+         }
+ 
+         if ($repoValid) {
++            throw "Updates are disabled in this Flexpair build; the existing installation is unchanged."
+             Write-Info "Existing installation found, updating..."
+             Push-Location $InstallDir
+             # Wrap the entire fetch+checkout block in EAP=Continue so git's
+@@ -5077,6 +5082,10 @@ if ($MyInvocation.InvocationName -eq ".") {
+ }
+ 
+ try {
++    if (-not $ProtocolVersion -and -not $ShowResolvedPaths -and -not $Manifest -and
++        (Test-Path -LiteralPath $InstallDir)) {
++        throw "Updates are disabled in this Flexpair build; the existing installation is unchanged."
++    }
+     if ($Ensure -ne "") {
+         if ($PSBoundParameters.ContainsKey("Stage")) {
+             Write-Err "Cannot use -Ensure and -Stage simultaneously"
 diff --git a/scripts/install.sh b/scripts/install.sh
-index 096290221a..07b3de3c55 100755
+index 096290221a..26696d3a47 100755
 --- a/scripts/install.sh
 +++ b/scripts/install.sh
-@@ -43,8 +43,8 @@ NC='\033[0m' # No Color
+@@ -2,8 +2,7 @@
+ # ============================================================================
+ # Hermes Agent Installer
+ # ============================================================================
+-# Installation script for Linux, macOS, and Android/Termux.
+-# Uses uv for desktop/server installs and Python's stdlib venv + pip on Termux.
++# Installation is supported only on Linux (not Android/Termux).
+ #
+ # Usage:
+ #   curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+@@ -15,6 +14,13 @@
+ 
+ set -e
+ 
++# Reject unsupported hosts before changing the environment or touching an install.
++if [ "$(uname -s)" != "Linux" ] || [ -n "${TERMUX_VERSION:-}" ] ||
++   [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]; then
++    printf '%s\n' 'Flexpair installation requires Linux; refusing to install on this OS.' >&2
++    exit 1
++fi
++
+ # Guard against environment leakage when the installer is launched from another
+ # Python-driven tool session (e.g. Hermes terminal tool). A pre-set PYTHONPATH
+ # can force pip/entrypoints to import a different checkout than the one being
+@@ -43,8 +49,8 @@ NC='\033[0m' # No Color
  BOLD='\033[1m'
  
  # Configuration
@@ -1958,6 +2285,86 @@ index 096290221a..07b3de3c55 100755
  HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
  # INSTALL_DIR is resolved AFTER arg parsing and OS detection so we can pick an
  # FHS-style layout for root installs.  Track whether the user gave us an
+@@ -1522,9 +1528,17 @@ show_manual_install_hint() {
+ # Installation
+ # ============================================================================
+ 
++refuse_existing_install() {
++    if [ -e "$INSTALL_DIR" ] || [ -L "$INSTALL_DIR" ]; then
++        log_error "Updates are disabled in this Flexpair build; the existing installation is unchanged."
++        return 1
++    fi
++}
++
+ clone_repo() {
+     log_info "Installing to $INSTALL_DIR..."
+ 
++    refuse_existing_install || return 1
+     # An interrupted previous clone leaves a .git with no initial commit, where
+     # the update path's `git stash` / `git checkout` abort with "You do not
+     # have the initial commit yet" and fail the install (#40998). Move such a
+@@ -3770,6 +3784,7 @@ run_stage_body() {
+         repository)
+             detect_os
+             resolve_install_layout
++            refuse_existing_install || return 1
+             check_git
+             clone_repo
+             ;;
+@@ -3902,6 +3917,7 @@ main() {
+ 
+     detect_os
+     resolve_install_layout
++    refuse_existing_install
+     install_uv
+     check_python
+     check_git
+@@ -3941,8 +3957,14 @@ main() {
+ if [ "$MANIFEST_MODE" = true ]; then
+     emit_manifest
+ elif [ -n "$STAGE_NAME" ]; then
++    detect_os
++    resolve_install_layout
++    refuse_existing_install || exit 1
+     run_stage_protocol "$STAGE_NAME"
+ elif [ -n "$ENSURE_DEPS" ]; then
++    detect_os
++    resolve_install_layout
++    refuse_existing_install || exit 1
+     ensure_mode
+ else
+     main
+diff --git a/setup-hermes.sh b/setup-hermes.sh
+index 149640c3c6..8849dcee8e 100755
+--- a/setup-hermes.sh
++++ b/setup-hermes.sh
+@@ -19,6 +19,13 @@
+ 
+ set -e
+ 
++# Developer setup must obey the same Linux-only installation policy.
++if [ "$(uname -s)" != "Linux" ] || [ -n "${TERMUX_VERSION:-}" ] ||
++   [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]; then
++    printf '%s\n' 'Flexpair installation requires Linux; refusing to install on this OS.' >&2
++    exit 1
++fi
++
+ # Colors
+ GREEN='\033[0;32m'
+ YELLOW='\033[0;33m'
+@@ -29,6 +36,12 @@ NC='\033[0m'
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ cd "$SCRIPT_DIR"
+ 
++# Never rebuild an existing checkout's environment on a second setup invocation.
++if [ -e "$SCRIPT_DIR/venv" ] || [ -L "$SCRIPT_DIR/venv" ]; then
++    printf '%s\n' 'Updates are disabled in this Flexpair build; the existing installation is unchanged.' >&2
++    exit 1
++fi
++
+ # Prevent uv from discovering config files (uv.toml, pyproject.toml) from the
+ # wrong user's home directory when running under sudo -u <user>.  See #21269.
+ export UV_NO_CONFIG=1
 diff --git a/tests/ci/test_fork_ci_policy.py b/tests/ci/test_fork_ci_policy.py
 new file mode 100644
 index 0000000000..aee87942c4
@@ -2271,11 +2678,124 @@ index c094bcacfa..b2b31eb8d3 100644
      def test_ares_prompt_fragments_use_skin_symbol(self):
          cli = _make_cli_stub()
  
+diff --git a/tests/hermes_cli/test_flexpair_fixed_install.py b/tests/hermes_cli/test_flexpair_fixed_install.py
+new file mode 100644
+index 0000000000..4306952e10
+--- /dev/null
++++ b/tests/hermes_cli/test_flexpair_fixed_install.py
+@@ -0,0 +1,95 @@
++"""A Flexpair checkout cannot be advanced by the bundled update surfaces."""
++
++from pathlib import Path
++from types import SimpleNamespace
++import os
++import subprocess
++
++import pytest
++
++from hermes_cli import banner, main
++from hermes_cli.update_contract import evaluate_update_admission
++
++
++def test_update_gate_refuses_every_checkout(tmp_path):
++    refusal = evaluate_update_admission(tmp_path)
++    assert refusal is not None
++    assert refusal.code == "updates-disabled"
++    assert refusal.update_command == "disabled"
++
++
++def test_cli_update_exits_before_update_preflight(monkeypatch, tmp_path):
++    monkeypatch.setattr(main, "PROJECT_ROOT", tmp_path)
++    monkeypatch.setattr(main, "_update_preflight_handled", lambda _: pytest.fail("preflight ran"))
++    with pytest.raises(SystemExit) as error:
++        main.cmd_update(SimpleNamespace(check=False))
++    assert error.value.code == 2
++
++
++def test_passive_update_check_does_not_contact_network(monkeypatch):
++    monkeypatch.setattr(banner, "_github_branch_tip", lambda *a, **kw: pytest.fail("network probed"))
++    assert banner.check_for_updates() is None
++
++
++def test_desktop_update_script_refuses_before_touching_install(tmp_path):
++    script = Path(__file__).resolve().parents[2] / "scripts/desktop-update/posix.sh"
++    install_root = tmp_path / "hermes-agent"
++    install_root.mkdir()
++    sentinel = install_root / "unchanged"
++    sentinel.write_text("fixed")
++    before = sorted(path.name for path in tmp_path.iterdir())
++    result = subprocess.run(
++        ["bash", str(script), "--install-root", str(install_root), "--self-test-gate"],
++        capture_output=True, text=True, timeout=5,
++    )
++    assert result.returncode == 2
++    assert "Updates are disabled" in result.stderr
++    assert sentinel.read_text() == "fixed"
++    assert sorted(path.name for path in install_root.iterdir()) == ["unchanged"]
++    assert sorted(path.name for path in tmp_path.iterdir()) == before
++
++
++@pytest.mark.parametrize("script", ["scripts/install.sh", "setup-hermes.sh"])
++@pytest.mark.parametrize("host,termux", [("Darwin", False), ("MINGW64_NT", False), ("Linux", True)])
++def test_installer_refuses_non_linux_before_setup(script, host, termux, tmp_path):
++    repo = Path(__file__).resolve().parents[2]
++    fake_uname = tmp_path / "uname"
++    fake_uname.write_text(f"#!/bin/sh\nprintf '%s\\n' '{host}'\n")
++    fake_uname.chmod(0o755)
++    env = os.environ.copy()
++    env["PATH"] = f"{tmp_path}{os.pathsep}{env['PATH']}"
++    env["HERMES_HOME"] = str(tmp_path / "hermes-home")
++    if termux:
++        env["TERMUX_VERSION"] = "1"
++    else:
++        env.pop("TERMUX_VERSION", None)
++        env.pop("PREFIX", None)
++    result = subprocess.run(["bash", str(repo / script), "--help"], cwd=tmp_path,
++                            env=env, capture_output=True, text=True, timeout=5)
++    assert result.returncode != 0
++    assert "requires Linux" in result.stderr
++    assert not (tmp_path / "hermes-home").exists()
++
++
++def test_setup_script_rejects_existing_venv_before_deleting_it(tmp_path: Path):
++    repo = tmp_path / "repo"
++    repo.mkdir()
++    script = repo / "setup-hermes.sh"
++    script.write_bytes((Path(__file__).resolve().parents[2] / "setup-hermes.sh").read_bytes())
++    venv = repo / "venv"
++    venv.mkdir()
++    sentinel = venv / "do-not-delete"
++    sentinel.write_text("unchanged")
++    fake_bin = tmp_path / "bin"
++    fake_bin.mkdir()
++    uname = fake_bin / "uname"
++    uname.write_text("#!/bin/sh\nprintf 'Linux\\n'\n")
++    uname.chmod(0o755)
++    result = subprocess.run(
++        ["bash", str(script)], capture_output=True, text=True,
++        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
++        timeout=10,
++    )
++    assert result.returncode == 1
++    assert "Updates are disabled" in result.stderr
++    assert sentinel.read_text() == "unchanged"
 diff --git a/tests/hermes_cli/test_passive_update_opt_out.py b/tests/hermes_cli/test_passive_update_opt_out.py
-index 053bb1f4df..ac1f7638e5 100644
+index 053bb1f4df..3aecdad8e7 100644
 --- a/tests/hermes_cli/test_passive_update_opt_out.py
 +++ b/tests/hermes_cli/test_passive_update_opt_out.py
-@@ -13,9 +13,30 @@ def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
+@@ -1,8 +1,10 @@
+-"""Passive opt-out keeps explicit update checks available."""
++"""Fixed Flexpair builds do not check for updates, even when explicitly requested."""
+ import json
+ import subprocess
+ import time
+ 
++import pytest
++
+ from hermes_constants import get_hermes_home
+ 
+ 
+@@ -13,16 +15,37 @@ def test_passive_check_obeys_config_before_using_cached_notice(monkeypatch):
      # The cache is keyed on the checkout's HEAD (an update moving HEAD invalidates it).
      repo_dir = banner._resolve_repo_dir()
      head = banner._git_stdout(["rev-parse", "HEAD"], cwd=repo_dir) if repo_dir else None
@@ -2309,6 +2829,28 @@ index 053bb1f4df..ac1f7638e5 100644
      monkeypatch.delenv("HERMES_REVISION", raising=False)
      config = home / "config.yaml"
      config.write_text("updates:\n  check: true\n", encoding="utf-8")
+-    assert banner.check_for_updates(passive=True) == 17
++    assert banner.check_for_updates(passive=True) is None
+     config.write_text("updates:\n  check: false\n", encoding="utf-8")
+     assert banner.check_for_updates(passive=True) is None
+-    assert banner.check_for_updates() == 17
++    assert banner.check_for_updates() is None
+ 
+ 
+ def test_explicit_check_fetches_local_origin_despite_passive_opt_out(tmp_path, monkeypatch, capsys):
+@@ -39,7 +62,9 @@ def test_explicit_check_fetches_local_origin_despite_passive_opt_out(tmp_path, m
+     git("-C", remote, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-m", "next")
+     monkeypatch.setattr(main, "PROJECT_ROOT", local)
+     (get_hermes_home() / "config.yaml").write_text("updates:\n  check: false\n", encoding="utf-8")
+-    _cmd_update_check()
++    with pytest.raises(SystemExit) as error:
++        _cmd_update_check()
++    assert error.value.code == 2
+     output = capsys.readouterr().out
+-    assert "Fetching from origin" in output
+-    assert "1 commit" in output
++    assert "Updates are disabled" in output
++    assert "Fetching from origin" not in output
 diff --git a/tests/hermes_cli/test_skin_cmd.py b/tests/hermes_cli/test_skin_cmd.py
 index 09cf29422a..e748f01c9e 100644
 --- a/tests/hermes_cli/test_skin_cmd.py
@@ -2602,7 +3144,7 @@ index 930dd9ef3e..75c6e3db1d 100644
      """FAIL-BEFORE (class): this path returned a fabricated 1 via callers."""
      with _upstream_tip(SHA_B), patch.object(banner, "_github_compare_behind", return_value=None):
 diff --git a/tests/hermes_cli/test_update_check.py b/tests/hermes_cli/test_update_check.py
-index 46b4eee937..466977a41f 100644
+index 46b4eee937..bd937f70ba 100644
 --- a/tests/hermes_cli/test_update_check.py
 +++ b/tests/hermes_cli/test_update_check.py
 @@ -33,7 +33,12 @@ def git_repo(tmp_path, monkeypatch):
@@ -2630,7 +3172,7 @@ index 46b4eee937..466977a41f 100644
          raise AssertionError(f"passive check must not run git {sub}: {args}")
  
      monkeypatch.setattr(banner.subprocess, "run", fake_run)
-@@ -52,11 +61,13 @@ def _stub_git(monkeypatch, *, head=SHA_A, origin="https://github.com/NousResearc
+@@ -52,18 +61,73 @@ def _stub_git(monkeypatch, *, head=SHA_A, origin="https://github.com/NousResearc
  
  
  def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
@@ -2644,12 +3186,15 @@ index 46b4eee937..466977a41f 100644
 +        banner, "_github_compare_behind", lambda cur, tgt, repo=None: 61
 +    )
  
-     assert banner.check_for_updates() == 61
-     tip.assert_called_once_with("nousresearch/hermes-agent", "main")
-@@ -66,6 +77,59 @@ def test_passive_check_uses_the_api_and_never_fetches(git_repo, monkeypatch):
-     assert (cached["head"], cached["target"], cached["behind"]) == (SHA_A, SHA_B, 61)
- 
- 
+-    assert banner.check_for_updates() == 61
+-    tip.assert_called_once_with("nousresearch/hermes-agent", "main")
++    assert banner.check_for_updates() is None
++    tip.assert_not_called()
++    assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
++
++    assert not (git_repo.parent / ".update_check").exists()
++
++
 +@pytest.mark.parametrize(
 +    "origin",
 +    [
@@ -2676,13 +3221,14 @@ index 46b4eee937..466977a41f 100644
 +    monkeypatch.setattr(banner, "_github_branch_tip", tip)
 +    monkeypatch.setattr(banner, "_github_compare_behind", compare)
 +
-+    assert banner.check_for_updates() == 61
-+    tip.assert_called_once_with("flexpair/hermes-agent", "main")
-+    compare.assert_called_once_with(SHA_A, SHA_B, "flexpair/hermes-agent")
-+    cache = json.loads((git_repo.parent / ".update_check").read_text())
-+    assert cache["repo"] == "flexpair/hermes-agent"
-+    assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
-+
++    assert banner.check_for_updates() is None
++    tip.assert_not_called()
++    compare.assert_not_called()
++    assert not (git_repo.parent / ".update_check").exists()
+     assert not any(c[1] in {"fetch", "ls-remote"} for c in calls)
+ 
+-    cached = json.loads((git_repo.parent / ".update_check").read_text())
+-    assert (cached["head"], cached["target"], cached["behind"]) == (SHA_A, SHA_B, 61)
 +
 +def test_flexpair_origin_ignores_existing_upstream_remote(git_repo, monkeypatch):
 +    calls = _stub_git(
@@ -2697,16 +3243,16 @@ index 46b4eee937..466977a41f 100644
 +
 +    from hermes_cli.update_cmd import _cmd_update_check
 +
-+    _cmd_update_check()
++    with pytest.raises(SystemExit) as error:
++        _cmd_update_check()
++    assert error.value.code == 2
 +
-+    assert any(call[1:4] == ["fetch", "origin", "main"] for call in calls)
++    assert not any(call[1] == "fetch" for call in calls)
 +    assert not any("upstream" in call for call in calls)
-+
-+
+ 
+ 
  def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
-     """A fresh cache answers without any network; ``hermes update`` moving HEAD busts it at once;
-     an inconclusive (None) result is retried after the shorter failure window, not never."""
-@@ -77,8 +141,11 @@ def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
+@@ -77,16 +141,19 @@ def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
      monkeypatch.setattr(banner, "_github_branch_tip", tip)
  
      def write_cache(*, ts, head, behind):
@@ -2719,7 +3265,84 @@ index 46b4eee937..466977a41f 100644
 +        )
  
      write_cache(ts=time.time() - banner._UPDATE_CHECK_CACHE_SECONDS + 60, head=SHA_A, behind=3)
-     assert banner.check_for_updates() == 3
+-    assert banner.check_for_updates() == 3
++    assert banner.check_for_updates() is None
+     tip.assert_not_called()
+ 
+     write_cache(ts=time.time(), head=SHA_B, behind=3)  # cached for a different HEAD
+-    assert banner.check_for_updates() is None  # API unreachable → inconclusive, re-asked
+-    tip.assert_called_once()
++    assert banner.check_for_updates() is None
++    tip.assert_not_called()
+ 
+     tip.reset_mock()
+     write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS + 60, head=SHA_A, behind=None)
+@@ -95,7 +162,7 @@ def test_cache_is_daily_but_invalidated_when_head_moves(git_repo, monkeypatch):
+ 
+     write_cache(ts=time.time() - banner._UPDATE_CHECK_FAILURE_CACHE_SECONDS - 1, head=SHA_A, behind=None)
+     banner.check_for_updates()
+-    tip.assert_called_once()
++    tip.assert_not_called()
+ 
+ 
+ def test_prefetch_non_blocking(monkeypatch):
+diff --git a/tests/hermes_cli/test_update_contract.py b/tests/hermes_cli/test_update_contract.py
+index 9f6adce2b5..fe4a6bb13d 100644
+--- a/tests/hermes_cli/test_update_contract.py
++++ b/tests/hermes_cli/test_update_contract.py
+@@ -98,8 +98,8 @@ def test_admission_marker_refuses_even_on_git_checkout(tmp_path, monkeypatch):
+     )
+     refusal = evaluate_update_admission(tmp_path)
+     assert refusal is not None
+-    assert refusal.code == "image-marker"
+-    assert "docker pull" in refusal.update_command
++    assert refusal.code == "updates-disabled"
++    assert refusal.update_command == "disabled"
+ 
+ 
+ def test_admission_invalid_marker_fails_closed(tmp_path, monkeypatch):
+@@ -110,8 +110,8 @@ def test_admission_invalid_marker_fails_closed(tmp_path, monkeypatch):
+     monkeypatch.setattr(ip, "IMAGE_PROVENANCE_PATH", bad)
+     refusal = evaluate_update_admission(tmp_path)
+     assert refusal is not None
+-    assert refusal.code == "image-marker-invalid"
+-    assert "docker pull" in refusal.update_command
++    assert refusal.code == "updates-disabled"
++    assert refusal.update_command == "disabled"
+ 
+ 
+ def test_admission_no_marker_falls_back_to_heuristics(tmp_path, monkeypatch):
+@@ -122,17 +122,18 @@ def test_admission_no_marker_falls_back_to_heuristics(tmp_path, monkeypatch):
+         "hermes_cli.config.detect_install_method", lambda *a, **k: "docker"
+     )
+     refusal = evaluate_update_admission(tmp_path)
+-    assert refusal is not None and refusal.code == "docker"
++    assert refusal is not None and refusal.code == "updates-disabled"
+ 
+ 
+-def test_admission_git_checkout_no_marker_is_admitted(tmp_path, monkeypatch):
++def test_admission_git_checkout_no_marker_is_refused(tmp_path, monkeypatch):
+     import hermes_cli.image_provenance as ip
+ 
+     monkeypatch.setattr(ip, "IMAGE_PROVENANCE_PATH", tmp_path / "absent.json")
+     monkeypatch.setattr(
+         "hermes_cli.config.detect_install_method", lambda *a, **k: "git"
+     )
+-    assert evaluate_update_admission(tmp_path) is None
++    refusal = evaluate_update_admission(tmp_path)
++    assert refusal is not None and refusal.code == "updates-disabled"
+ 
+ 
+ def test_admission_apt_and_nix_refuse(tmp_path, monkeypatch):
+@@ -145,7 +146,7 @@ def test_admission_apt_and_nix_refuse(tmp_path, monkeypatch):
+ 
+         monkeypatch.setattr("hermes_cli.config.detect_install_method", _detect)
+         refusal = evaluate_update_admission(tmp_path)
+-        assert refusal is not None and refusal.code == code
++        assert refusal is not None and refusal.code == "updates-disabled"
+ 
+ 
+ # ---------------------------------------------------------------------------
 diff --git a/tests/hermes_cli/test_web_server.py b/tests/hermes_cli/test_web_server.py
 index 0256d3da65..2445b0aace 100644
 --- a/tests/hermes_cli/test_web_server.py
@@ -2742,10 +3365,10 @@ index 0256d3da65..2445b0aace 100644
          from hermes_cli.web_server_config import CONFIG_SCHEMA
 diff --git a/tests/scripts/install/test_install_sh_repository_defaults.py b/tests/scripts/install/test_install_sh_repository_defaults.py
 new file mode 100644
-index 0000000000..7de5386621
+index 0000000000..b9559d035f
 --- /dev/null
 +++ b/tests/scripts/install/test_install_sh_repository_defaults.py
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,41 @@
 +"""The published installer must clone the Flexpair Hermes fork.
 +
 +Run the real shell script in manifest mode so these assertions cover the
@@ -2755,6 +3378,7 @@ index 0000000000..7de5386621
 +from __future__ import annotations
 +
 +import subprocess
++import os
 +from pathlib import Path
 +
 +
@@ -2766,7 +3390,10 @@ index 0000000000..7de5386621
 +)
 +
 +
-+def test_installer_uses_flexpair_repository_defaults() -> None:
++def test_installer_uses_flexpair_repository_defaults(tmp_path: Path) -> None:
++    fake_uname = tmp_path / "uname"
++    fake_uname.write_text("#!/bin/sh\nprintf 'Linux\\n'\n")
++    fake_uname.chmod(0o755)
 +    probe = f"""
 +set -eu
 +source "{INSTALL_SH!s}" --manifest >/dev/null
@@ -2778,6 +3405,7 @@ index 0000000000..7de5386621
 +        text=True,
 +        check=False,
 +        timeout=30,
++        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
 +    )
 +
 +    assert result.returncode == 0, result.stderr

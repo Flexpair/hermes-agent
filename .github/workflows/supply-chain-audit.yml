@@ -13,15 +13,14 @@ name: Supply Chain Audit
 # ``detect`` job. The orchestrator passes ``scan`` / ``deps`` booleans as
 # inputs; this workflow's jobs gate on those inputs instead of re-computing
 # the diff. MCP catalog review was previously here but has moved to
-# ``review-labels.yml`` so it can be rerun independently.
+# the upstream workflow.
 #
 # Outputs:
 #   review_status      — JSON array of status objects consumed by the review
 #                         comment assembler (scripts/ci/assemble_review_comment.py).
 #   critical_findings  — "true" when the narrow critical-pattern scan found
-#                         something. The review-label gate consumes this and
-#                         owns the action-required result, so adding
-#                         ``ci-reviewed`` can heal the run on rerun.
+#                         something. The scan job fails directly on such a
+#                         finding; no review-label job is required.
 
 on:
   workflow_call:
@@ -67,96 +66,35 @@ jobs:
 
       - name: Scan diff for critical patterns
         id: scan
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CI_REVIEWED: ${{ contains(github.event.pull_request.labels.*.name, 'ci-reviewed') }}
         run: |
           set -euo pipefail
 
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
 
-          # Added lines only, excluding lockfiles.
-          # Three-point diff (base...head) diffs from the merge base to HEAD,
-          # so only changes introduced by this PR are included — not changes
-          # that landed on main after the PR branched off.
-          DIFF=$(git diff "$BASE"..."$HEAD" -- . ':!uv.lock' ':!*.lock' ':!package-lock.json' ':!yarn.lock' || true)
-
-          FINDINGS=""
-
-          # --- .pth files (auto-execute on Python startup) ---
-          # The exact mechanism used in the litellm supply chain attack:
-          # https://github.com/BerriAI/litellm/issues/24512
-          PTH_FILES=$(git diff --diff-filter=d --name-only "$BASE"..."$HEAD" | grep '\.pth$' || true)
-          if [ -n "$PTH_FILES" ]; then
-            FINDINGS="${FINDINGS}
-          ### 🚨 CRITICAL: .pth file added or modified
-          Python \`.pth\` files in \`site-packages/\` execute automatically when the interpreter starts — no import required.
-
-          **Files:**
-          \`\`\`
-          ${PTH_FILES}
-          \`\`\`
-          "
-          fi
-
-          # --- base64 decode + exec/eval on the same line (the litellm attack pattern) ---
-          B64_EXEC_HITS=$(echo "$DIFF" | grep -n '^+' | grep -iE 'base64\.(b64decode|decodebytes|urlsafe_b64decode)' | grep -iE 'exec\(|eval\(' | head -10 || true)
-          if [ -n "$B64_EXEC_HITS" ]; then
-            FINDINGS="${FINDINGS}
-          ### 🚨 CRITICAL: base64 decode + exec/eval combo
-          Base64-decoded strings passed directly to exec/eval — the signature of hidden credential-stealing payloads.
-
-          **Matches:**
-          \`\`\`
-          ${B64_EXEC_HITS}
-          \`\`\`
-          "
-          fi
-
-          # --- subprocess with encoded/obfuscated command argument ---
-          PROC_HITS=$(echo "$DIFF" | grep -n '^+' | grep -E 'subprocess\.(Popen|call|run)\s*\(' | grep -iE 'base64|\\x[0-9a-f]{2}|chr\(' | head -10 || true)
-          if [ -n "$PROC_HITS" ]; then
-            FINDINGS="${FINDINGS}
-          ### 🚨 CRITICAL: subprocess with encoded/obfuscated command
-          Subprocess calls whose command strings are base64- or hex-encoded are a strong indicator of payload execution.
-
-          **Matches:**
-          \`\`\`
-          ${PROC_HITS}
-          \`\`\`
-          "
-          fi
-
-          # --- Install-hook files (setup.py/sitecustomize/usercustomize/__init__.pth) ---
-          # These execute during pip install or interpreter startup.
-          # Anchored at repo root: only the top-level setup.py/setup.cfg run during
-          # `pip install`, and only top-level sitecustomize.py/usercustomize.py are
-          # auto-loaded by the interpreter via site.py. Any nested file with the
-          # same name (e.g. hermes_cli/setup.py — the CLI setup wizard) is unrelated
-          # and produced false positives that trained reviewers to ignore the scanner.
-          SETUP_HITS=$(git diff --diff-filter=d --name-only "$BASE"..."$HEAD" | grep -E '^(setup\.py|setup\.cfg|sitecustomize\.py|usercustomize\.py|__init__\.pth)$' || true)
-          # A maintainer-applied ci-reviewed label records the manual review
-          # required for intentional changes to an install hook. The scanner
-          # still blocks every unreviewed addition or modification.
-          if [ -n "$SETUP_HITS" ] && [ "$CI_REVIEWED" != "true" ]; then
-            FINDINGS="${FINDINGS}
-          ### 🚨 CRITICAL: Install-hook file added or modified
-          These files can execute code during package installation or interpreter startup.
-
-          **Files:**
-          \`\`\`
-          ${SETUP_HITS}
-          \`\`\`
-          "
-          fi
-
-          if [ -n "$FINDINGS" ]; then
+          # The reusable job checks out the synthetic merge commit. Use the
+          # contributor branch SHA explicitly so the scan cannot inspect the
+          # workflow's own merge-only test changes.
+          git fetch --no-tags origin "$HEAD"
+          test "$(git rev-parse FETCH_HEAD)" = "$HEAD"
+          test -n "$BASE" && test -n "$HEAD"
+          # Keep scanner logic executable and testable outside GitHub Actions.
+          set +e
+          SCAN_RESULT=$(python3 scripts/ci/scan_supply_chain.py \
+            --repo "$GITHUB_WORKSPACE" \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --findings-file /tmp/findings.md \
+            --fail-on-findings)
+          SCAN_RC=$?
+          set -e
+          printf '%s\n' "$SCAN_RESULT"
+          if grep -q '^found=true$' <<<"$SCAN_RESULT"; then
             echo "found=true" >> "$GITHUB_OUTPUT"
-            echo "$FINDINGS" > /tmp/findings.md
           else
             echo "found=false" >> "$GITHUB_OUTPUT"
           fi
+          echo "scan_rc=$SCAN_RC" >> "$GITHUB_OUTPUT"
 
       - name: Emit review_status
         id: emit-status
@@ -167,15 +105,18 @@ jobs:
           python3 - <<'PYEOF'
           import json, os
 
-          # The review-label gate renders and blocks critical findings. Keep
-          # this scan a fact-finder so adding ci-reviewed can rerun the gate
-          # without requiring the scanner itself to fail again.
           status = []
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
               f.write(f"review_status={json.dumps(status)}\n")
           PYEOF
 
+      - name: Fail on scanner findings or errors
+        if: always() && (steps.scan.outputs.found == 'true' || steps.scan.outputs.scan_rc != '0')
+        run: |
+          if [ -f /tmp/findings.md ]; then cat /tmp/findings.md; fi
+          echo "::error::Critical supply-chain findings or scanner error detected."
+          exit 1
 
   dep-bounds:
     name: Check PyPI dependency upper bounds
@@ -198,8 +139,14 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
 
-          # Only check added lines in pyproject.toml
-          ADDED=$(git diff "$BASE"..."$HEAD" -- pyproject.toml | grep '^+' | grep -v '^+++' || true)
+          # Only check added lines in pyproject.toml. Do not let an added
+          # source line beginning with ++ look like a diff header.
+          ADDED=$(git diff "$BASE"..."$HEAD" -- pyproject.toml | python3 -c 'import sys; in_hunk = False
+          for line in sys.stdin:
+              if line.startswith("@@"):
+                  in_hunk = True
+              elif in_hunk and line.startswith("+"):
+                  print(line, end="")')
 
           if [ -z "$ADDED" ]; then
             echo "found=false" >> "$GITHUB_OUTPUT"

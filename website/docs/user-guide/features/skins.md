@@ -25,8 +25,10 @@ Or set the default skin in `~/.hermes/config.yaml`:
 
 ```yaml
 display:
-  skin: default
+  skin: flexpair-dark
 ```
+
+If `display.skin` is unset or blank, the CLI and TUI use `flexpair-dark`. Set `display.skin: default` to select the classic Hermes appearance explicitly.
 
 ## Built-in skins
 
@@ -41,6 +43,8 @@ display:
 | `poseidon` | Ocean-god theme — deep blue and seafoam | `Poseidon Agent` | Deep blue to seafoam gradient. Ocean-themed spinners ("charting currents", "sounding the depth"). Trident ASCII art banner. |
 | `sisyphus` | Sisyphean theme — austere grayscale with persistence | `Sisyphus Agent` | Light grays with stark contrast. Boulder-themed spinners ("pushing uphill", "resetting the boulder", "enduring the loop"). Boulder-and-hill ASCII art banner. |
 | `charizard` | Volcanic theme — burnt orange and ember | `Charizard Agent` | Warm burnt orange to ember gradient. Fire-themed spinners ("banking into the draft", "measuring burn"). Dragon-silhouette ASCII art banner. |
+| `flexpair-dark` | Flexpair dark theme (unconfigured default) | `Hermes Agent` | Cyan on deep teal. |
+| `flexpair-light` | Flexpair light theme | `Hermes Agent` | Teal on white. |
 
 ## Complete list of configurable keys
 

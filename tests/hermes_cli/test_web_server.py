@@ -2628,6 +2628,15 @@ CONFIG_SCHEMA = ProviderConfigSchema(
 
 class TestBuildSchemaFromConfig:
 
+    def test_company_skins_are_selectable(self):
+        from hermes_cli.config_defaults import DEFAULT_CONFIG
+        from hermes_cli.web_server_config import CONFIG_SCHEMA
+
+        options = CONFIG_SCHEMA["display.skin"]["options"]
+        assert DEFAULT_CONFIG["display"]["skin"] in options
+        assert "flexpair-light" in options
+        assert "default" in options
+
 
     def test_timezone_field_is_searchable_select(self):
         """timezone must ship as a searchable, clearable select of IANA ids.

@@ -98,8 +98,8 @@ def test_admission_marker_refuses_even_on_git_checkout(tmp_path, monkeypatch):
     )
     refusal = evaluate_update_admission(tmp_path)
     assert refusal is not None
-    assert refusal.code == "image-marker"
-    assert "docker pull" in refusal.update_command
+    assert refusal.code == "updates-disabled"
+    assert refusal.update_command == "disabled"
 
 
 def test_admission_invalid_marker_fails_closed(tmp_path, monkeypatch):
@@ -110,8 +110,8 @@ def test_admission_invalid_marker_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(ip, "IMAGE_PROVENANCE_PATH", bad)
     refusal = evaluate_update_admission(tmp_path)
     assert refusal is not None
-    assert refusal.code == "image-marker-invalid"
-    assert "docker pull" in refusal.update_command
+    assert refusal.code == "updates-disabled"
+    assert refusal.update_command == "disabled"
 
 
 def test_admission_no_marker_falls_back_to_heuristics(tmp_path, monkeypatch):
@@ -122,17 +122,18 @@ def test_admission_no_marker_falls_back_to_heuristics(tmp_path, monkeypatch):
         "hermes_cli.config.detect_install_method", lambda *a, **k: "docker"
     )
     refusal = evaluate_update_admission(tmp_path)
-    assert refusal is not None and refusal.code == "docker"
+    assert refusal is not None and refusal.code == "updates-disabled"
 
 
-def test_admission_git_checkout_no_marker_is_admitted(tmp_path, monkeypatch):
+def test_admission_git_checkout_no_marker_is_refused(tmp_path, monkeypatch):
     import hermes_cli.image_provenance as ip
 
     monkeypatch.setattr(ip, "IMAGE_PROVENANCE_PATH", tmp_path / "absent.json")
     monkeypatch.setattr(
         "hermes_cli.config.detect_install_method", lambda *a, **k: "git"
     )
-    assert evaluate_update_admission(tmp_path) is None
+    refusal = evaluate_update_admission(tmp_path)
+    assert refusal is not None and refusal.code == "updates-disabled"
 
 
 def test_admission_nix_refuses(tmp_path, monkeypatch):
@@ -144,7 +145,7 @@ def test_admission_nix_refuses(tmp_path, monkeypatch):
 
     monkeypatch.setattr("hermes_cli.config.detect_install_method", _detect)
     refusal = evaluate_update_admission(tmp_path)
-    assert refusal is not None and refusal.code == "nix"
+    assert refusal is not None and refusal.code == "updates-disabled"
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,7 @@
 
 import assert from 'node:assert/strict'
 
+import { DEFAULT_ZOOM_PERCENT } from '@hermes/shared/desktop-zoom'
 import { test, vi } from 'vitest'
 
 import {
