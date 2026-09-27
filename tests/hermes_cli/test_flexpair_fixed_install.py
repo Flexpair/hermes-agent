@@ -31,6 +31,24 @@ def test_passive_update_check_does_not_contact_network(monkeypatch):
     assert banner.check_for_updates() is None
 
 
+def test_desktop_update_script_refuses_before_touching_install(tmp_path):
+    script = Path(__file__).resolve().parents[2] / "scripts/desktop-update/posix.sh"
+    install_root = tmp_path / "hermes-agent"
+    install_root.mkdir()
+    sentinel = install_root / "unchanged"
+    sentinel.write_text("fixed")
+    before = sorted(path.name for path in tmp_path.iterdir())
+    result = subprocess.run(
+        ["bash", str(script), "--install-root", str(install_root), "--self-test-gate"],
+        capture_output=True, text=True, timeout=5,
+    )
+    assert result.returncode == 2
+    assert "Updates are disabled" in result.stderr
+    assert sentinel.read_text() == "fixed"
+    assert sorted(path.name for path in install_root.iterdir()) == ["unchanged"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == before
+
+
 @pytest.mark.parametrize("script", ["scripts/install.sh", "setup-hermes.sh"])
 @pytest.mark.parametrize("host,termux", [("Darwin", False), ("MINGW64_NT", False), ("Linux", True)])
 def test_installer_refuses_non_linux_before_setup(script, host, termux, tmp_path):
