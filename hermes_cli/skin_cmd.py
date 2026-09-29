@@ -24,7 +24,8 @@ def _skins_dir() -> Path:
 def _active_skin() -> str:
     from hermes_cli.config import load_config
     display = (load_config() or {}).get("display") or {}
-    return str(display.get("skin") or "default")
+    skin = display.get("skin")
+    return skin.strip() if isinstance(skin, str) and skin.strip() else "flexpair-dark"
 
 
 def _use(name: str) -> None:

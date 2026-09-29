@@ -31,7 +31,7 @@ def is_commit_build(project_root: Path) -> bool:
 class UpdateRefusal:
     """Why an in-place update is refused, and what to run instead."""
 
-    code: str              # image-marker | image-marker-invalid | docker | nix | apt | desktop-app | <steward>
+    code: str              # updates-disabled (Flexpair fixed build)
     message: str           # full user-facing text (multi-line ok)
     update_command: str    # the one-line remediation command
 
@@ -80,14 +80,14 @@ def _steward_refusal(steward: str) -> UpdateRefusal:
 
 
 def evaluate_update_admission(project_root: Path) -> Optional[UpdateRefusal]:
-    """Return an :class:`UpdateRefusal` when in-place update must not run.
+    """Reject all bundled updates for the fixed Flexpair distribution."""
+    return UpdateRefusal(
+        code="updates-disabled",
+        message="Updates are disabled in this Flexpair build; the installed version is fixed.",
+        update_command="disabled",
+    )
 
-    ``None`` means the install is eligible for in-place update (git checkout or unknown-but-
-    mutable). Never raises; on any internal error it falls back to the heuristic layer only.
-    """
-    if is_commit_build(project_root):
-        return UpdateRefusal("commit-build", COMMIT_BUILD_UPDATE_MESSAGE, "")
-
+    # Upstream admission logic is retained below for future reconciliation.
     # Layer 1: baked provenance marker — authoritative when present.
     try:
         from hermes_cli.image_provenance import read_image_provenance

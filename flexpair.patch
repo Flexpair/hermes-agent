@@ -1,5 +1,5 @@
 diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
-index a445f7542a..736ba21bf4 100644
+index a9a641b0a3..c64f0a4bc3 100644
 --- a/.github/workflows/ci.yaml
 +++ b/.github/workflows/ci.yaml
 @@ -55,14 +55,17 @@ jobs:
@@ -104,7 +104,7 @@ index a445f7542a..736ba21bf4 100644
      if: needs.detect.outputs.bootstrap == 'true'
      uses: ./.github/workflows/bootstrap-installer.yml
  
-@@ -192,7 +207,8 @@ jobs:
+@@ -202,7 +217,8 @@ jobs:
    docs-site:
      name: Docs Site
      needs: detect
@@ -114,7 +114,7 @@ index a445f7542a..736ba21bf4 100644
      uses: ./.github/workflows/docs-site-checks.yml
  
    history-check:
-@@ -204,7 +220,8 @@ jobs:
+@@ -214,7 +230,8 @@ jobs:
    contributor-check:
      name: Check contributors
      needs: detect
@@ -124,7 +124,7 @@ index a445f7542a..736ba21bf4 100644
      uses: ./.github/workflows/contributor-check.yml
  
    uv-lockfile:
-@@ -215,7 +232,8 @@ jobs:
+@@ -225,7 +242,8 @@ jobs:
      # blip, a blocking red X — for diffs that cannot desync the lockfile
      # (docs, frontend, prose). Only pyproject.toml / uv.lock can. A
      # `.github/` change still forces it on via the classifier's fail-open.
@@ -134,7 +134,7 @@ index a445f7542a..736ba21bf4 100644
      uses: ./.github/workflows/uv-lockfile-check.yml
  
    infographic-check:
-@@ -246,13 +264,15 @@ jobs:
+@@ -256,13 +274,15 @@ jobs:
    lockfile-diff:
      name: package-lock.json diff
      needs: detect
@@ -152,7 +152,7 @@ index a445f7542a..736ba21bf4 100644
      uses: ./.github/workflows/docker-lint.yml
  
    supply-chain:
-@@ -265,16 +285,6 @@ jobs:
+@@ -275,16 +295,6 @@ jobs:
        scan: ${{ needs.detect.outputs.scan == 'true' }}
        deps: ${{ needs.detect.outputs.deps == 'true' }}
  
@@ -169,7 +169,7 @@ index a445f7542a..736ba21bf4 100644
  
    # ─────────────────────────────────────────────────────────────────────
    # Gate: runs after everything. ``if: always()`` ensures it reports a
-@@ -300,6 +310,7 @@ jobs:
+@@ -310,6 +320,7 @@ jobs:
        - tests-os
        - lint
        - js-tests
@@ -177,7 +177,7 @@ index a445f7542a..736ba21bf4 100644
        - rust-tests
        - bootstrap-installer
        - e2e-desktop
-@@ -316,11 +327,8 @@ jobs:
+@@ -327,11 +338,8 @@ jobs:
        - profile-artifact-check
        - icons-freshness-check
        - supply-chain
@@ -191,7 +191,7 @@ index a445f7542a..736ba21bf4 100644
        # The image build runs in its own workflow (docker.yml) and reports
        # its own check. It was never required here, because it is too slow
        # to block a merge. A separate run also stops it from holding this
-@@ -345,7 +353,9 @@ jobs:
+@@ -356,7 +364,9 @@ jobs:
          run: |
            args=()
            if [ "$RELEASE" = true ]; then args+=(--release); fi
@@ -908,7 +908,7 @@ index d73b749ab4..489810c8e9 100644
            if [ -z "$ADDED" ]; then
              echo "found=false" >> "$GITHUB_OUTPUT"
 diff --git a/AGENTS.md b/AGENTS.md
-index 832df27767..6415acaaf1 100644
+index 65aa3e61bc..39b0bdb7d7 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
 @@ -7,6 +7,23 @@ past that); see the **routing table** at the end and read the area file before e
@@ -935,6 +935,53 @@ index 832df27767..6415acaaf1 100644
  ## What Hermes Is
  
  Hermes is a personal AI agent that runs the same agent core across a CLI, a messaging
+diff --git a/agent/i18n.py b/agent/i18n.py
+index 9ee5f1c29f..7231583b17 100644
+--- a/agent/i18n.py
++++ b/agent/i18n.py
+@@ -28,23 +28,21 @@ from agent.i18n_languages import language_options
+ 
+ logger = logging.getLogger(__name__)
+ 
++# Local removal: "zh" / "zh-hant" deleted (China-market locales).
++# locales/zh.yaml + zh-hant.yaml are removed; requests for them fall back to "en".
+ # Bundled catalogs (compat: tests and the parity check iterate this). ``supported_languages()`` is the
+ # live set including overlay and pack languages.
+ SUPPORTED_LANGUAGES: tuple[str, ...] = (
+-    "en", "zh", "zh-hant", "ja", "de", "es", "fr", "tr", "uk",
++    "en", "ja", "de", "es", "fr", "tr", "uk",
+     "af", "ko", "it", "ga", "pt", "ru", "hu", "ar",
+ )
+ DEFAULT_LANGUAGE = "en"
+ 
+-# Natural aliases so "chinese" / "zh-CN" / "jp" hit the right catalog instead of
+-# silently falling back to English. Bare "chinese" defaults to Simplified;
+-# Taiwan/HK/Macau tags route to the distinct Traditional catalog. pt-br shares
+-# the pt catalog unless a pack supplies a real pt-br one (a supplied id always wins over an alias).
++# Natural aliases for bundled languages. pt-br shares the pt catalog unless
++# a pack supplies a real pt-br one (a supplied id always wins over an alias).
+ _LANGUAGE_ALIASES: dict[str, str] = {
+     "english": "en", "en-us": "en", "en-gb": "en",
+-    "chinese": "zh", "mandarin": "zh", "zh-cn": "zh", "zh-hans": "zh", "zh-sg": "zh",
+-    "traditional-chinese": "zh-hant", "traditional_chinese": "zh-hant",
+-    "zh-tw": "zh-hant", "zh-hk": "zh-hant", "zh-mo": "zh-hant",
++    # Local removal: Chinese aliases fall back to English.
+     "japanese": "ja", "jp": "ja", "ja-jp": "ja",
+     "german": "de", "deutsch": "de", "de-de": "de", "de-at": "de", "de-ch": "de",
+     "spanish": "es", "español": "es", "espanol": "es", "es-es": "es", "es-mx": "es", "es-ar": "es",
+diff --git a/agent/i18n_languages.py b/agent/i18n_languages.py
+index 519f986af4..988742a85f 100644
+--- a/agent/i18n_languages.py
++++ b/agent/i18n_languages.py
+@@ -35,8 +35,6 @@ BUNDLED_LANGUAGE_INFO: dict[str, tuple[str, bool]] = {
+     "ru": ("Русский", False),
+     "tr": ("Türkçe", False),
+     "uk": ("Українська", False),
+-    "zh": ("简体中文", False),
+-    "zh-hant": ("繁體中文", False),
+ }
+ 
+ BUNDLED_SOURCE = "bundled"
 diff --git a/apps/desktop/e2e/fixtures.ts b/apps/desktop/e2e/fixtures.ts
 index 674d6f5508..b1a7ccea44 100644
 --- a/apps/desktop/e2e/fixtures.ts
@@ -1037,10 +1084,10 @@ index 0000000000..d29ca26ab3
 +  })
 +}
 diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
-index cc8935ceb2..1e6dc0eccf 100644
+index c7b9664916..05d552a49a 100644
 --- a/apps/desktop/electron/main.ts
 +++ b/apps/desktop/electron/main.ts
-@@ -16248,6 +16248,9 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
+@@ -16259,6 +16259,9 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
  // dials, drains only exact Desktop-owned processes, runs the launcher outside
  // those serves, proves the correlated receipt, and restores every prior scope.
  async function requestManagedSshUpdate(rawId) {
@@ -1050,7 +1097,7 @@ index cc8935ceb2..1e6dc0eccf 100644
    const connectionId = String(rawId || '').trim()
    const existing = managedConnectionUpdates.get(connectionId)
  
-@@ -16299,6 +16302,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
+@@ -16310,6 +16313,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
  // app's own update pipeline; Desktop-managed SSH uses the transactional
  // drain/update/restore lifecycle; URL remotes POST their backend updater.
  ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
@@ -1061,11 +1108,11 @@ index cc8935ceb2..1e6dc0eccf 100644
  
    // Optional renderer-side exclusions: the everything-update flow dispatches
 diff --git a/apps/desktop/electron/update-handoff-marker.test.ts b/apps/desktop/electron/update-handoff-marker.test.ts
-index 352412ac6d..f8f9a98116 100644
+index 9756de43d2..1fd55f87ec 100644
 --- a/apps/desktop/electron/update-handoff-marker.test.ts
 +++ b/apps/desktop/electron/update-handoff-marker.test.ts
-@@ -17,11 +17,6 @@ function sandbox(tag: string) {
-   return { home, installRoot }
+@@ -23,12 +23,6 @@ function cleanupSandbox(home: string) {
+   fs.rmSync(home, { recursive: true, force: true })
  }
  
 -function markerStartedAt(home: string): number {
@@ -1073,53 +1120,77 @@ index 352412ac6d..f8f9a98116 100644
 -
 -  return Number.parseInt(startedAt, 10)
 -}
- 
+-
  function runPosix(installRoot: string, startedAt?: string) {
    const env: NodeJS.ProcessEnv = { ...process.env, HERMES_HOME: path.dirname(installRoot) }
-@@ -42,38 +37,11 @@ function runPosix(installRoot: string, startedAt?: string) {
+ 
+@@ -48,59 +42,17 @@ function runPosix(installRoot: string, startedAt?: string) {
    )
  }
  
 -function assertScriptHandoff(run: (installRoot: string, startedAt?: string) => ReturnType<typeof spawnSync>) {
 -  const preserved = sandbox('preserved')
--  const acquiredAt = Math.floor(Date.now() / 1000) - 300
--  const preservedResult = run(preserved.installRoot, String(acquiredAt))
 -
--  assert.equal(preservedResult.status, 0, String(preservedResult.stderr || preservedResult.stdout))
--  assert.equal(markerStartedAt(preserved.home), acquiredAt, 'the script must preserve the Desktop acquisition time')
+-  try {
+-    const acquiredAt = Math.floor(Date.now() / 1000) - 300
+-    const preservedResult = run(preserved.installRoot, String(acquiredAt))
+-
+-    assert.equal(preservedResult.status, 0, String(preservedResult.stderr || preservedResult.stdout))
+-    assert.equal(markerStartedAt(preserved.home), acquiredAt, 'the script must preserve the Desktop acquisition time')
+-  } finally {
+-    cleanupSandbox(preserved.home)
+-  }
+-
+-  assert.equal(fs.existsSync(preserved.home), false, 'the self-test sandbox must not leak into the OS temp directory')
 -
 -  const refreshed = sandbox('refreshed')
--  fs.writeFileSync(path.join(refreshed.home, '.hermes-update-in-progress'), '999999\n1\n')
--  const before = Math.floor(Date.now() / 1000)
--  const refreshedResult = run(refreshed.installRoot, 'malformed')
--  const after = Math.floor(Date.now() / 1000)
--
--  assert.equal(refreshedResult.status, 0, String(refreshedResult.stderr || refreshedResult.stdout))
--  assert.ok(
--    markerStartedAt(refreshed.home) >= before && markerStartedAt(refreshed.home) <= after,
--    'an invalid hand-off timestamp must start a fresh claim'
--  )
--
--  const oversized = sandbox('oversized')
--  const oversizedBefore = Math.floor(Date.now() / 1000)
--  const oversizedResult = run(oversized.installRoot, '99999999999999999999')
--  const oversizedAfter = Math.floor(Date.now() / 1000)
--
--  assert.equal(oversizedResult.status, 0, String(oversizedResult.stderr || oversizedResult.stdout))
--  assert.ok(
--    markerStartedAt(oversized.home) >= oversizedBefore && markerStartedAt(oversized.home) <= oversizedAfter,
--    'an oversized hand-off timestamp must start a fresh claim'
--  )
--}
- 
--test.skipIf(process.platform === 'win32')('POSIX hand-off preserves the Desktop marker acquisition time', () => {
--  assertScriptHandoff(runPosix)
 +test.skipIf(process.platform === 'win32')('POSIX hand-off refuses updates without creating a marker', () => {
 +  const { home, installRoot } = sandbox('disabled')
-+  const result = runPosix(installRoot, '1234567890')
-+  assert.equal(result.status, 2)
-+  assert.match(String(result.stderr), /Updates are disabled/)
-+  assert.equal(fs.existsSync(path.join(home, '.hermes-update-in-progress')), false)
+ 
+   try {
+-    fs.writeFileSync(path.join(refreshed.home, '.hermes-update-in-progress'), '999999\n1\n')
+-    const before = Math.floor(Date.now() / 1000)
+-    const refreshedResult = run(refreshed.installRoot, 'malformed')
+-    const after = Math.floor(Date.now() / 1000)
+-
+-    assert.equal(refreshedResult.status, 0, String(refreshedResult.stderr || refreshedResult.stdout))
+-    assert.ok(
+-      markerStartedAt(refreshed.home) >= before && markerStartedAt(refreshed.home) <= after,
+-      'an invalid hand-off timestamp must start a fresh claim'
+-    )
+-  } finally {
+-    cleanupSandbox(refreshed.home)
+-  }
+-
+-  assert.equal(fs.existsSync(refreshed.home), false, 'the self-test sandbox must not leak into the OS temp directory')
+-
+-  const oversized = sandbox('oversized')
+-
+-  try {
+-    const oversizedBefore = Math.floor(Date.now() / 1000)
+-    const oversizedResult = run(oversized.installRoot, '99999999999999999999')
+-    const oversizedAfter = Math.floor(Date.now() / 1000)
+-
+-    assert.equal(oversizedResult.status, 0, String(oversizedResult.stderr || oversizedResult.stdout))
+-    assert.ok(
+-      markerStartedAt(oversized.home) >= oversizedBefore && markerStartedAt(oversized.home) <= oversizedAfter,
+-      'an oversized hand-off timestamp must start a fresh claim'
+-    )
++    const result = runPosix(installRoot, '1234567890')
++    assert.equal(result.status, 2)
++    assert.match(String(result.stderr), /Updates are disabled/)
++    assert.equal(fs.existsSync(path.join(home, '.hermes-update-in-progress')), false)
+   } finally {
+-    cleanupSandbox(oversized.home)
++    cleanupSandbox(home)
+   }
+ 
+-  assert.equal(fs.existsSync(oversized.home), false, 'the self-test sandbox must not leak into the OS temp directory')
+-}
+-
+-test.skipIf(process.platform === 'win32')('POSIX hand-off preserves the Desktop marker acquisition time', () => {
+-  assertScriptHandoff(runPosix)
++  assert.equal(fs.existsSync(home), false, 'the self-test sandbox must not leak into the OS temp directory')
  })
 diff --git a/apps/desktop/electron/zoom.test.ts b/apps/desktop/electron/zoom.test.ts
 index 20bd5d70fb..a1b836b687 100644
@@ -1134,29 +1205,22 @@ index 20bd5d70fb..a1b836b687 100644
  
  import {
 diff --git a/apps/desktop/electron/zoom.ts b/apps/desktop/electron/zoom.ts
-index 434ba02b05..ae4847ff5c 100644
+index 20471174cf..2b672ab722 100644
 --- a/apps/desktop/electron/zoom.ts
 +++ b/apps/desktop/electron/zoom.ts
-@@ -5,10 +5,11 @@
+@@ -5,6 +5,7 @@
   * Chromium actual-size baseline); Chromium's internal unit is the zoom level,
   * where factor = 1.2 ^ level.
-  *
-- * Our shipped default is the Appearance 90% preset — tight enough to feel
-- * denser than Chromium 100%, and selected in the UI Scale control on first run.
-+ * Our shipped default is the Appearance preset.
   */
++import { DEFAULT_ZOOM_PERCENT } from '@hermes/shared/desktop-zoom'
  
-+import { DEFAULT_ZOOM_PERCENT } from '../../shared/src/desktop-zoom'
-+
  export const ZOOM_STORAGE_KEY = 'hermes:desktop:zoomLevel'
  
- const ZOOM_FACTOR_BASE = 1.2
-@@ -18,8 +19,8 @@ const MAX_ZOOM_LEVEL = 9
+@@ -15,7 +16,8 @@ const MAX_ZOOM_LEVEL = 9
  /** Half Chromium's default step; matching the shortcuts and View menu. */
  export const ZOOM_STEP = 0.1
  
--/** Appearance 90% preset. Fresh installs + Actual Size / Ctrl+0. */
--export const DEFAULT_ZOOM_LEVEL = Math.log(0.9) / Math.log(ZOOM_FACTOR_BASE)
+-export const DEFAULT_ZOOM_LEVEL = Math.log(1.1) / Math.log(ZOOM_FACTOR_BASE)
 +/** Appearance preset. Fresh installs + Actual Size / Ctrl+0. */
 +export const DEFAULT_ZOOM_LEVEL = Math.log(DEFAULT_ZOOM_PERCENT / 100) / Math.log(ZOOM_FACTOR_BASE)
  
@@ -1186,48 +1250,47 @@ index 3df85775f5..a46c7929ac 100644
        deltaX: 0,
        deltaY: 600,
 diff --git a/apps/desktop/src/app/chat/right-rail/preview-input.ts b/apps/desktop/src/app/chat/right-rail/preview-input.ts
-index ad6ff57911..7f4feccc36 100644
+index 7b6ed80260..7f4feccc36 100644
 --- a/apps/desktop/src/app/chat/right-rail/preview-input.ts
 +++ b/apps/desktop/src/app/chat/right-rail/preview-input.ts
-@@ -16,9 +16,8 @@
+@@ -16,7 +16,8 @@
   * device-independent pixels. The act engine measures inside the guest in CSS
   * pixels, and Chromium places guest positions at css × zoom (the context-menu
   * handler in preview-pane.tsx measured it live), so a rect measured in the page
-- * must be scaled by the guest's zoom factor on the way back out — the shipped
-- * default zoom is 90 %, and at that zoom an unscaled click lands 11 % too far
-- * from the origin and silently misses its target (#116281).
+- * must be scaled by the guest's zoom factor on the way back out (#116281).
 + * must be scaled by the guest's zoom factor on the way back out — without
 + * that scaling a click silently misses its target (#116281).
   */
  
  import { $rightRailActiveTabId } from '@/store/layout'
 diff --git a/apps/desktop/src/app/settings/appearance-settings.tsx b/apps/desktop/src/app/settings/appearance-settings.tsx
-index 2c46095ab5..4b44a0ac1e 100644
+index fca1c10454..d3ae8d6e74 100644
 --- a/apps/desktop/src/app/settings/appearance-settings.tsx
 +++ b/apps/desktop/src/app/settings/appearance-settings.tsx
-@@ -169,7 +169,7 @@ function ThemePreview({ name, mode }: { name: string; mode: 'light' | 'dark' })
+@@ -169,6 +169,11 @@ function ThemePreview({ name, mode }: { name: string; mode: 'light' | 'dark' })
+   )
  }
  
- // UI scale presets, as zoom percentages. 100 is Chromium's actual-size
--// baseline; the shipped default is the 90% preset. Ids double as the percent
++// UI scale presets, as zoom percentages. 100 is Chromium's actual-size
 +// baseline; the shipped default is the 150% preset. Ids double as the percent
- // values sent to the main process. A Cmd/Ctrl +/- step landing between
- // presets highlights nothing, and the row description keeps showing the
- // exact current percent.
++// values sent to the main process. A Cmd/Ctrl +/- step landing between
++// presets highlights nothing, and the row description keeps showing the
++// exact current percent.
+ const UI_SCALE_PRESETS = ['90', '100', '110', '125', '150', '175'] as const
+ const ids = SETTING_IDS.appearance
+ type UiScalePreset = (typeof UI_SCALE_PRESETS)[number]
 diff --git a/apps/desktop/src/store/zoom.ts b/apps/desktop/src/store/zoom.ts
-index 81816fb01d..98f560d397 100644
+index cabfe7e089..98f560d397 100644
 --- a/apps/desktop/src/store/zoom.ts
 +++ b/apps/desktop/src/store/zoom.ts
-@@ -8,11 +8,12 @@
+@@ -8,9 +8,12 @@
   * Ctrl/Cmd +/-/0 shortcuts or the View menu, so the UI never drifts.
   */
  
 +import { DEFAULT_ZOOM_PERCENT } from '@hermes/shared'
  import { atom } from 'nanostores'
  
--// Mirror DEFAULT_ZOOM_LEVEL (90%) so Appearance doesn't flash 100% before
--// the main-process zoom.get() resolves. Keep in sync with electron/zoom.ts.
--export const $zoomPercent = atom<number>(90)
+-export const $zoomPercent = atom<number>(110)
 +// Mirror the main-process default so Appearance doesn't flash 100% before
 +// the main-process zoom.get() resolves.
 +export const $zoomPercent = atom<number>(DEFAULT_ZOOM_PERCENT)
@@ -1235,10 +1298,10 @@ index 81816fb01d..98f560d397 100644
  export function setZoomPercent(percent: number): void {
    window.hermesDesktop?.zoom?.setPercent(percent)
 diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
-index 029b290e75..7724dd8729 100644
+index 9c9a3a89b7..46db9467ea 100644
 --- a/apps/desktop/src/styles.css
 +++ b/apps/desktop/src/styles.css
-@@ -3740,3 +3740,46 @@ html[data-hud-window] [data-slot='popover-content'] {
+@@ -3782,3 +3782,46 @@ html[data-hud-window] [data-slot='popover-content'] {
  [data-hud-shell] [data-slot='composer-bounds'] *::-webkit-scrollbar {
    display: none;
  }
@@ -1555,6 +1618,21 @@ index 0000000000..41686158df
 +/** Appearance zoom default shared by the renderer and Electron main process. */
 +export const DEFAULT_ZOOM_PERCENT = 150
 \ No newline at end of file
+diff --git a/apps/shared/src/i18n.ts b/apps/shared/src/i18n.ts
+index a4f59181bb..28c0d1c3c4 100644
+--- a/apps/shared/src/i18n.ts
++++ b/apps/shared/src/i18n.ts
+@@ -182,9 +182,7 @@ export const LOCALE_ENDONYMS = {
+   pt: 'Português',
+   ru: 'Русский',
+   tr: 'Türkçe',
+-  uk: 'Українська',
+-  zh: '简体中文',
+-  'zh-hant': '繁體中文'
++  uk: 'Українська'
+ } as const satisfies Record<string, string>
+ 
+ export type EndonymLocale = keyof typeof LOCALE_ENDONYMS
 diff --git a/apps/shared/src/index.ts b/apps/shared/src/index.ts
 index 35ddac34f6..3c949682d5 100644
 --- a/apps/shared/src/index.ts
@@ -1583,8 +1661,263 @@ index 0000000000..ee529dd10d
 @@ -0,0 +1,2 @@
 +Flexpair
 +# Installer fork PR #43
+diff --git a/gateway/config.py b/gateway/config.py
+index 97613384d3..0a1a667790 100644
+--- a/gateway/config.py
++++ b/gateway/config.py
+@@ -255,12 +255,18 @@ class Platform(Enum):
+         """Directory names of bundled platform plugins under ``plugins/platforms/``, plus a map of
+         manifest ``name:`` keys that differ from their directory (alias -> directory name). Aliases
+         never shadow a directory name, so the directory stays the canonical platform value."""
++        # Local removal: China-market messaging platforms.
++        # dingtalk (Alibaba), feishu (ByteDance Feishu; shares code with
++        # international Lark -- removing this dir removes Lark as well),
++        # wecom (Tencent WeCom / Enterprise WeChat, incl. wecom_callback).
++        _REMOVED_CN_PLATFORMS = {"dingtalk", "feishu", "wecom"}
+         try:
+             platforms_dir = Path(__file__).parent.parent / "plugins" / "platforms"
+             dirs = [
+                 child for child in (platforms_dir.iterdir() if platforms_dir.is_dir() else ())
+                 if child.is_dir() and (child / "__init__.py").exists()
+                 and ((child / "plugin.yaml").exists() or (child / "plugin.yml").exists())
++                and child.name.lower() not in _REMOVED_CN_PLATFORMS
+             ]
+             names = {child.name.lower() for child in dirs}
+             aliases = {}
+diff --git a/gateway/run.py b/gateway/run.py
+index 620fe26bfe..767df5ee58 100644
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -3335,13 +3335,16 @@ def _builtin_adapter_import(module: str, adapter_name: str, requirement: str):
+ 
+ 
+ # platform -> (module, adapter class, requirements probe, warning on probe failure).
++# Local removal: China-market builtin adapters (Tencent) deleted here:
++# Platform.WEIXIN (WeChat/iLink), Platform.QQBOT (QQ Bot),
++# Platform.YUANBAO (Tencent Yuanbao). Source files
++# (gateway/platforms/weixin.py, qqbot/, yuanbao*.py) stay on disk but are
++# never instantiated. Existing configs using them log a warning and skip.
+ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
+     Platform.WHATSAPP_CLOUD: ("whatsapp_cloud", "WhatsAppCloudAdapter", "check_whatsapp_cloud_requirements",
+                               "WhatsApp Cloud: aiohttp/httpx missing — reinstall hermes-agent"),
+     Platform.SIGNAL: ("signal", "SignalAdapter", "check_signal_requirements",
+                       "Signal: runtime requirements not met"),
+-    Platform.WEIXIN: ("weixin", "WeixinAdapter", "check_weixin_requirements",
+-                      "Weixin: aiohttp/cryptography not installed"),
+     Platform.API_SERVER: ("api_server", "APIServerAdapter", "check_api_server_requirements",
+                           "API Server: aiohttp not installed"),
+     Platform.WEBHOOK: ("webhook", "WebhookAdapter", "check_webhook_requirements",
+@@ -3350,14 +3353,19 @@ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
+                                "MSGraph webhook: aiohttp not installed"),
+     Platform.BLUEBUBBLES: ("bluebubbles", "BlueBubblesAdapter", "check_bluebubbles_requirements",
+                            "BlueBubbles: aiohttp/httpx missing or BLUEBUBBLES_SERVER_URL/BLUEBUBBLES_PASSWORD not configured"),
+-    Platform.QQBOT: ("qqbot", "QQAdapter", "check_qq_requirements",
+-                     "QQBot: aiohttp/httpx missing or QQ_APP_ID/QQ_CLIENT_SECRET not configured"),
+-    Platform.YUANBAO: ("yuanbao", "YuanbaoAdapter", "WEBSOCKETS_AVAILABLE",
+-                       "Yuanbao: websockets not installed. Run: pip install websockets")}
++}
++_REMOVED_CN_BUILTIN_PLATFORMS = frozenset({"weixin", "qqbot", "yuanbao"})
+ 
+ 
+ def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[BasePlatformAdapter]:
+     """Instantiate a core (non-plugin) adapter, or None when its requirements are unmet/unknown."""
++    try:
++        _platform_value = platform.value if isinstance(platform, Platform) else str(platform)
++    except Exception:
++        _platform_value = str(platform)
++    if _platform_value in _REMOVED_CN_BUILTIN_PLATFORMS:
++        logger.warning("Skipping removed China-market platform '%s'", _platform_value)
++        return None
+     spec = _BUILTIN_ADAPTERS.get(platform)
+     if spec is None:
+         return None
+diff --git a/hermes_cli/auth.py b/hermes_cli/auth.py
+index 3c5ae49891..2032904f76 100644
+--- a/hermes_cli/auth.py
++++ b/hermes_cli/auth.py
+@@ -181,7 +181,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+     ProviderConfig(
+         "xai-oauth", "xAI Grok OAuth (SuperGrok / Premium+)", "oauth_external",
+         inference_base_url=DEFAULT_XAI_OAUTH_BASE_URL),
+-    ProviderConfig("qwen-oauth", "Qwen OAuth", "oauth_external", inference_base_url=DEFAULT_QWEN_BASE_URL),
+     ("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1", ("LM_API_KEY",), "LM_BASE_URL"),
+     ("copilot", "GitHub Copilot", DEFAULT_GITHUB_MODELS_BASE_URL,
+      ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"), "COPILOT_API_BASE_URL"),
+@@ -190,24 +189,9 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+         inference_base_url=DEFAULT_COPILOT_ACP_BASE_URL, base_url_env_var="COPILOT_ACP_BASE_URL"),
+     ("gemini", "Google AI Studio", "https://generativelanguage.googleapis.com/v1beta",
+      ("GOOGLE_API_KEY", "GEMINI_API_KEY"), "GEMINI_BASE_URL"),
+-    ("zai", "Z.AI / GLM", "https://api.z.ai/api/paas/v4",
+-     ("GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"), "GLM_BASE_URL"),
+-    # Legacy platform.moonshot.ai keys use this endpoint (OpenAI-compat); sk-kimi- (Kimi Code)
+-    # keys are auto-redirected to api.kimi.com/coding by _resolve_kimi_base_url().
+-    ("kimi-coding", "Kimi / Moonshot", "https://api.moonshot.ai/v1",
+-     ("KIMI_API_KEY", "KIMI_CODING_API_KEY"), "KIMI_BASE_URL"),
+-    ("kimi-coding-cn", "Kimi / Moonshot (China)", "https://api.moonshot.cn/v1", ("KIMI_CN_API_KEY",)),
+-    ("stepfun", "StepFun Step Plan", STEPFUN_STEP_PLAN_INTL_BASE_URL, ("STEPFUN_API_KEY",), "STEPFUN_BASE_URL"),
+     ("arcee", "Arcee AI", "https://api.arcee.ai/api/v1", ("ARCEEAI_API_KEY",), "ARCEE_BASE_URL"),
+     ("gmi", "GMI Cloud", "https://api.gmi-serving.com/v1", ("GMI_API_KEY",), "GMI_BASE_URL"),
+     ("actual", "Actual Computer", DEFAULT_ACTUAL_BASE_URL, ("ACTUAL_API_KEY",), "ACTUAL_BASE_URL"),
+-    ("minimax", "MiniMax", "https://api.minimax.io/anthropic", ("MINIMAX_API_KEY",), "MINIMAX_BASE_URL"),
+-    ProviderConfig(
+-        "minimax-oauth", "MiniMax (OAuth \u00b7 minimax.io)", "oauth_minimax",
+-        portal_base_url=MINIMAX_OAUTH_GLOBAL_BASE, inference_base_url=MINIMAX_OAUTH_GLOBAL_INFERENCE,
+-        client_id=MINIMAX_OAUTH_CLIENT_ID, scope=MINIMAX_OAUTH_SCOPE,
+-        extra={"region": "global", "cn_portal_base_url": MINIMAX_OAUTH_CN_BASE,
+-               "cn_inference_base_url": MINIMAX_OAUTH_CN_INFERENCE}),
+     # CLAUDE_CODE_OAUTH_TOKEN is NOT an API key despite auth_type="api_key": `claude setup-token`
+     # yields an `sk-ant-oat01…` OAuth token (401s as x-api-key, 429s as bare Bearer). It stays in
+     # this tuple because the tuple doubles as the credential-DISCOVERY list
+@@ -215,13 +199,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+     # path by prefix. Only ANTHROPIC_API_KEY and ANTHROPIC_TOKEN are usable as literal API keys.
+     ("anthropic", "Anthropic", "https://api.anthropic.com",
+      ("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"), "ANTHROPIC_BASE_URL"),
+-    ("alibaba", "Qwen Cloud", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+-     ("DASHSCOPE_API_KEY",), "DASHSCOPE_BASE_URL"),
+-    ("alibaba-coding-plan", "Alibaba Cloud (Coding Plan)", "https://coding-intl.dashscope.aliyuncs.com/v1",
+-     ("ALIBABA_CODING_PLAN_API_KEY", "DASHSCOPE_API_KEY"), "ALIBABA_CODING_PLAN_BASE_URL"),
+-    ("minimax-cn", "MiniMax (China)", "https://api.minimaxi.com/anthropic", ("MINIMAX_CN_API_KEY",),
+-     "MINIMAX_CN_BASE_URL"),
+-    ("deepseek", "DeepSeek", "https://api.deepseek.com/v1", ("DEEPSEEK_API_KEY",), "DEEPSEEK_BASE_URL"),
+     ("xai", "xAI", "https://api.x.ai/v1", ("XAI_API_KEY",), "XAI_BASE_URL"),
+     ("nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1", ("NVIDIA_API_KEY",), "NVIDIA_BASE_URL"),
+     ("ai-gateway", "Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", ("AI_GATEWAY_API_KEY",),
+@@ -234,11 +211,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
+      "OPENCODE_GO_BASE_URL"),
+     ("kilocode", "Kilo Code", "https://api.kilo.ai/api/gateway", ("KILOCODE_API_KEY",), "KILOCODE_BASE_URL"),
+     ("huggingface", "Hugging Face", "https://router.huggingface.co/v1", ("HF_TOKEN",), "HF_BASE_URL"),
+-    ("xiaomi", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1", ("XIAOMI_API_KEY",), "XIAOMI_BASE_URL"),
+-    ("tencent-tokenhub", "Tencent TokenHub", "https://tokenhub.tencentmaas.com/v1", ("TOKENHUB_API_KEY",),
+-     "TOKENHUB_BASE_URL"),
+-    ("tencent-tokenplan", "Tencent TokenPlan", "https://api.lkeap.cloud.tencent.com/plan/anthropic",
+-     ("TOKENPLAN_API_KEY",), "TOKENPLAN_BASE_URL"),
+     ("ollama-cloud", "Ollama Cloud", DEFAULT_OLLAMA_CLOUD_BASE_URL, ("OLLAMA_API_KEY",), "OLLAMA_BASE_URL"),
+     ("bedrock", "AWS Bedrock", "https://bedrock-runtime.us-east-1.amazonaws.com", (), "BEDROCK_BASE_URL",
+      "aws_sdk"),
+@@ -1378,33 +1350,20 @@ def _refuse_env_adoption_if_config_corrupt() -> None:
+ # (plugins/model-providers/<name>/) are layered on at call time; this hardcoded
+ # table remains authoritative for existing names.
+ _PROVIDER_ALIASES: Dict[str, str] = {
+-    "glm": "zai", "z-ai": "zai", "z.ai": "zai", "zhipu": "zai",
+     "google": "gemini", "google-gemini": "gemini", "google-ai-studio": "gemini",
+     "x-ai": "xai", "x.ai": "xai", "grok": "xai",
+     "xai-oauth": "xai-oauth", "x-ai-oauth": "xai-oauth",
+     "grok-oauth": "xai-oauth", "xai-grok-oauth": "xai-oauth",
+-    "kimi": "kimi-coding", "kimi-for-coding": "kimi-coding", "moonshot": "kimi-coding",
+-    "kimi-cn": "kimi-coding-cn", "moonshot-cn": "kimi-coding-cn",
+-    "step": "stepfun", "stepfun-coding-plan": "stepfun",
+     "arcee-ai": "arcee", "arceeai": "arcee",
+     "gmi-cloud": "gmi", "gmicloud": "gmi",
+     "actual-computer": "actual", "actualcomputer": "actual", "aci": "actual",
+-    "minimax-china": "minimax-cn", "minimax_cn": "minimax-cn",
+-    "minimax-portal": "minimax-oauth", "minimax-global": "minimax-oauth", "minimax_oauth": "minimax-oauth",
+-    "alibaba_coding": "alibaba-coding-plan", "alibaba-coding": "alibaba-coding-plan",
+-    "alibaba_coding_plan": "alibaba-coding-plan",
+     "claude": "anthropic", "claude-code": "anthropic",
+     "github": "copilot", "github-copilot": "copilot",
+     "github-models": "copilot", "github-model": "copilot",
+     "github-copilot-acp": "copilot-acp", "copilot-acp-agent": "copilot-acp",
+     "aigateway": "ai-gateway", "vercel": "ai-gateway", "vercel-ai-gateway": "ai-gateway",
+     "opencode": "opencode-zen", "zen": "opencode-zen",
+-    "qwen-portal": "qwen-oauth", "qwen-cli": "qwen-oauth", "qwen-oauth": "qwen-oauth",
+     "hf": "huggingface", "hugging-face": "huggingface", "huggingface-hub": "huggingface",
+-    "mimo": "xiaomi", "xiaomi-mimo": "xiaomi",
+-    "tencent": "tencent-tokenhub", "tokenhub": "tencent-tokenhub",
+-    "tencent-cloud": "tencent-tokenhub", "tencentmaas": "tencent-tokenhub",
+-    "tokenplan": "tencent-tokenplan", "tencent-lkeap": "tencent-tokenplan",
+     "aws": "bedrock", "aws-bedrock": "bedrock", "amazon-bedrock": "bedrock", "amazon": "bedrock",
+     "go": "opencode-go", "opencode-go-sub": "opencode-go",
+     "kilo": "kilocode", "kilo-code": "kilocode", "kilo-gateway": "kilocode",
+@@ -1930,10 +1889,6 @@ OAUTH_PROVIDER_FLOWS: Dict[str, OAuthProviderFlow] = {
+         "xai-oauth", "resolve_xai_oauth_runtime_credentials", "get_xai_oauth_auth_status",
+         terminal_refresh_codes=frozenset({"xai_refresh_failed", "xai_auth_missing_refresh_token"}),
+         logout_from_config=True),
+-    "qwen-oauth": OAuthProviderFlow(
+-        "qwen-oauth", "resolve_qwen_runtime_credentials", "get_qwen_auth_status"),
+-    "minimax-oauth": OAuthProviderFlow(
+-        "minimax-oauth", "resolve_minimax_oauth_runtime_credentials", "get_minimax_oauth_auth_status"),
+ }
+ 
+ 
+@@ -1998,16 +1953,13 @@ def _provider_env_base_url(pconfig: ProviderConfig) -> str:
+ 
+ 
+ def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
+-    """Status snapshot for API-key providers (z.ai, Kimi, MiniMax)."""
++    """Status snapshot for API-key providers."""
+     pconfig = _registry_lookup(provider_id)
+     if not pconfig or pconfig.auth_type != "api_key":
+         return {"configured": False}
+     api_key, key_source = _resolve_api_key_provider_secret(provider_id, pconfig)
+     env_url = _provider_env_base_url(pconfig)
+-    if provider_id in {"kimi-coding", "kimi-coding-cn"}:
+-        base_url = _resolve_kimi_base_url(api_key, pconfig.inference_base_url, env_url)
+-    else:
+-        base_url = env_url or pconfig.inference_base_url
++    base_url = env_url or pconfig.inference_base_url
+     actual_local_noauth = False
+     if provider_id == "actual":
+         base_url = normalize_actual_base_url(base_url)
+@@ -2219,9 +2171,6 @@ def _copilot_runtime_base_url(api_key: str, default: str, env_url: str) -> str:
+ # Providers whose runtime base URL is not simply env-override-or-registry-default:
+ # ``(api_key, registry_default, env_override) -> base_url``.
+ _API_KEY_BASE_URL_RESOLVERS: Dict[str, Callable[[str, str, str], str]] = {
+-    "kimi-coding": _resolve_kimi_base_url,
+-    "kimi-coding-cn": _resolve_kimi_base_url,
+-    "zai": _resolve_zai_base_url,
+     "copilot": _copilot_runtime_base_url,
+     "lmstudio": lambda *a: _normalize_lmstudio_runtime_base_url(_default_api_key_base_url(*a)),
+     "actual": lambda *a: normalize_actual_base_url(_default_api_key_base_url(*a))}
+diff --git a/hermes_cli/auth_commands.py b/hermes_cli/auth_commands.py
+index 75d52b7aa4..bf3f94c763 100644
+--- a/hermes_cli/auth_commands.py
++++ b/hermes_cli/auth_commands.py
+@@ -27,7 +27,7 @@ from hermes_cli.secret_prompt import masked_secret_prompt
+ 
+ 
+ # Providers that support OAuth login in addition to API keys.
+-_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter"}
++_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "openrouter"}
+ # ...and default to it when ``--type`` is omitted. OpenRouter stays API-key-first: the documented
+ # ``hermes auth add openrouter --api-key sk-or-...`` must keep working with no ``--type``.
+ _OAUTH_DEFAULT_PROVIDERS = _OAUTH_CAPABLE_PROVIDERS - {"openrouter"}
+@@ -207,14 +207,6 @@ def _anthropic_oauth_login(args) -> dict:
+     return creds
+ 
+ 
+-def _qwen_oauth_login(args) -> dict:
+-    from hermes_cli.auth_qwen import _mark_qwen_oauth_active
+-
+-    creds = auth_mod.resolve_qwen_runtime_credentials(refresh_if_expiring=False)
+-    _mark_qwen_oauth_active(creds)
+-    return creds
+-
+-
+ @dataclass(frozen=True)
+ class _OAuthAddSpec:
+     """Per-provider parameters for the generic ``hermes auth add <provider> --type oauth`` path."""
+@@ -271,19 +263,6 @@ _OAUTH_ADD_SPECS: dict[str, _OAuthAddSpec] = {
+             "base_url": creds.get("base_url") or auth_mod.DEFAULT_XAI_OAUTH_BASE_URL,
+             "last_refresh": creds.get("last_refresh")},
+         activate_first=True),
+-    "qwen-oauth": _OAuthAddSpec(
+-        login=_qwen_oauth_login,
+-        token=lambda creds: creds["api_key"],
+-        source=f"{SOURCE_MANUAL}:qwen_cli",
+-        fields=lambda creds, provider: {"base_url": creds.get("base_url")}),
+-    "minimax-oauth": _OAuthAddSpec(
+-        login=lambda args: auth_mod._minimax_oauth_login(
+-            open_browser=not getattr(args, "no_browser", False),
+-            timeout_seconds=getattr(args, "timeout", None) or 15.0),
+-        token=lambda creds: creds["access_token"],
+-        source=f"{SOURCE_MANUAL}:minimax_oauth",
+-        fields=lambda creds, provider: {
+-            "refresh_token": creds.get("refresh_token"), "base_url": creds.get("inference_base_url")}),
+     "openrouter": _OAuthAddSpec(
+         login=lambda args: auth_mod._openrouter_pkce_login(
+             open_browser=not getattr(args, "no_browser", False),
 diff --git a/hermes_cli/banner.py b/hermes_cli/banner.py
-index 8466f2e56f..c7ca1c85b0 100644
+index 9a3d9dee57..2c315cd31f 100644
 --- a/hermes_cli/banner.py
 +++ b/hermes_cli/banner.py
 @@ -4,8 +4,10 @@ import logging
@@ -1967,10 +2300,10 @@ index 8466f2e56f..c7ca1c85b0 100644
      """The active Hermes git checkout, or None if this isn't a git install.
  
 diff --git a/hermes_cli/cli_config_load.py b/hermes_cli/cli_config_load.py
-index 78fa2ba350..a339b4c590 100644
+index dd1976c5fc..7f6046c6d1 100644
 --- a/hermes_cli/cli_config_load.py
 +++ b/hermes_cli/cli_config_load.py
-@@ -215,7 +215,7 @@ def _cli_config_defaults():
+@@ -212,7 +212,7 @@ def _cli_config_defaults():
              # Also clear scrollback on redraw/resize recovery; off because users prefer history.
              "cli_rebuild_scrollback_on_redraw": False,
              "persist_prompts": True,  # one-line summary of resolved modal prompts into scrollback
@@ -1980,10 +2313,10 @@ index 78fa2ba350..a339b4c590 100644
          "code_execution": {"timeout": 300, "max_tool_calls": 50},
          "auxiliary": {"vision": {"provider": "auto", "model": "", "base_url": "", "api_key": ""}},
 diff --git a/hermes_cli/config_defaults.py b/hermes_cli/config_defaults.py
-index 098c7322be..1edb42d724 100644
+index db159a52e8..e5e5ef717b 100644
 --- a/hermes_cli/config_defaults.py
 +++ b/hermes_cli/config_defaults.py
-@@ -874,7 +874,7 @@ DEFAULT_CONFIG = {
+@@ -899,7 +899,7 @@ DEFAULT_CONFIG = {
          # /focus off restores. Never affects what the model sees (focus_view.py).
          "focus_view": False,
          "focus_saved_tool_progress": "all",
@@ -1992,28 +2325,168 @@ index 098c7322be..1edb42d724 100644
          # UI language for static messages (approval prompts, some gateway slash replies); not agent
          # responses/logs/tool outputs. en, zh, ja, de, es, fr, tr, uk; unknown → en.
          "language": "en",
+diff --git a/hermes_cli/gateway_setup_wizard.py b/hermes_cli/gateway_setup_wizard.py
+index 9f702a1cf9..e8541674a5 100644
+--- a/hermes_cli/gateway_setup_wizard.py
++++ b/hermes_cli/gateway_setup_wizard.py
+@@ -50,7 +50,6 @@ _PLATFORMS = [
+         ],
+     },
+     {"key": "signal", "label": "Signal", "emoji": "📡", "token_var": "SIGNAL_HTTP_URL"},
+-    {"key": "weixin", "label": "Weixin / WeChat", "emoji": "💬", "token_var": "WEIXIN_ACCOUNT_ID"},
+     {
+         "key": "bluebubbles", "label": "BlueBubbles (iMessage)",
+         "emoji": "💬", "token_var": "BLUEBUBBLES_SERVER_URL",
+@@ -81,43 +80,6 @@ _PLATFORMS = [
+              "help": "Phone number or Apple ID to deliver cron results and notifications to."},
+         ],
+     },
+-    {
+-        "key": "qqbot", "label": "QQ Bot", "emoji": "🐧", "token_var": "QQ_APP_ID",
+-        "setup_instructions": [
+-            "1. Register a QQ Bot application at q.qq.com",
+-            "2. Note your App ID and App Secret from the application page",
+-            "3. Enable the required intents (C2C, Group, Guild messages)",
+-            "4. Configure sandbox or publish the bot",
+-        ],
+-        "vars": [
+-            {"name": "QQ_APP_ID", "prompt": "QQ Bot App ID", "password": False,
+-             "help": "Your QQ Bot App ID from q.qq.com."},
+-            {"name": "QQ_CLIENT_SECRET", "prompt": "QQ Bot App Secret", "password": True,
+-             "help": "Your QQ Bot App Secret from q.qq.com."},
+-            {"name": "QQ_ALLOWED_USERS",
+-             "prompt": "Allowed user OpenIDs (comma-separated, leave empty for open access)",
+-             "password": False, "is_allowlist": True,
+-             "help": "Optional — restrict DM access to specific user OpenIDs."},
+-            {"name": "QQBOT_HOME_CHANNEL",
+-             "prompt": "Home channel (user/group OpenID for cron delivery, or empty)", "password": False,
+-             "help": "OpenID to deliver cron results and notifications to."},
+-        ],
+-    },
+-    {
+-        "key": "yuanbao", "label": "Yuanbao", "emoji": "💎", "token_var": "YUANBAO_APP_ID",
+-        "setup_instructions": [
+-            "1. Download the Yuanbao app from https://yuanbao.tencent.com/",
+-            "2. In the app, go to PAI → My Bot and create a new bot",
+-            "3. After the bot is created, copy the App ID and App Secret",
+-            "4. Enter them below and Hermes will connect automatically over WebSocket",
+-        ],
+-        "vars": [
+-            {"name": "YUANBAO_APP_ID", "prompt": "App ID", "password": False,
+-             "help": "The App ID from your Yuanbao IM Bot credentials."},
+-            {"name": "YUANBAO_APP_SECRET", "prompt": "App Secret", "password": True,
+-             "help": "The App Secret (used for HMAC signing) from your Yuanbao IM Bot."},
+-        ],
+-    },
+ ]
+ 
+ 
 diff --git a/hermes_cli/main.py b/hermes_cli/main.py
-index 3007cd9c4d..99b894e1cd 100644
+index b85bf11fe7..c557a24ad0 100644
 --- a/hermes_cli/main.py
 +++ b/hermes_cli/main.py
-@@ -2466,10 +2466,14 @@ from hermes_cli.update_receipt import update_receipt_scope
+@@ -770,15 +770,11 @@ from hermes_cli.model_setup_flows import (
+     _model_flow_nous,
+     _model_flow_openai_codex,
+     _model_flow_xai_oauth,
+-    _model_flow_qwen_oauth,
+-    _model_flow_minimax_oauth,
+     _model_flow_custom,
+     _model_flow_azure_foundry,
+     _model_flow_named_custom,
+     _model_flow_copilot,
+     _model_flow_copilot_acp,
+-    _model_flow_kimi,
+-    _model_flow_stepfun,
+     _model_flow_bedrock,
+     _model_flow_vertex,
+     _model_flow_api_key_provider,
+@@ -2012,14 +2008,10 @@ _PROVIDER_MODEL_FLOWS = {
+     "nous": lambda c, m, a: _model_flow_nous(c, m, args=a),
+     "openai-codex": lambda c, m, a: _model_flow_openai_codex(c, m),
+     "xai-oauth": lambda c, m, a: _model_flow_xai_oauth(c, m, args=a),
+-    "qwen-oauth": lambda c, m, a: _model_flow_qwen_oauth(c, m),
+-    "minimax-oauth": lambda c, m, a: _model_flow_minimax_oauth(c, m, args=a),
+     "copilot-acp": lambda c, m, a: _model_flow_copilot_acp(c, m),
+     "copilot": lambda c, m, a: _model_flow_copilot(c, m),
+     "custom": lambda c, m, a: _model_flow_custom(c),
+     "anthropic": lambda c, m, a: _model_flow_anthropic(c, m),
+-    "kimi-coding": lambda c, m, a: _model_flow_kimi(c, m),
+-    "stepfun": lambda c, m, a: _model_flow_stepfun(c, m),
+     "bedrock": lambda c, m, a: _model_flow_bedrock(c, m),
+     "vertex": lambda c, m, a: _model_flow_vertex(c, m),
+     "azure-foundry": lambda c, m, a: _model_flow_azure_foundry(c, m),
+@@ -2486,7 +2478,14 @@ from hermes_cli.update_receipt import update_receipt_scope
  
  @update_receipt_scope()
  def cmd_update(args):
 -    """Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``."""
--    from hermes_cli.update_owning_install import retarget_to_owning_install
 +    """Refuse bundled updates before reaching any update preflight or mutation."""
 +    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
- 
--    retarget_to_owning_install(PROJECT_ROOT)
++
 +    refusal = evaluate_update_admission(PROJECT_ROOT)
 +    if refusal is not None:
 +        print(refusal.message)
 +        record_refusal_receipt(refusal)
-+    sys.exit(2)
-     if _update_preflight_handled(args):
-         return
-     gateway_mode = getattr(args, "gateway", False)
++        sys.exit(2)
+     # Marks this frame as the CURRENT updater for
+     # _old_updater.in_historical_update(); historical on-disk updaters do not
+     # declare this local, so only they hand off through retired shims.
+diff --git a/hermes_cli/plugin_catalog.py b/hermes_cli/plugin_catalog.py
+index 09057524df..29ff0882fb 100644
+--- a/hermes_cli/plugin_catalog.py
++++ b/hermes_cli/plugin_catalog.py
+@@ -199,6 +199,19 @@ def _removed_from_list(raw_list: Any) -> List[RemovedEntry]:
+ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]:
+     """Every valid ``*.yaml`` entry in the catalog dir (``removed.yaml`` excluded), sorted by file name.
+     Malformed entries are skipped with a warning — never raises."""
++    # Local removal: China-market catalog entries.
++    # wechat-social-assistant (WeChat), volcengine-voice (ByteDance Doubao),
++    # dashscope-image/-video (Alibaba), minimax-image/-video (MiniMax),
++    # kimi-code-delegate (Moonshot Kimi), deepseek-whale (DeepSeek),
++    # hermes-zh (Simplified-Chinese UI pack), cjk_sanitizer (CJK filter),
++    # desensitize (Chinese-context PII, siliconflow.cn fallback).
++    _REMOVED_CN_CATALOG_FILES = frozenset({
++        "wechat-social-assistant.yaml", "volcengine-voice.yaml",
++        "dashscope-image.yaml", "dashscope-video.yaml",
++        "minimax-image.yaml", "minimax-video.yaml",
++        "kimi-code-delegate.yaml", "deepseek-whale.yaml",
++        "hermes-zh.yaml", "cjk_sanitizer.yaml", "desensitize.yaml",
++    })
+     root = catalog_dir or get_catalog_dir()
+     if not root.is_dir():
+         return []
+@@ -206,6 +219,8 @@ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]
+     for path in sorted(root.glob("*.yaml")):
+         if path.name == "removed.yaml":
+             continue
++        if path.name in _REMOVED_CN_CATALOG_FILES:
++            continue
+         data = _read_yaml(path)
+         entry = entry_from_mapping(data, str(path)) if data is not None else None
+         if entry is not None:
+diff --git a/hermes_cli/plugins_discovery.py b/hermes_cli/plugins_discovery.py
+index edd684af8d..49d9d1abae 100644
+--- a/hermes_cli/plugins_discovery.py
++++ b/hermes_cli/plugins_discovery.py
+@@ -273,6 +273,17 @@ def gate_manifest(
+             f"plugins.toml, or use {RELAY_PLUGINS_CONFIG_ENV} for an explicit user-file override"
+         )
+         return _placeholder(error, logging.WARNING, "Refusing to load removed Hermes Relay plugin '%s'; %s", error)
++    # Local removal: China-market platforms from all install sources.
++    removed_cn_platform_keys = frozenset({
++        "platforms/dingtalk", "platforms/feishu", "platforms/wecom",
++        "dingtalk-platform", "feishu-platform", "wecom-platform",
++        "dingtalk", "feishu", "wecom",
++    })
++    manifest_path = str(manifest.path or "")
++    if (names & removed_cn_platform_keys
++            or any(k in manifest_path for k in ("/platforms/dingtalk", "/platforms/feishu", "/platforms/wecom"))):
++        error = "removed — China-market platform disabled by local patch"
++        return _placeholder(error, logging.WARNING, "Refusing to load removed China-market plugin '%s'; %s", error)
+     if names & disabled:
+         return _placeholder("disabled via config", logging.DEBUG, "Skipping disabled plugin '%s'")
+     # Exclusive plugins (memory providers) have their own activation path; record only.
 diff --git a/hermes_cli/skin_cmd.py b/hermes_cli/skin_cmd.py
 index 6f098a66e2..ef96840807 100644
 --- a/hermes_cli/skin_cmd.py
@@ -2107,12 +2580,42 @@ index b859fcc828..1daffd27b1 100644
  
  
  def _active_branding(key: str, fallback: str) -> str:
+diff --git a/hermes_cli/tools_config.py b/hermes_cli/tools_config.py
+index 7c42c29c9c..066cd421b8 100644
+--- a/hermes_cli/tools_config.py
++++ b/hermes_cli/tools_config.py
+@@ -91,7 +91,6 @@ CONFIGURABLE_TOOLSETS = [
+     ("spotify",          "🎵 Spotify",                  "playback, search, playlists, library"),
+     ("discord",         "💬 Discord (read/participate)", "fetch messages, search members, create thread"),
+     ("discord_admin",   "🛡️  Discord Server Admin",    "list channels/roles, pin, assign roles"),
+-    ("yuanbao",          "🤖 Yuanbao",                  "group info, member queries, DM"),
+     ("computer_use",     "🖱️  Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"),
+ ]
+ 
+@@ -399,7 +398,7 @@ TOOLSET_ENV_REQUIREMENTS = {"vision": [("OPENROUTER_API_KEY", "https://openroute
+ # --- Platform / Toolset Helpers ---
+ _PLATFORM_ENABLE_ENV_VARS = (
+     ("telegram", "TELEGRAM_BOT_TOKEN"), ("discord", "DISCORD_BOT_TOKEN"), ("slack", "SLACK_BOT_TOKEN"),
+-    ("whatsapp", "WHATSAPP_ENABLED"), ("qqbot", "QQ_APP_ID"))
++    ("whatsapp", "WHATSAPP_ENABLED"))
+ 
+ 
+ def _get_enabled_platforms() -> List[str]:
+@@ -666,7 +665,7 @@ def _prune_toolsets_stripped_by_disabled(enabled_toolsets: Set[str], disabled_na
+ 
+ 
+ def _recover_platform_native_toolsets(enabled_toolsets: Set[str], platform: str, *, skip: Set[str]) -> None:
+-    """Add non-configurable platform toolsets (discord, feishu_*) in place: in the default composite but not in
++    """Add non-configurable platform toolsets (discord) in place: in the default composite but not in
+     CONFIGURABLE_TOOLSETS, so never in a checklist or saved list. Runs for BOTH ``_get_platform_tools`` branches."""
+     from toolsets import resolve_toolset, TOOLSETS
+ 
 diff --git a/hermes_cli/update_cmd.py b/hermes_cli/update_cmd.py
-index 2cfcabeda2..e5a037fb9b 100644
+index 20a665821e..6691cf1f3d 100644
 --- a/hermes_cli/update_cmd.py
 +++ b/hermes_cli/update_cmd.py
-@@ -643,6 +643,18 @@ def _tip_shas(git_cmd, target_ref: str) -> tuple[str, str]:
-     return tuple(_git_run(git_cmd, ["rev-parse", ref]).stdout.strip() for ref in ("HEAD", target_ref))
+@@ -687,6 +687,14 @@ def _is_shallow_checkout(git_cmd) -> bool:
+     return _git_run(git_cmd, ["rev-parse", "--is-shallow-repository"]).stdout.strip() == "true"
  
  
 +def _github_repo_slug(origin_url: str | None) -> str | None:
@@ -2120,32 +2623,28 @@ index 2cfcabeda2..e5a037fb9b 100644
 +    from hermes_cli.banner import _canonical_github_remote
 +
 +    canonical = _canonical_github_remote(origin_url)
-+    return (
-+        canonical.removeprefix("github.com/")
-+        if canonical.startswith("github.com/")
-+        else None
-+    )
++    return canonical.removeprefix("github.com/") if canonical.startswith("github.com/") else None
 +
 +
- def _print_update_check_result(behind: int | None, compare_branch: str) -> None:
-     """Report ``--check``'s verdict: up to date, N commits behind, or behind by an unknown count."""
-     if behind == 0:
-@@ -983,7 +995,9 @@ def _prepare_checkout_for_update(
+ def _tip_shas(git_cmd, target_ref: str, base: str = "HEAD") -> tuple[str, str]:
+     """``(<base> sha, <target_ref> sha)`` as printed by rev-parse ("" when unresolvable)."""
+     return tuple(_git_run(git_cmd, ["rev-parse", ref]).stdout.strip() for ref in (base, target_ref))
+@@ -1107,7 +1115,9 @@ def _prepare_checkout_for_update(
      apply_is_shallow = _is_shallow_checkout(git_cmd)
      if commit_count > 0 and apply_is_shallow:
          from hermes_cli.source_check import _github_compare_behind
--        counted = _github_compare_behind(*_tip_shas(git_cmd, target_ref))
-+        head_sha, target_sha = _tip_shas(git_cmd, target_ref)
+-        counted = _github_compare_behind(*_tip_shas(git_cmd, target_ref, base))
++        head_sha, target_sha = _tip_shas(git_cmd, target_ref, base)
 +        repo_slug = _github_repo_slug(_m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)) if target_ref.startswith("origin/") else None
 +        counted = _github_compare_behind(head_sha, target_sha, repo_slug) if repo_slug else _github_compare_behind(head_sha, target_sha)
          # counted == 0 means local-ahead: falls through to the up-to-date path.
          commit_count = counted if counted is not None else -1
  
 diff --git a/hermes_cli/update_cmd_git.py b/hermes_cli/update_cmd_git.py
-index 10be93f7a8..29b808d821 100644
+index eddb579c7c..83e5d1967e 100644
 --- a/hermes_cli/update_cmd_git.py
 +++ b/hermes_cli/update_cmd_git.py
-@@ -191,11 +191,15 @@ def _print_parked_branch_kept_notice(current_branch: str, target_branch: str, un
+@@ -229,11 +229,15 @@ def _print_parked_branch_kept_notice(current_branch: str, target_branch: str, un
      )
  
  
@@ -2163,7 +2662,7 @@ index 10be93f7a8..29b808d821 100644
  }
  OFFICIAL_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
  SKIP_UPSTREAM_PROMPT_FILE = ".skip_upstream_prompt"
-@@ -211,11 +215,13 @@ def _is_fork(origin_url: Optional[str]) -> bool:
+@@ -249,11 +253,13 @@ def _is_fork(origin_url: Optional[str]) -> bool:
      if not origin_url:
          return False
  
@@ -2256,10 +2755,10 @@ index 966662c569..690793b275 100644
  
      if _dashboard_local_update_managed_externally():
 diff --git a/hermes_cli/web_server_config.py b/hermes_cli/web_server_config.py
-index 741c43bca3..4e37dd4df8 100644
+index f570d31d42..18b770043b 100644
 --- a/hermes_cli/web_server_config.py
 +++ b/hermes_cli/web_server_config.py
-@@ -128,7 +128,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
+@@ -134,7 +134,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
          "OpenAI transcription model", "whisper-1", "gpt-4o-mini-transcribe", "gpt-4o-transcribe", "gpt-transcribe"
      ),
      "stt.elevenlabs.model_id": _select("ElevenLabs Scribe model", "scribe_v2", "scribe_v1"),
@@ -2268,6 +2767,60 @@ index 741c43bca3..4e37dd4df8 100644
      "dashboard.theme": _select(
          "Web dashboard visual theme", "default", "midnight", "ember", "mono", "cyberpunk", "rose"
      ),
+diff --git a/hermes_cli/web_server_messaging.py b/hermes_cli/web_server_messaging.py
+index 487771ffd5..4ede1139c1 100644
+--- a/hermes_cli/web_server_messaging.py
++++ b/hermes_cli/web_server_messaging.py
+@@ -253,7 +253,16 @@ def _messaging_platform_catalog() -> tuple[dict[str, Any], ...]:
+     seen: set[str] = set()
+     entries: list[dict[str, Any]] = []
+     builtin = [m.value for m in Platform.__members__.values() if m.value != "local"]
++    # Local removal: China-market platforms never get UI cards, even though the
++    # Platform enum keeps the members so old configs fail gracefully (warning +
++    # skip at adapter instantiation instead of an unknown-platform crash).
++    _REMOVED_CN_PLATFORM_IDS = frozenset({
++        "dingtalk", "feishu", "wecom", "wecom_callback",
++        "weixin", "qqbot", "yuanbao",
++    })
+     for pid in builtin + list(plugin_map):
++        if pid in _REMOVED_CN_PLATFORM_IDS:
++            continue
+         if pid in seen:
+             continue
+         seen.add(pid)
+diff --git a/providers/__init__.py b/providers/__init__.py
+index 9787b61a55..92d9095e41 100644
+--- a/providers/__init__.py
++++ b/providers/__init__.py
+@@ -94,6 +94,18 @@ _BUNDLED_PLUGINS_DIR = (
+ )
+ 
+ 
++# Local removal: China-market model providers (vendors headquartered in
++# mainland China). Both the international and the explicit *-cn endpoints are
++# skipped, because the vendor itself is China-specific.
++# Covers: alibaba (+ -cn, token-plan, token-plan-cn), alibaba-coding-plan
++# (+ -cn), deepseek, kimi-coding (+ -cn / Moonshot), minimax (+ -cn, -oauth),
++# qwen-oauth (Alibaba Qwen), stepfun, xiaomi (MiMo), zai (Zhipu Z.AI / GLM).
++_REMOVED_CN_MODEL_PROVIDERS = frozenset({
++    "alibaba", "alibaba-coding-plan", "deepseek", "kimi-coding", "minimax",
++    "qwen-oauth", "stepfun", "xiaomi", "zai",
++})
++
++
+ def _sync_auth_registry() -> None:
+     """Mirror profiles into the ``hermes_cli`` snapshots (auth registry, picker catalog) that are loaded.
+ 
+@@ -601,6 +613,9 @@ def _run_discovery_steps() -> None:
+         for child in sorted(_BUNDLED_PLUGINS_DIR.iterdir()):
+             if not child.is_dir() or child.name.startswith(("_", ".")):
+                 continue
++            if child.name in _REMOVED_CN_MODEL_PROVIDERS:
++                logger.debug("Skipping removed China-market provider '%s'", child.name)
++                continue
+             _import_plugin_dir(child, "bundled")
+ 
+     # 2. Legacy single-file profiles at providers/<name>.py. Kept for
 diff --git a/scripts/ci/scan_supply_chain.py b/scripts/ci/scan_supply_chain.py
 new file mode 100755
 index 0000000000..6b86262cb9
@@ -2429,7 +2982,7 @@ index b1c86d26ed..8bce17a7ad 100755
  #
  # The whole job: wait for the Desktop to exit, run `hermes update`, tell the
 diff --git a/scripts/desktop-update/windows.ps1 b/scripts/desktop-update/windows.ps1
-index b4645aac15..6960ad4135 100644
+index bb1f0a93a2..3eb36ba0f2 100644
 --- a/scripts/desktop-update/windows.ps1
 +++ b/scripts/desktop-update/windows.ps1
 @@ -57,6 +57,9 @@ param(
@@ -2443,10 +2996,10 @@ index b4645aac15..6960ad4135 100644
      throw "-Branch and -Channel are mutually exclusive"
  }
 diff --git a/scripts/install.ps1 b/scripts/install.ps1
-index 2fecfa6054..d2f7d1e2fe 100644
+index dce40f5f2a..fe467c102e 100644
 --- a/scripts/install.ps1
 +++ b/scripts/install.ps1
-@@ -60,7 +60,7 @@ $script:BoundParams = $PSBoundParameters
+@@ -71,7 +71,7 @@ $script:BoundParams = $PSBoundParameters
  # Under iex, script scope is the caller's session and outlives a run; start
  # each run without the previous run's answer (see Set-LauncherUserPath).
  $script:BinDirOnCallerPath = $null
@@ -2455,7 +3008,7 @@ index 2fecfa6054..d2f7d1e2fe 100644
  
  # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
  # Derived from pm/lock.json. DO NOT EDIT BY HAND:
-@@ -1222,6 +1222,12 @@ if ($script:IsDotSourced) {
+@@ -1251,6 +1251,12 @@ if ($script:IsDotSourced) {
  # switch is honored, so every contract below sees long-form paths.
  Initialize-ResolvedPaths
  
@@ -2469,7 +3022,7 @@ index 2fecfa6054..d2f7d1e2fe 100644
  # directory or user profile the installer runs under (mirrors install.sh).
  $env:UV_NO_CONFIG = "1"
 diff --git a/scripts/install.sh b/scripts/install.sh
-index 3d86236d15..31e5e670f1 100755
+index 502c882fda..8e892372c7 100755
 --- a/scripts/install.sh
 +++ b/scripts/install.sh
 @@ -14,13 +14,22 @@
@@ -2496,7 +3049,7 @@ index 3d86236d15..31e5e670f1 100755
  BRANCH="main"
  INSTALL_COMMIT=""
  INSTALL_DIR="${HERMES_INSTALL_DIR:-}"
-@@ -417,6 +426,9 @@ stage_prerequisites() {
+@@ -443,6 +452,9 @@ stage_prerequisites() {
  }
  
  stage_repository() {
@@ -3561,10 +4114,10 @@ index b24bf2fd3c..c731ac574a 100644
      """The apt-termux remediation command is read from the config module's
      ``_UPDATE_COMMAND_BY_METHOD`` table (the same one every install method
 diff --git a/tests/hermes_cli/test_web_server.py b/tests/hermes_cli/test_web_server.py
-index d5ab94e995..6299716b76 100644
+index 913455c2e9..1b085ce83b 100644
 --- a/tests/hermes_cli/test_web_server.py
 +++ b/tests/hermes_cli/test_web_server.py
-@@ -2628,6 +2628,15 @@ CONFIG_SCHEMA = ProviderConfigSchema(
+@@ -2629,6 +2629,15 @@ CONFIG_SCHEMA = ProviderConfigSchema(
  
  class TestBuildSchemaFromConfig:
  
@@ -3717,7 +4270,7 @@ index 0000000000..b9559d035f
 +    assert result.returncode == 0, result.stderr
 +    assert tuple(result.stdout.splitlines()) == EXPECTED_URLS
 diff --git a/tests/scripts/install/test_install_sh_repository_stage.py b/tests/scripts/install/test_install_sh_repository_stage.py
-index c5fe4256ef..ec52e75786 100644
+index 4d0da0c4ec..f9de856b92 100644
 --- a/tests/scripts/install/test_install_sh_repository_stage.py
 +++ b/tests/scripts/install/test_install_sh_repository_stage.py
 @@ -56,19 +56,20 @@ def test_piped_one_liner_runs_the_installer():
@@ -3823,7 +4376,7 @@ index c5fe4256ef..ec52e75786 100644
 +    assert _git(install, "remote", "get-url", "origin") == first.as_posix()
  
  
- @pytest.mark.parametrize("reported, accepted", [("0.6.17", False), ("99.0.0", True)])
+ def test_path_uv_is_never_used_even_when_newer_than_the_pin(tmp_path):
 diff --git a/tests/scripts/install/test_install_sh_termux_refusal.py b/tests/scripts/install/test_install_sh_termux_refusal.py
 index d42c4646b2..c1bbaa3bac 100644
 --- a/tests/scripts/install/test_install_sh_termux_refusal.py
@@ -3852,10 +4405,10 @@ index d42c4646b2..c1bbaa3bac 100644
  
  
 diff --git a/tests/tui_gateway/test_protocol.py b/tests/tui_gateway/test_protocol.py
-index 3df44602d0..3ea7e54e37 100644
+index 0c88de8478..e57df6c2b7 100644
 --- a/tests/tui_gateway/test_protocol.py
 +++ b/tests/tui_gateway/test_protocol.py
-@@ -1647,6 +1647,35 @@ def test_skin_live_switch_end_to_end(server, tmp_path, monkeypatch):
+@@ -1762,6 +1762,35 @@ def test_skin_live_switch_end_to_end(server, tmp_path, monkeypatch):
      assert emitted[0][1]["customCSS"] == ".chat-input { font-size: 16px; }"
  
  
@@ -3891,578 +4444,8 @@ index 3df44602d0..3ea7e54e37 100644
  def test_broadcast_skin_if_changed_on_any_signature_move(server, monkeypatch):
      """A skin the agent changes mid-turn goes live once per real move: a name
      switch (incl. switch-then-revert) OR an in-place color edit to the active skin
-diff --git a/tui_gateway/change_watcher.py b/tui_gateway/change_watcher.py
-index 2632709430..8eafd7de22 100644
---- a/tui_gateway/change_watcher.py
-+++ b/tui_gateway/change_watcher.py
-@@ -58,7 +58,7 @@ def _newest_mtime_ns(paths) -> int | None:
- def _skin_sig() -> tuple[str, float | None]:
-     """(active skin name, its user-file mtime). Built-ins have no file, so only
-     their name moves; a user skin's mtime lets an in-place color edit repaint too."""
--    name = str((_load_cfg().get("display") or {}).get("skin") or "default")
-+    name = str((_load_cfg().get("display") or {}).get("skin") or "flexpair-dark")
-     try:
-         return name, (_watcher_home() / "skins" / f"{name}.yaml").stat().st_mtime
-     except OSError:
-diff --git a/tui_gateway/methods_config.py b/tui_gateway/methods_config.py
-index 3a631c1872..5626b47421 100644
---- a/tui_gateway/methods_config.py
-+++ b/tui_gateway/methods_config.py
-@@ -177,6 +177,10 @@ def _display_word(key: str, default: str, allowed) -> str:
-     raw = str(_display_raw().get(key, default) or "").strip().lower()
-     return raw if raw in allowed else default
- 
-+def _cfg_get_skin(params):
-+    skin = _display_raw().get("skin")
-+    return {"value": skin.strip() if isinstance(skin, str) and skin.strip() else "flexpair-dark"}
-+
- 
- _THINKING_MODES = frozenset({"collapsed", "truncated", "full"})
- 
-@@ -261,7 +265,7 @@ _CONFIG_GETTERS = {
-     "project": _cfg_get_project,
-     "full": lambda params: {"config": _load_cfg()},
-     "prompt": lambda params: {"prompt": _load_cfg().get("custom_prompt", "")},
--    "skin": lambda params: {"value": _display_raw().get("skin", "default")},
-+    "skin": _cfg_get_skin,
-     # Normalised like the TUI renders it (frontend falls back to the default for the same inputs).
-     "indicator": lambda params: {
-         "value": _display_word("tui_status_indicator", DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES)},
-diff --git a/website/docs/user-guide/configuration.md b/website/docs/user-guide/configuration.md
-index 73efc481bf..45c64b15f1 100644
---- a/website/docs/user-guide/configuration.md
-+++ b/website/docs/user-guide/configuration.md
-@@ -2171,7 +2171,7 @@ display:
-   interim_assistant_messages: true  # Gateway: send natural mid-turn assistant updates as separate messages
-   suppress_warning_notifications: false  # Opt-in: hide automatic warning/diagnostic notices (see messaging guide)
-   show_commentary: true   # Codex models: deliver commentary-channel progress narration as visible mid-turn updates
--  skin: default           # Built-in or custom CLI skin (see user-guide/features/skins)
-+  skin: flexpair-dark     # Built-in or custom CLI skin (see user-guide/features/skins)
-   personality: ""         # Legacy cosmetic field still surfaced in some summaries
-   compact: false          # Compact output mode (less whitespace)
-   cli_multiline_shortcuts: true  # CLI: Ctrl+J, \ + Enter, and supported Shift+Enter insert newlines (false = legacy c-j submit fallback)
-diff --git a/website/docs/user-guide/features/skins.md b/website/docs/user-guide/features/skins.md
-index 5fb780757b..0f052b4162 100644
---- a/website/docs/user-guide/features/skins.md
-+++ b/website/docs/user-guide/features/skins.md
-@@ -25,9 +25,11 @@ Or set the default skin in `~/.hermes/config.yaml`:
- 
- ```yaml
- display:
--  skin: default
-+  skin: flexpair-dark
- ```
- 
-+If `display.skin` is unset or blank, the CLI and TUI use `flexpair-dark`. Set `display.skin: default` to select the classic Hermes appearance explicitly.
-+
- ## Built-in skins
- 
- | Skin | Description | Agent branding | Visual character |
-@@ -41,6 +43,8 @@ display:
- | `poseidon` | Ocean-god theme — deep blue and seafoam | `Poseidon Agent` | Deep blue to seafoam gradient. Ocean-themed spinners ("charting currents", "sounding the depth"). Trident ASCII art banner. |
- | `sisyphus` | Sisyphean theme — austere grayscale with persistence | `Sisyphus Agent` | Light grays with stark contrast. Boulder-themed spinners ("pushing uphill", "resetting the boulder", "enduring the loop"). Boulder-and-hill ASCII art banner. |
- | `charizard` | Volcanic theme — burnt orange and ember | `Charizard Agent` | Warm burnt orange to ember gradient. Fire-themed spinners ("banking into the draft", "measuring burn"). Dragon-silhouette ASCII art banner. |
-+| `flexpair-dark` | Flexpair dark theme (unconfigured default) | `Hermes Agent` | Cyan on deep teal. |
-+| `flexpair-light` | Flexpair light theme | `Hermes Agent` | Teal on white. |
- 
- ## Complete list of configurable keys
- 
-diff --git a/agent/i18n.py b/agent/i18n.py
-index d1e725855..3e82aaae1 100644
---- a/agent/i18n.py
-+++ b/agent/i18n.py
-@@ -16,8 +16,10 @@ from typing import Any
- 
- logger = logging.getLogger(__name__)
- 
-+# Local removal: "zh" / "zh-hant" deleted (China-market locales).
-+# locales/zh.yaml + zh-hant.yaml are removed; requests for them fall back to "en".
- SUPPORTED_LANGUAGES: tuple[str, ...] = (
--    "en", "zh", "zh-hant", "ja", "de", "es", "fr", "tr", "uk",
-+    "en", "ja", "de", "es", "fr", "tr", "uk",
-     "af", "ko", "it", "ga", "pt", "ru", "hu", "ar",
- )
- DEFAULT_LANGUAGE = "en"
-@@ -28,9 +30,7 @@ DEFAULT_LANGUAGE = "en"
- # the pt catalog (no separate br one).
- _LANGUAGE_ALIASES: dict[str, str] = {
-     "english": "en", "en-us": "en", "en-gb": "en",
--    "chinese": "zh", "mandarin": "zh", "zh-cn": "zh", "zh-hans": "zh", "zh-sg": "zh",
--    "traditional-chinese": "zh-hant", "traditional_chinese": "zh-hant",
--    "zh-tw": "zh-hant", "zh-hk": "zh-hant", "zh-mo": "zh-hant",
-+    # Local removal: chinese/* aliases deleted (fell back to "en" via default).
-     "japanese": "ja", "jp": "ja", "ja-jp": "ja",
-     "german": "de", "deutsch": "de", "de-de": "de", "de-at": "de", "de-ch": "de",
-     "spanish": "es", "español": "es", "espanol": "es", "es-es": "es", "es-mx": "es", "es-ar": "es",
-diff --git a/gateway/config.py b/gateway/config.py
-index f1cfcf914..e0c526631 100644
---- a/gateway/config.py
-+++ b/gateway/config.py
-@@ -255,12 +255,18 @@ class Platform(Enum):
-         """Directory names of bundled platform plugins under ``plugins/platforms/``, plus a map of
-         manifest ``name:`` keys that differ from their directory (alias -> directory name). Aliases
-         never shadow a directory name, so the directory stays the canonical platform value."""
-+        # Local removal: China-market messaging platforms.
-+        # dingtalk (Alibaba), feishu (ByteDance Feishu; shares code with
-+        # international Lark -- removing this dir removes Lark as well),
-+        # wecom (Tencent WeCom / Enterprise WeChat, incl. wecom_callback).
-+        _REMOVED_CN_PLATFORMS = {"dingtalk", "feishu", "wecom"}
-         try:
-             platforms_dir = Path(__file__).parent.parent / "plugins" / "platforms"
-             dirs = [
-                 child for child in (platforms_dir.iterdir() if platforms_dir.is_dir() else ())
-                 if child.is_dir() and (child / "__init__.py").exists()
-                 and ((child / "plugin.yaml").exists() or (child / "plugin.yml").exists())
-+                and child.name.lower() not in _REMOVED_CN_PLATFORMS
-             ]
-             names = {child.name.lower() for child in dirs}
-             aliases = {}
-diff --git a/gateway/run.py b/gateway/run.py
-index 6c9556d10..2eb5fd07b 100644
---- a/gateway/run.py
-+++ b/gateway/run.py
-@@ -3329,13 +3329,16 @@ def _builtin_adapter_import(module: str, adapter_name: str, requirement: str):
- 
- 
- # platform -> (module, adapter class, requirements probe, warning on probe failure).
-+# Local removal: China-market builtin adapters (Tencent) deleted here:
-+# Platform.WEIXIN (WeChat/iLink), Platform.QQBOT (QQ Bot),
-+# Platform.YUANBAO (Tencent Yuanbao). Source files
-+# (gateway/platforms/weixin.py, qqbot/, yuanbao*.py) stay on disk but are
-+# never instantiated. Existing configs using them log a warning and skip.
- _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
-     Platform.WHATSAPP_CLOUD: ("whatsapp_cloud", "WhatsAppCloudAdapter", "check_whatsapp_cloud_requirements",
-                               "WhatsApp Cloud: aiohttp/httpx missing — reinstall hermes-agent"),
-     Platform.SIGNAL: ("signal", "SignalAdapter", "check_signal_requirements",
-                       "Signal: runtime requirements not met"),
--    Platform.WEIXIN: ("weixin", "WeixinAdapter", "check_weixin_requirements",
--                      "Weixin: aiohttp/cryptography not installed"),
-     Platform.API_SERVER: ("api_server", "APIServerAdapter", "check_api_server_requirements",
-                           "API Server: aiohttp not installed"),
-     Platform.WEBHOOK: ("webhook", "WebhookAdapter", "check_webhook_requirements",
-@@ -3344,14 +3347,19 @@ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
-                                "MSGraph webhook: aiohttp not installed"),
-     Platform.BLUEBUBBLES: ("bluebubbles", "BlueBubblesAdapter", "check_bluebubbles_requirements",
-                            "BlueBubbles: aiohttp/httpx missing or BLUEBUBBLES_SERVER_URL/BLUEBUBBLES_PASSWORD not configured"),
--    Platform.QQBOT: ("qqbot", "QQAdapter", "check_qq_requirements",
--                     "QQBot: aiohttp/httpx missing or QQ_APP_ID/QQ_CLIENT_SECRET not configured"),
--    Platform.YUANBAO: ("yuanbao", "YuanbaoAdapter", "WEBSOCKETS_AVAILABLE",
--                       "Yuanbao: websockets not installed. Run: pip install websockets")}
-+}
-+_REMOVED_CN_BUILTIN_PLATFORMS = frozenset({"weixin", "qqbot", "yuanbao"})
- 
- 
- def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[BasePlatformAdapter]:
-     """Instantiate a core (non-plugin) adapter, or None when its requirements are unmet/unknown."""
-+    try:
-+        _platform_value = platform.value if isinstance(platform, Platform) else str(platform)
-+    except Exception:
-+        _platform_value = str(platform)
-+    if _platform_value in _REMOVED_CN_BUILTIN_PLATFORMS:
-+        logger.warning("Skipping removed China-market platform '%s'", _platform_value)
-+        return None
-     spec = _BUILTIN_ADAPTERS.get(platform)
-     if spec is None:
-         return None
-diff --git a/hermes_cli/auth.py b/hermes_cli/auth.py
-index 33e017bfc..a2d917753 100644
---- a/hermes_cli/auth.py
-+++ b/hermes_cli/auth.py
-@@ -181,7 +181,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
-     ProviderConfig(
-         "xai-oauth", "xAI Grok OAuth (SuperGrok / Premium+)", "oauth_external",
-         inference_base_url=DEFAULT_XAI_OAUTH_BASE_URL),
--    ProviderConfig("qwen-oauth", "Qwen OAuth", "oauth_external", inference_base_url=DEFAULT_QWEN_BASE_URL),
-     ("lmstudio", "LM Studio", "http://127.0.0.1:1234/v1", ("LM_API_KEY",), "LM_BASE_URL"),
-     ("copilot", "GitHub Copilot", DEFAULT_GITHUB_MODELS_BASE_URL,
-      ("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"), "COPILOT_API_BASE_URL"),
-@@ -190,24 +189,9 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
-         inference_base_url=DEFAULT_COPILOT_ACP_BASE_URL, base_url_env_var="COPILOT_ACP_BASE_URL"),
-     ("gemini", "Google AI Studio", "https://generativelanguage.googleapis.com/v1beta",
-      ("GOOGLE_API_KEY", "GEMINI_API_KEY"), "GEMINI_BASE_URL"),
--    ("zai", "Z.AI / GLM", "https://api.z.ai/api/paas/v4",
--     ("GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"), "GLM_BASE_URL"),
--    # Legacy platform.moonshot.ai keys use this endpoint (OpenAI-compat); sk-kimi- (Kimi Code)
--    # keys are auto-redirected to api.kimi.com/coding by _resolve_kimi_base_url().
--    ("kimi-coding", "Kimi / Moonshot", "https://api.moonshot.ai/v1",
--     ("KIMI_API_KEY", "KIMI_CODING_API_KEY"), "KIMI_BASE_URL"),
--    ("kimi-coding-cn", "Kimi / Moonshot (China)", "https://api.moonshot.cn/v1", ("KIMI_CN_API_KEY",)),
--    ("stepfun", "StepFun Step Plan", STEPFUN_STEP_PLAN_INTL_BASE_URL, ("STEPFUN_API_KEY",), "STEPFUN_BASE_URL"),
-     ("arcee", "Arcee AI", "https://api.arcee.ai/api/v1", ("ARCEEAI_API_KEY",), "ARCEE_BASE_URL"),
-     ("gmi", "GMI Cloud", "https://api.gmi-serving.com/v1", ("GMI_API_KEY",), "GMI_BASE_URL"),
-     ("actual", "Actual Computer", DEFAULT_ACTUAL_BASE_URL, ("ACTUAL_API_KEY",), "ACTUAL_BASE_URL"),
--    ("minimax", "MiniMax", "https://api.minimax.io/anthropic", ("MINIMAX_API_KEY",), "MINIMAX_BASE_URL"),
--    ProviderConfig(
--        "minimax-oauth", "MiniMax (OAuth \u00b7 minimax.io)", "oauth_minimax",
--        portal_base_url=MINIMAX_OAUTH_GLOBAL_BASE, inference_base_url=MINIMAX_OAUTH_GLOBAL_INFERENCE,
--        client_id=MINIMAX_OAUTH_CLIENT_ID, scope=MINIMAX_OAUTH_SCOPE,
--        extra={"region": "global", "cn_portal_base_url": MINIMAX_OAUTH_CN_BASE,
--               "cn_inference_base_url": MINIMAX_OAUTH_CN_INFERENCE}),
-     # CLAUDE_CODE_OAUTH_TOKEN is NOT an API key despite auth_type="api_key": `claude setup-token`
-     # yields an `sk-ant-oat01…` OAuth token (401s as x-api-key, 429s as bare Bearer). It stays in
-     # this tuple because the tuple doubles as the credential-DISCOVERY list
-@@ -215,13 +199,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
-     # path by prefix. Only ANTHROPIC_API_KEY and ANTHROPIC_TOKEN are usable as literal API keys.
-     ("anthropic", "Anthropic", "https://api.anthropic.com",
-      ("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"), "ANTHROPIC_BASE_URL"),
--    ("alibaba", "Qwen Cloud", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
--     ("DASHSCOPE_API_KEY",), "DASHSCOPE_BASE_URL"),
--    ("alibaba-coding-plan", "Alibaba Cloud (Coding Plan)", "https://coding-intl.dashscope.aliyuncs.com/v1",
--     ("ALIBABA_CODING_PLAN_API_KEY", "DASHSCOPE_API_KEY"), "ALIBABA_CODING_PLAN_BASE_URL"),
--    ("minimax-cn", "MiniMax (China)", "https://api.minimaxi.com/anthropic", ("MINIMAX_CN_API_KEY",),
--     "MINIMAX_CN_BASE_URL"),
--    ("deepseek", "DeepSeek", "https://api.deepseek.com/v1", ("DEEPSEEK_API_KEY",), "DEEPSEEK_BASE_URL"),
-     ("xai", "xAI", "https://api.x.ai/v1", ("XAI_API_KEY",), "XAI_BASE_URL"),
-     ("nvidia", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1", ("NVIDIA_API_KEY",), "NVIDIA_BASE_URL"),
-     ("ai-gateway", "Vercel AI Gateway", "https://ai-gateway.vercel.sh/v1", ("AI_GATEWAY_API_KEY",),
-@@ -234,11 +211,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
-      "OPENCODE_GO_BASE_URL"),
-     ("kilocode", "Kilo Code", "https://api.kilo.ai/api/gateway", ("KILOCODE_API_KEY",), "KILOCODE_BASE_URL"),
-     ("huggingface", "Hugging Face", "https://router.huggingface.co/v1", ("HF_TOKEN",), "HF_BASE_URL"),
--    ("xiaomi", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1", ("XIAOMI_API_KEY",), "XIAOMI_BASE_URL"),
--    ("tencent-tokenhub", "Tencent TokenHub", "https://tokenhub.tencentmaas.com/v1", ("TOKENHUB_API_KEY",),
--     "TOKENHUB_BASE_URL"),
--    ("tencent-tokenplan", "Tencent TokenPlan", "https://api.lkeap.cloud.tencent.com/plan/anthropic",
--     ("TOKENPLAN_API_KEY",), "TOKENPLAN_BASE_URL"),
-     ("ollama-cloud", "Ollama Cloud", DEFAULT_OLLAMA_CLOUD_BASE_URL, ("OLLAMA_API_KEY",), "OLLAMA_BASE_URL"),
-     ("bedrock", "AWS Bedrock", "https://bedrock-runtime.us-east-1.amazonaws.com", (), "BEDROCK_BASE_URL",
-      "aws_sdk"),
-@@ -1378,33 +1350,20 @@ def _refuse_env_adoption_if_config_corrupt() -> None:
- # (plugins/model-providers/<name>/) are layered on at call time; this hardcoded
- # table remains authoritative for existing names.
- _PROVIDER_ALIASES: Dict[str, str] = {
--    "glm": "zai", "z-ai": "zai", "z.ai": "zai", "zhipu": "zai",
-     "google": "gemini", "google-gemini": "gemini", "google-ai-studio": "gemini",
-     "x-ai": "xai", "x.ai": "xai", "grok": "xai",
-     "xai-oauth": "xai-oauth", "x-ai-oauth": "xai-oauth",
-     "grok-oauth": "xai-oauth", "xai-grok-oauth": "xai-oauth",
--    "kimi": "kimi-coding", "kimi-for-coding": "kimi-coding", "moonshot": "kimi-coding",
--    "kimi-cn": "kimi-coding-cn", "moonshot-cn": "kimi-coding-cn",
--    "step": "stepfun", "stepfun-coding-plan": "stepfun",
-     "arcee-ai": "arcee", "arceeai": "arcee",
-     "gmi-cloud": "gmi", "gmicloud": "gmi",
-     "actual-computer": "actual", "actualcomputer": "actual", "aci": "actual",
--    "minimax-china": "minimax-cn", "minimax_cn": "minimax-cn",
--    "minimax-portal": "minimax-oauth", "minimax-global": "minimax-oauth", "minimax_oauth": "minimax-oauth",
--    "alibaba_coding": "alibaba-coding-plan", "alibaba-coding": "alibaba-coding-plan",
--    "alibaba_coding_plan": "alibaba-coding-plan",
-     "claude": "anthropic", "claude-code": "anthropic",
-     "github": "copilot", "github-copilot": "copilot",
-     "github-models": "copilot", "github-model": "copilot",
-     "github-copilot-acp": "copilot-acp", "copilot-acp-agent": "copilot-acp",
-     "aigateway": "ai-gateway", "vercel": "ai-gateway", "vercel-ai-gateway": "ai-gateway",
-     "opencode": "opencode-zen", "zen": "opencode-zen",
--    "qwen-portal": "qwen-oauth", "qwen-cli": "qwen-oauth", "qwen-oauth": "qwen-oauth",
-     "hf": "huggingface", "hugging-face": "huggingface", "huggingface-hub": "huggingface",
--    "mimo": "xiaomi", "xiaomi-mimo": "xiaomi",
--    "tencent": "tencent-tokenhub", "tokenhub": "tencent-tokenhub",
--    "tencent-cloud": "tencent-tokenhub", "tencentmaas": "tencent-tokenhub",
--    "tokenplan": "tencent-tokenplan", "tencent-lkeap": "tencent-tokenplan",
-     "aws": "bedrock", "aws-bedrock": "bedrock", "amazon-bedrock": "bedrock", "amazon": "bedrock",
-     "go": "opencode-go", "opencode-go-sub": "opencode-go",
-     "kilo": "kilocode", "kilo-code": "kilocode", "kilo-gateway": "kilocode",
-@@ -1930,10 +1889,6 @@ OAUTH_PROVIDER_FLOWS: Dict[str, OAuthProviderFlow] = {
-         "xai-oauth", "resolve_xai_oauth_runtime_credentials", "get_xai_oauth_auth_status",
-         terminal_refresh_codes=frozenset({"xai_refresh_failed", "xai_auth_missing_refresh_token"}),
-         logout_from_config=True),
--    "qwen-oauth": OAuthProviderFlow(
--        "qwen-oauth", "resolve_qwen_runtime_credentials", "get_qwen_auth_status"),
--    "minimax-oauth": OAuthProviderFlow(
--        "minimax-oauth", "resolve_minimax_oauth_runtime_credentials", "get_minimax_oauth_auth_status"),
- }
- 
- 
-@@ -1998,16 +1953,13 @@ def _provider_env_base_url(pconfig: ProviderConfig) -> str:
- 
- 
- def get_api_key_provider_status(provider_id: str) -> Dict[str, Any]:
--    """Status snapshot for API-key providers (z.ai, Kimi, MiniMax)."""
-+    """Status snapshot for API-key providers."""
-     pconfig = _registry_lookup(provider_id)
-     if not pconfig or pconfig.auth_type != "api_key":
-         return {"configured": False}
-     api_key, key_source = _resolve_api_key_provider_secret(provider_id, pconfig)
-     env_url = _provider_env_base_url(pconfig)
--    if provider_id in {"kimi-coding", "kimi-coding-cn"}:
--        base_url = _resolve_kimi_base_url(api_key, pconfig.inference_base_url, env_url)
--    else:
--        base_url = env_url or pconfig.inference_base_url
-+    base_url = env_url or pconfig.inference_base_url
-     actual_local_noauth = False
-     if provider_id == "actual":
-         base_url = normalize_actual_base_url(base_url)
-@@ -2219,9 +2171,6 @@ def _copilot_runtime_base_url(api_key: str, default: str, env_url: str) -> str:
- # Providers whose runtime base URL is not simply env-override-or-registry-default:
- # ``(api_key, registry_default, env_override) -> base_url``.
- _API_KEY_BASE_URL_RESOLVERS: Dict[str, Callable[[str, str, str], str]] = {
--    "kimi-coding": _resolve_kimi_base_url,
--    "kimi-coding-cn": _resolve_kimi_base_url,
--    "zai": _resolve_zai_base_url,
-     "copilot": _copilot_runtime_base_url,
-     "lmstudio": lambda *a: _normalize_lmstudio_runtime_base_url(_default_api_key_base_url(*a)),
-     "actual": lambda *a: normalize_actual_base_url(_default_api_key_base_url(*a))}
-diff --git a/hermes_cli/auth_commands.py b/hermes_cli/auth_commands.py
-index 75d52b7aa..bf3f94c76 100644
---- a/hermes_cli/auth_commands.py
-+++ b/hermes_cli/auth_commands.py
-@@ -27,7 +27,7 @@ from hermes_cli.secret_prompt import masked_secret_prompt
- 
- 
- # Providers that support OAuth login in addition to API keys.
--_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter"}
-+_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "openrouter"}
- # ...and default to it when ``--type`` is omitted. OpenRouter stays API-key-first: the documented
- # ``hermes auth add openrouter --api-key sk-or-...`` must keep working with no ``--type``.
- _OAUTH_DEFAULT_PROVIDERS = _OAUTH_CAPABLE_PROVIDERS - {"openrouter"}
-@@ -207,14 +207,6 @@ def _anthropic_oauth_login(args) -> dict:
-     return creds
- 
- 
--def _qwen_oauth_login(args) -> dict:
--    from hermes_cli.auth_qwen import _mark_qwen_oauth_active
--
--    creds = auth_mod.resolve_qwen_runtime_credentials(refresh_if_expiring=False)
--    _mark_qwen_oauth_active(creds)
--    return creds
--
--
- @dataclass(frozen=True)
- class _OAuthAddSpec:
-     """Per-provider parameters for the generic ``hermes auth add <provider> --type oauth`` path."""
-@@ -271,19 +263,6 @@ _OAUTH_ADD_SPECS: dict[str, _OAuthAddSpec] = {
-             "base_url": creds.get("base_url") or auth_mod.DEFAULT_XAI_OAUTH_BASE_URL,
-             "last_refresh": creds.get("last_refresh")},
-         activate_first=True),
--    "qwen-oauth": _OAuthAddSpec(
--        login=_qwen_oauth_login,
--        token=lambda creds: creds["api_key"],
--        source=f"{SOURCE_MANUAL}:qwen_cli",
--        fields=lambda creds, provider: {"base_url": creds.get("base_url")}),
--    "minimax-oauth": _OAuthAddSpec(
--        login=lambda args: auth_mod._minimax_oauth_login(
--            open_browser=not getattr(args, "no_browser", False),
--            timeout_seconds=getattr(args, "timeout", None) or 15.0),
--        token=lambda creds: creds["access_token"],
--        source=f"{SOURCE_MANUAL}:minimax_oauth",
--        fields=lambda creds, provider: {
--            "refresh_token": creds.get("refresh_token"), "base_url": creds.get("inference_base_url")}),
-     "openrouter": _OAuthAddSpec(
-         login=lambda args: auth_mod._openrouter_pkce_login(
-             open_browser=not getattr(args, "no_browser", False),
-diff --git a/hermes_cli/gateway_setup_wizard.py b/hermes_cli/gateway_setup_wizard.py
-index 9f702a1cf..e8541674a 100644
---- a/hermes_cli/gateway_setup_wizard.py
-+++ b/hermes_cli/gateway_setup_wizard.py
-@@ -50,7 +50,6 @@ _PLATFORMS = [
-         ],
-     },
-     {"key": "signal", "label": "Signal", "emoji": "📡", "token_var": "SIGNAL_HTTP_URL"},
--    {"key": "weixin", "label": "Weixin / WeChat", "emoji": "💬", "token_var": "WEIXIN_ACCOUNT_ID"},
-     {
-         "key": "bluebubbles", "label": "BlueBubbles (iMessage)",
-         "emoji": "💬", "token_var": "BLUEBUBBLES_SERVER_URL",
-@@ -81,43 +80,6 @@ _PLATFORMS = [
-              "help": "Phone number or Apple ID to deliver cron results and notifications to."},
-         ],
-     },
--    {
--        "key": "qqbot", "label": "QQ Bot", "emoji": "🐧", "token_var": "QQ_APP_ID",
--        "setup_instructions": [
--            "1. Register a QQ Bot application at q.qq.com",
--            "2. Note your App ID and App Secret from the application page",
--            "3. Enable the required intents (C2C, Group, Guild messages)",
--            "4. Configure sandbox or publish the bot",
--        ],
--        "vars": [
--            {"name": "QQ_APP_ID", "prompt": "QQ Bot App ID", "password": False,
--             "help": "Your QQ Bot App ID from q.qq.com."},
--            {"name": "QQ_CLIENT_SECRET", "prompt": "QQ Bot App Secret", "password": True,
--             "help": "Your QQ Bot App Secret from q.qq.com."},
--            {"name": "QQ_ALLOWED_USERS",
--             "prompt": "Allowed user OpenIDs (comma-separated, leave empty for open access)",
--             "password": False, "is_allowlist": True,
--             "help": "Optional — restrict DM access to specific user OpenIDs."},
--            {"name": "QQBOT_HOME_CHANNEL",
--             "prompt": "Home channel (user/group OpenID for cron delivery, or empty)", "password": False,
--             "help": "OpenID to deliver cron results and notifications to."},
--        ],
--    },
--    {
--        "key": "yuanbao", "label": "Yuanbao", "emoji": "💎", "token_var": "YUANBAO_APP_ID",
--        "setup_instructions": [
--            "1. Download the Yuanbao app from https://yuanbao.tencent.com/",
--            "2. In the app, go to PAI → My Bot and create a new bot",
--            "3. After the bot is created, copy the App ID and App Secret",
--            "4. Enter them below and Hermes will connect automatically over WebSocket",
--        ],
--        "vars": [
--            {"name": "YUANBAO_APP_ID", "prompt": "App ID", "password": False,
--             "help": "The App ID from your Yuanbao IM Bot credentials."},
--            {"name": "YUANBAO_APP_SECRET", "prompt": "App Secret", "password": True,
--             "help": "The App Secret (used for HMAC signing) from your Yuanbao IM Bot."},
--        ],
--    },
- ]
- 
- 
-diff --git a/hermes_cli/main.py b/hermes_cli/main.py
-index 99b894e1c..69aa2c065 100644
---- a/hermes_cli/main.py
-+++ b/hermes_cli/main.py
-@@ -755,15 +755,11 @@ from hermes_cli.model_setup_flows import (
-     _model_flow_nous,
-     _model_flow_openai_codex,
-     _model_flow_xai_oauth,
--    _model_flow_qwen_oauth,
--    _model_flow_minimax_oauth,
-     _model_flow_custom,
-     _model_flow_azure_foundry,
-     _model_flow_named_custom,
-     _model_flow_copilot,
-     _model_flow_copilot_acp,
--    _model_flow_kimi,
--    _model_flow_stepfun,
-     _model_flow_bedrock,
-     _model_flow_vertex,
-     _model_flow_api_key_provider,
-@@ -1994,14 +1990,10 @@ _PROVIDER_MODEL_FLOWS = {
-     "nous": lambda c, m, a: _model_flow_nous(c, m, args=a),
-     "openai-codex": lambda c, m, a: _model_flow_openai_codex(c, m),
-     "xai-oauth": lambda c, m, a: _model_flow_xai_oauth(c, m, args=a),
--    "qwen-oauth": lambda c, m, a: _model_flow_qwen_oauth(c, m),
--    "minimax-oauth": lambda c, m, a: _model_flow_minimax_oauth(c, m, args=a),
-     "copilot-acp": lambda c, m, a: _model_flow_copilot_acp(c, m),
-     "copilot": lambda c, m, a: _model_flow_copilot(c, m),
-     "custom": lambda c, m, a: _model_flow_custom(c),
-     "anthropic": lambda c, m, a: _model_flow_anthropic(c, m),
--    "kimi-coding": lambda c, m, a: _model_flow_kimi(c, m),
--    "stepfun": lambda c, m, a: _model_flow_stepfun(c, m),
-     "bedrock": lambda c, m, a: _model_flow_bedrock(c, m),
-     "vertex": lambda c, m, a: _model_flow_vertex(c, m),
-     "azure-foundry": lambda c, m, a: _model_flow_azure_foundry(c, m),
-diff --git a/hermes_cli/plugin_catalog.py b/hermes_cli/plugin_catalog.py
-index 0f81d1b71..08bc17112 100644
---- a/hermes_cli/plugin_catalog.py
-+++ b/hermes_cli/plugin_catalog.py
-@@ -196,6 +196,19 @@ def _removed_from_list(raw_list: Any) -> List[RemovedEntry]:
- def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]:
-     """Every valid ``*.yaml`` entry in the catalog dir (``removed.yaml`` excluded), sorted by file name.
-     Malformed entries are skipped with a warning — never raises."""
-+    # Local removal: China-market catalog entries.
-+    # wechat-social-assistant (WeChat), volcengine-voice (ByteDance Doubao),
-+    # dashscope-image/-video (Alibaba), minimax-image/-video (MiniMax),
-+    # kimi-code-delegate (Moonshot Kimi), deepseek-whale (DeepSeek),
-+    # hermes-zh (Simplified-Chinese UI pack), cjk_sanitizer (CJK filter),
-+    # desensitize (Chinese-context PII, siliconflow.cn fallback).
-+    _REMOVED_CN_CATALOG_FILES = frozenset({
-+        "wechat-social-assistant.yaml", "volcengine-voice.yaml",
-+        "dashscope-image.yaml", "dashscope-video.yaml",
-+        "minimax-image.yaml", "minimax-video.yaml",
-+        "kimi-code-delegate.yaml", "deepseek-whale.yaml",
-+        "hermes-zh.yaml", "cjk_sanitizer.yaml", "desensitize.yaml",
-+    })
-     root = catalog_dir or get_catalog_dir()
-     if not root.is_dir():
-         return []
-@@ -203,6 +216,8 @@ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]
-     for path in sorted(root.glob("*.yaml")):
-         if path.name == "removed.yaml":
-             continue
-+        if path.name in _REMOVED_CN_CATALOG_FILES:
-+            continue
-         data = _read_yaml(path)
-         entry = entry_from_mapping(data, str(path)) if data is not None else None
-         if entry is not None:
-diff --git a/hermes_cli/plugins_discovery.py b/hermes_cli/plugins_discovery.py
-index e9645e51f..9decd89c3 100644
---- a/hermes_cli/plugins_discovery.py
-+++ b/hermes_cli/plugins_discovery.py
-@@ -248,6 +248,20 @@ def gate_manifest(
-             f"{RELAY_PLUGINS_CONFIG_ENV} instead"
-         )
-         return _placeholder(error, logging.WARNING, "Refusing to load removed Hermes Relay plugin '%s'; %s", error)
-+    # Local removal: China-market platform plugins (all install sources:
-+    # bundled, user ~/.hermes/plugins, project .hermes/plugins, entry points).
-+    # dingtalk (Alibaba), feishu (ByteDance; also disables Lark
-+    # international, same adapter), wecom (Tencent Enterprise WeChat).
-+    _REMOVED_CN_PLATFORM_KEYS = frozenset({
-+        "platforms/dingtalk", "platforms/feishu", "platforms/wecom",
-+        "dingtalk-platform", "feishu-platform", "wecom-platform",
-+        "dingtalk", "feishu", "wecom",
-+    })
-+    manifest_path = str(manifest.path or "")
-+    if (names & _REMOVED_CN_PLATFORM_KEYS
-+            or any(k in manifest_path for k in ("/platforms/dingtalk", "/platforms/feishu", "/platforms/wecom"))):
-+        error = "removed — China-market platform disabled by local patch"
-+        return _placeholder(error, logging.WARNING, "Refusing to load removed China-market plugin '%s'; %s", error)
-     if names & disabled:
-         return _placeholder("disabled via config", logging.DEBUG, "Skipping disabled plugin '%s'")
-     # Exclusive plugins (memory providers) have their own activation path; record only.
-diff --git a/hermes_cli/tools_config.py b/hermes_cli/tools_config.py
-index 95ded5341..58ca3a4cb 100644
---- a/hermes_cli/tools_config.py
-+++ b/hermes_cli/tools_config.py
-@@ -91,7 +91,6 @@ CONFIGURABLE_TOOLSETS = [
-     ("spotify",          "🎵 Spotify",                  "playback, search, playlists, library"),
-     ("discord",         "💬 Discord (read/participate)", "fetch messages, search members, create thread"),
-     ("discord_admin",   "🛡️  Discord Server Admin",    "list channels/roles, pin, assign roles"),
--    ("yuanbao",          "🤖 Yuanbao",                  "group info, member queries, DM"),
-     ("computer_use",     "🖱️  Computer Use (macOS/Windows/Linux)", "background desktop control via cua-driver"),
- ]
- 
-@@ -399,7 +398,7 @@ TOOLSET_ENV_REQUIREMENTS = {"vision": [("OPENROUTER_API_KEY", "https://openroute
- # --- Platform / Toolset Helpers ---
- _PLATFORM_ENABLE_ENV_VARS = (
-     ("telegram", "TELEGRAM_BOT_TOKEN"), ("discord", "DISCORD_BOT_TOKEN"), ("slack", "SLACK_BOT_TOKEN"),
--    ("whatsapp", "WHATSAPP_ENABLED"), ("qqbot", "QQ_APP_ID"))
-+    ("whatsapp", "WHATSAPP_ENABLED"))
- 
- 
- def _get_enabled_platforms() -> List[str]:
-@@ -666,7 +665,7 @@ def _prune_toolsets_stripped_by_disabled(enabled_toolsets: Set[str], disabled_na
- 
- 
- def _recover_platform_native_toolsets(enabled_toolsets: Set[str], platform: str, *, skip: Set[str]) -> None:
--    """Add non-configurable platform toolsets (discord, feishu_*) in place: in the default composite but not in
-+    """Add non-configurable platform toolsets (discord) in place: in the default composite but not in
-     CONFIGURABLE_TOOLSETS, so never in a checklist or saved list. Runs for BOTH ``_get_platform_tools`` branches."""
-     from toolsets import resolve_toolset, TOOLSETS
- 
-diff --git a/providers/__init__.py b/providers/__init__.py
-index 373bd507a..7d5eae3ac 100644
---- a/providers/__init__.py
-+++ b/providers/__init__.py
-@@ -94,6 +94,18 @@ _BUNDLED_PLUGINS_DIR = (
- )
- 
- 
-+# Local removal: China-market model providers (vendors headquartered in
-+# mainland China). Both the international and the explicit *-cn endpoints are
-+# skipped, because the vendor itself is China-specific.
-+# Covers: alibaba (+ -cn, token-plan, token-plan-cn), alibaba-coding-plan
-+# (+ -cn), deepseek, kimi-coding (+ -cn / Moonshot), minimax (+ -cn, -oauth),
-+# qwen-oauth (Alibaba Qwen), stepfun, xiaomi (MiMo), zai (Zhipu Z.AI / GLM).
-+_REMOVED_CN_MODEL_PROVIDERS = frozenset({
-+    "alibaba", "alibaba-coding-plan", "deepseek", "kimi-coding", "minimax",
-+    "qwen-oauth", "stepfun", "xiaomi", "zai",
-+})
-+
-+
- def _sync_auth_registry() -> None:
-     """Mirror profiles into the ``hermes_cli`` snapshots (auth registry, picker catalog) that are loaded.
- 
-@@ -601,6 +613,9 @@ def _run_discovery_steps() -> None:
-         for child in sorted(_BUNDLED_PLUGINS_DIR.iterdir()):
-             if not child.is_dir() or child.name.startswith(("_", ".")):
-                 continue
-+            if child.name in _REMOVED_CN_MODEL_PROVIDERS:
-+                logger.debug("Skipping removed China-market provider '%s'", child.name)
-+                continue
-             _import_plugin_dir(child, "bundled")
- 
-     # 2. Legacy single-file profiles at providers/<name>.py. Kept for
 diff --git a/tools/send_message_tool.py b/tools/send_message_tool.py
-index 48c7e9646..d243ed295 100644
+index a8d5ba667a..cfce395f9f 100644
 --- a/tools/send_message_tool.py
 +++ b/tools/send_message_tool.py
 @@ -16,7 +16,7 @@ from tools.send_message_senders import (
@@ -4524,7 +4507,7 @@ index 48c7e9646..d243ed295 100644
      if platform == Platform.TELEGRAM:
          return await _send_telegram(
 diff --git a/toolsets.py b/toolsets.py
-index 89386334b..a013bfc86 100644
+index 0918c4696b..812468e5bd 100644
 --- a/toolsets.py
 +++ b/toolsets.py
 @@ -43,11 +43,6 @@ _HERMES_CORE_TOOLS = [
@@ -4580,24 +4563,79 @@ index 89386334b..a013bfc86 100644
          ],
      ),
  }
-diff --git a/hermes_cli/web_server_messaging.py b/hermes_cli/web_server_messaging.py
-index 487771ffd..4ede1139c 100644
---- a/hermes_cli/web_server_messaging.py
-+++ b/hermes_cli/web_server_messaging.py
-@@ -253,7 +253,16 @@ def _messaging_platform_catalog() -> tuple[dict[str, Any], ...]:
-     seen: set[str] = set()
-     entries: list[dict[str, Any]] = []
-     builtin = [m.value for m in Platform.__members__.values() if m.value != "local"]
-+    # Local removal: China-market platforms never get UI cards, even though the
-+    # Platform enum keeps the members so old configs fail gracefully (warning +
-+    # skip at adapter instantiation instead of an unknown-platform crash).
-+    _REMOVED_CN_PLATFORM_IDS = frozenset({
-+        "dingtalk", "feishu", "wecom", "wecom_callback",
-+        "weixin", "qqbot", "yuanbao",
-+    })
-     for pid in builtin + list(plugin_map):
-+        if pid in _REMOVED_CN_PLATFORM_IDS:
-+            continue
-         if pid in seen:
-             continue
-         seen.add(pid)
+diff --git a/tui_gateway/change_watcher.py b/tui_gateway/change_watcher.py
+index 0e4e8067ce..d9021b32c3 100644
+--- a/tui_gateway/change_watcher.py
++++ b/tui_gateway/change_watcher.py
+@@ -60,7 +60,7 @@ def _newest_mtime_ns(paths) -> int | None:
+ def _skin_sig() -> tuple[str, float | None]:
+     """(active skin name, its user-file mtime). Built-ins have no file, so only
+     their name moves; a user skin's mtime lets an in-place color edit repaint too."""
+-    name = str((_load_cfg().get("display") or {}).get("skin") or "default")
++    name = str((_load_cfg().get("display") or {}).get("skin") or "flexpair-dark")
+     try:
+         return name, (_watcher_home() / "skins" / f"{name}.yaml").stat().st_mtime
+     except OSError:
+diff --git a/tui_gateway/methods_config.py b/tui_gateway/methods_config.py
+index fe68cc9f22..3a628a40f4 100644
+--- a/tui_gateway/methods_config.py
++++ b/tui_gateway/methods_config.py
+@@ -177,6 +177,10 @@ def _display_word(key: str, default: str, allowed) -> str:
+     raw = str(_display_raw().get(key, default) or "").strip().lower()
+     return raw if raw in allowed else default
+ 
++def _cfg_get_skin(params):
++    skin = _display_raw().get("skin")
++    return {"value": skin.strip() if isinstance(skin, str) and skin.strip() else "flexpair-dark"}
++
+ 
+ _THINKING_MODES = frozenset({"collapsed", "truncated", "full"})
+ 
+@@ -261,7 +265,7 @@ _CONFIG_GETTERS = {
+     "project": _cfg_get_project,
+     "full": lambda params: {"config": _load_cfg()},
+     "prompt": lambda params: {"prompt": _load_cfg().get("custom_prompt", "")},
+-    "skin": lambda params: {"value": _display_raw().get("skin", "default")},
++    "skin": _cfg_get_skin,
+     # Normalised like the TUI renders it (frontend falls back to the default for the same inputs).
+     "indicator": lambda params: {
+         "value": _display_word("tui_status_indicator", DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES)},
+diff --git a/website/docs/user-guide/configuration.md b/website/docs/user-guide/configuration.md
+index a71c321f11..cb0c42cba8 100644
+--- a/website/docs/user-guide/configuration.md
++++ b/website/docs/user-guide/configuration.md
+@@ -2182,7 +2182,7 @@ display:
+   interim_assistant_messages: true  # Gateway: send natural mid-turn assistant updates as separate messages
+   suppress_warning_notifications: false  # Opt-in: hide automatic warning/diagnostic notices (see messaging guide)
+   show_commentary: true   # Codex models: deliver commentary-channel progress narration as visible mid-turn updates
+-  skin: default           # Built-in or custom CLI skin (see user-guide/features/skins)
++  skin: flexpair-dark     # Built-in or custom CLI skin (see user-guide/features/skins)
+   personality: ""         # Legacy cosmetic field still surfaced in some summaries
+   compact: false          # Compact output mode (less whitespace)
+   cli_multiline_shortcuts: true  # CLI: Ctrl+J, \ + Enter, and supported Shift+Enter insert newlines (false = legacy c-j submit fallback)
+diff --git a/website/docs/user-guide/features/skins.md b/website/docs/user-guide/features/skins.md
+index 5fb780757b..0f052b4162 100644
+--- a/website/docs/user-guide/features/skins.md
++++ b/website/docs/user-guide/features/skins.md
+@@ -25,9 +25,11 @@ Or set the default skin in `~/.hermes/config.yaml`:
+ 
+ ```yaml
+ display:
+-  skin: default
++  skin: flexpair-dark
+ ```
+ 
++If `display.skin` is unset or blank, the CLI and TUI use `flexpair-dark`. Set `display.skin: default` to select the classic Hermes appearance explicitly.
++
+ ## Built-in skins
+ 
+ | Skin | Description | Agent branding | Visual character |
+@@ -41,6 +43,8 @@ display:
+ | `poseidon` | Ocean-god theme — deep blue and seafoam | `Poseidon Agent` | Deep blue to seafoam gradient. Ocean-themed spinners ("charting currents", "sounding the depth"). Trident ASCII art banner. |
+ | `sisyphus` | Sisyphean theme — austere grayscale with persistence | `Sisyphus Agent` | Light grays with stark contrast. Boulder-themed spinners ("pushing uphill", "resetting the boulder", "enduring the loop"). Boulder-and-hill ASCII art banner. |
+ | `charizard` | Volcanic theme — burnt orange and ember | `Charizard Agent` | Warm burnt orange to ember gradient. Fire-themed spinners ("banking into the draft", "measuring burn"). Dragon-silhouette ASCII art banner. |
++| `flexpair-dark` | Flexpair dark theme (unconfigured default) | `Hermes Agent` | Cyan on deep teal. |
++| `flexpair-light` | Flexpair light theme | `Hermes Agent` | Teal on white. |
+ 
+ ## Complete list of configurable keys
+ 

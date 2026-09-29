@@ -3335,13 +3335,16 @@ def _builtin_adapter_import(module: str, adapter_name: str, requirement: str):
 
 
 # platform -> (module, adapter class, requirements probe, warning on probe failure).
+# Local removal: China-market builtin adapters (Tencent) deleted here:
+# Platform.WEIXIN (WeChat/iLink), Platform.QQBOT (QQ Bot),
+# Platform.YUANBAO (Tencent Yuanbao). Source files
+# (gateway/platforms/weixin.py, qqbot/, yuanbao*.py) stay on disk but are
+# never instantiated. Existing configs using them log a warning and skip.
 _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
     Platform.WHATSAPP_CLOUD: ("whatsapp_cloud", "WhatsAppCloudAdapter", "check_whatsapp_cloud_requirements",
                               "WhatsApp Cloud: aiohttp/httpx missing — reinstall hermes-agent"),
     Platform.SIGNAL: ("signal", "SignalAdapter", "check_signal_requirements",
                       "Signal: runtime requirements not met"),
-    Platform.WEIXIN: ("weixin", "WeixinAdapter", "check_weixin_requirements",
-                      "Weixin: aiohttp/cryptography not installed"),
     Platform.API_SERVER: ("api_server", "APIServerAdapter", "check_api_server_requirements",
                           "API Server: aiohttp not installed"),
     Platform.WEBHOOK: ("webhook", "WebhookAdapter", "check_webhook_requirements",
@@ -3350,14 +3353,19 @@ _BUILTIN_ADAPTERS: dict[Platform, tuple[str, str, str, str]] = {
                                "MSGraph webhook: aiohttp not installed"),
     Platform.BLUEBUBBLES: ("bluebubbles", "BlueBubblesAdapter", "check_bluebubbles_requirements",
                            "BlueBubbles: aiohttp/httpx missing or BLUEBUBBLES_SERVER_URL/BLUEBUBBLES_PASSWORD not configured"),
-    Platform.QQBOT: ("qqbot", "QQAdapter", "check_qq_requirements",
-                     "QQBot: aiohttp/httpx missing or QQ_APP_ID/QQ_CLIENT_SECRET not configured"),
-    Platform.YUANBAO: ("yuanbao", "YuanbaoAdapter", "WEBSOCKETS_AVAILABLE",
-                       "Yuanbao: websockets not installed. Run: pip install websockets")}
+}
+_REMOVED_CN_BUILTIN_PLATFORMS = frozenset({"weixin", "qqbot", "yuanbao"})
 
 
 def _instantiate_builtin_adapter(platform: Platform, config: Any) -> Optional[BasePlatformAdapter]:
     """Instantiate a core (non-plugin) adapter, or None when its requirements are unmet/unknown."""
+    try:
+        _platform_value = platform.value if isinstance(platform, Platform) else str(platform)
+    except Exception:
+        _platform_value = str(platform)
+    if _platform_value in _REMOVED_CN_BUILTIN_PLATFORMS:
+        logger.warning("Skipping removed China-market platform '%s'", _platform_value)
+        return None
     spec = _BUILTIN_ADAPTERS.get(platform)
     if spec is None:
         return None

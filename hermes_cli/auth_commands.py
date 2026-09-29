@@ -27,7 +27,7 @@ from hermes_cli.secret_prompt import masked_secret_prompt
 
 
 # Providers that support OAuth login in addition to API keys.
-_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "qwen-oauth", "minimax-oauth", "openrouter"}
+_OAUTH_CAPABLE_PROVIDERS = {"anthropic", "nous", "openai-codex", "xai-oauth", "openrouter"}
 # ...and default to it when ``--type`` is omitted. OpenRouter stays API-key-first: the documented
 # ``hermes auth add openrouter --api-key sk-or-...`` must keep working with no ``--type``.
 _OAUTH_DEFAULT_PROVIDERS = _OAUTH_CAPABLE_PROVIDERS - {"openrouter"}
@@ -207,14 +207,6 @@ def _anthropic_oauth_login(args) -> dict:
     return creds
 
 
-def _qwen_oauth_login(args) -> dict:
-    from hermes_cli.auth_qwen import _mark_qwen_oauth_active
-
-    creds = auth_mod.resolve_qwen_runtime_credentials(refresh_if_expiring=False)
-    _mark_qwen_oauth_active(creds)
-    return creds
-
-
 @dataclass(frozen=True)
 class _OAuthAddSpec:
     """Per-provider parameters for the generic ``hermes auth add <provider> --type oauth`` path."""
@@ -271,19 +263,6 @@ _OAUTH_ADD_SPECS: dict[str, _OAuthAddSpec] = {
             "base_url": creds.get("base_url") or auth_mod.DEFAULT_XAI_OAUTH_BASE_URL,
             "last_refresh": creds.get("last_refresh")},
         activate_first=True),
-    "qwen-oauth": _OAuthAddSpec(
-        login=_qwen_oauth_login,
-        token=lambda creds: creds["api_key"],
-        source=f"{SOURCE_MANUAL}:qwen_cli",
-        fields=lambda creds, provider: {"base_url": creds.get("base_url")}),
-    "minimax-oauth": _OAuthAddSpec(
-        login=lambda args: auth_mod._minimax_oauth_login(
-            open_browser=not getattr(args, "no_browser", False),
-            timeout_seconds=getattr(args, "timeout", None) or 15.0),
-        token=lambda creds: creds["access_token"],
-        source=f"{SOURCE_MANUAL}:minimax_oauth",
-        fields=lambda creds, provider: {
-            "refresh_token": creds.get("refresh_token"), "base_url": creds.get("inference_base_url")}),
     "openrouter": _OAuthAddSpec(
         login=lambda args: auth_mod._openrouter_pkce_login(
             open_browser=not getattr(args, "no_browser", False),

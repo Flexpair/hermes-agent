@@ -182,9 +182,7 @@ export const LOCALE_ENDONYMS = {
   pt: 'Português',
   ru: 'Русский',
   tr: 'Türkçe',
-  uk: 'Українська',
-  zh: '简体中文',
-  'zh-hant': '繁體中文'
+  uk: 'Українська'
 } as const satisfies Record<string, string>
 
 export type EndonymLocale = keyof typeof LOCALE_ENDONYMS

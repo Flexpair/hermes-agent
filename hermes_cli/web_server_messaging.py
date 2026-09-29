@@ -253,7 +253,16 @@ def _messaging_platform_catalog() -> tuple[dict[str, Any], ...]:
     seen: set[str] = set()
     entries: list[dict[str, Any]] = []
     builtin = [m.value for m in Platform.__members__.values() if m.value != "local"]
+    # Local removal: China-market platforms never get UI cards, even though the
+    # Platform enum keeps the members so old configs fail gracefully (warning +
+    # skip at adapter instantiation instead of an unknown-platform crash).
+    _REMOVED_CN_PLATFORM_IDS = frozenset({
+        "dingtalk", "feishu", "wecom", "wecom_callback",
+        "weixin", "qqbot", "yuanbao",
+    })
     for pid in builtin + list(plugin_map):
+        if pid in _REMOVED_CN_PLATFORM_IDS:
+            continue
         if pid in seen:
             continue
         seen.add(pid)
