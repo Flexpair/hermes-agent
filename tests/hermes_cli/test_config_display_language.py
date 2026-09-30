@@ -37,9 +37,12 @@ def _saved_language(home) -> str:
 def test_bundled_language_and_alias_are_accepted(home, capsys):
     set_config_value("display.language", "de")
     assert _saved_language(home) == "de"
-    set_config_value("display.language", "zh-TW")  # alias of a bundled catalog; stored as typed
-    assert _saved_language(home) == "zh-TW"
-    assert i18n.get_language() == "zh-hant"
+    set_config_value("display.language", "de-DE")  # bundled catalog alias; stored as typed
+    assert _saved_language(home) == "de-DE"
+    assert i18n.get_language() == "de"
+    with pytest.raises(SystemExit):
+        set_config_value("display.language", "zh-TW")
+    assert _saved_language(home) == "de-DE"
 
 
 def test_unknown_language_is_refused_with_the_available_list(home, capsys):

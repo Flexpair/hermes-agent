@@ -39,11 +39,12 @@ jobs:
         run: |
           set -euo pipefail
           test -f flexpair.patch
-          # The branch and fork main share the patch-only commit. Its parent
-          # is the upstream-synced source tree against which this patch is built.
-          patch_commit=$(git merge-base HEAD origin/main)
-          test -n "$patch_commit"
-          base=$(git rev-parse "${patch_commit}^" 2>/dev/null)
+          # Fork main carries the patch across upstream merges. Follow its
+          # first-parent history to the latest upstream merge, then replay
+          # against that merge's upstream (second) parent, not fork history.
+          upstream_merge=$(git rev-list --first-parent --merges -1 HEAD)
+          test -n "$upstream_merge"
+          base=$(git rev-parse "${upstream_merge}^2")
           index=$(mktemp "${RUNNER_TEMP}/flexpair-index.XXXXXX")
           trap 'rm -f "$index"' EXIT
           rm -f "$index"

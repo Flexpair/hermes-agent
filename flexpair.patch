@@ -345,10 +345,10 @@ index 0000000000..f0ee2bbb25
 \ No newline at end of file
 diff --git a/.github/workflows/flexpair-patch-replay.yml b/.github/workflows/flexpair-patch-replay.yml
 new file mode 100644
-index 0000000000..6e52dad070
+index 0000000000..b055f3c0e1
 --- /dev/null
 +++ b/.github/workflows/flexpair-patch-replay.yml
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,65 @@
 +name: Flexpair patch replay
 +
 +on:
@@ -390,11 +390,12 @@ index 0000000000..6e52dad070
 +        run: |
 +          set -euo pipefail
 +          test -f flexpair.patch
-+          # The branch and fork main share the patch-only commit. Its parent
-+          # is the upstream-synced source tree against which this patch is built.
-+          patch_commit=$(git merge-base HEAD origin/main)
-+          test -n "$patch_commit"
-+          base=$(git rev-parse "${patch_commit}^" 2>/dev/null)
++          # Fork main carries the patch across upstream merges. Follow its
++          # first-parent history to the latest upstream merge, then replay
++          # against that merge's upstream (second) parent, not fork history.
++          upstream_merge=$(git rev-list --first-parent --merges -1 HEAD)
++          test -n "$upstream_merge"
++          base=$(git rev-parse "${upstream_merge}^2")
 +          index=$(mktemp "${RUNNER_TEMP}/flexpair-index.XXXXXX")
 +          trap 'rm -f "$index"' EXIT
 +          rm -f "$index"
@@ -3407,6 +3408,39 @@ index 7fb564fa0c..ad7977046a 100644
  
      def test_secret_prompt_fragments_preserve_secret_state(self):
          cli = _make_cli_stub()
+diff --git a/tests/hermes_cli/test_config_display_language.py b/tests/hermes_cli/test_config_display_language.py
+index 4446996f02..b3bedcf9a8 100644
+--- a/tests/hermes_cli/test_config_display_language.py
++++ b/tests/hermes_cli/test_config_display_language.py
+@@ -37,9 +37,12 @@ def _saved_language(home) -> str:
+ def test_bundled_language_and_alias_are_accepted(home, capsys):
+     set_config_value("display.language", "de")
+     assert _saved_language(home) == "de"
+-    set_config_value("display.language", "zh-TW")  # alias of a bundled catalog; stored as typed
+-    assert _saved_language(home) == "zh-TW"
+-    assert i18n.get_language() == "zh-hant"
++    set_config_value("display.language", "de-DE")  # bundled catalog alias; stored as typed
++    assert _saved_language(home) == "de-DE"
++    assert i18n.get_language() == "de"
++    with pytest.raises(SystemExit):
++        set_config_value("display.language", "zh-TW")
++    assert _saved_language(home) == "de-DE"
+ 
+ 
+ def test_unknown_language_is_refused_with_the_available_list(home, capsys):
+diff --git a/tests/hermes_cli/test_configured_builtin_models.py b/tests/hermes_cli/test_configured_builtin_models.py
+index c96dc66a22..636fe4599e 100644
+--- a/tests/hermes_cli/test_configured_builtin_models.py
++++ b/tests/hermes_cli/test_configured_builtin_models.py
+@@ -19,6 +19,8 @@ def _provider_row(configured_models, *, max_models=None):
+             "hermes_cli.models.cached_provider_model_ids",
+             return_value=["live-a", "shared"],
+         ),
++        patch("hermes_cli.model_switch_providers._live_or_curated_ids", return_value=["live-a", "shared"]),
++        patch("hermes_cli.auth.is_runtime_provider_routable", return_value=True),
+         patch("hermes_cli.providers.HERMES_OVERLAYS", {}),
+         patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}),
+     ):
 diff --git a/tests/hermes_cli/test_flexpair_fixed_install.py b/tests/hermes_cli/test_flexpair_fixed_install.py
 new file mode 100644
 index 0000000000..4306952e10
@@ -3647,6 +3681,38 @@ index f69846ed4d..c82c8edf68 100644
  
  
  # A `light_colors`/`dark_colors` block is an OVERLAY on `colors`, not a full
+diff --git a/tests/hermes_cli/test_tools_config.py b/tests/hermes_cli/test_tools_config.py
+index 93813f26e4..180cffe0cd 100644
+--- a/tests/hermes_cli/test_tools_config.py
++++ b/tests/hermes_cli/test_tools_config.py
+@@ -318,8 +318,12 @@ class TestPlatformToolsetConsistency:
+         from hermes_cli.tools_config import PLATFORMS
+         from toolsets import TOOLSETS
+ 
++        unsupported = {"dingtalk", "feishu", "wecom", "wecom_callback", "weixin", "qqbot", "yuanbao"}
+         for platform, meta in PLATFORMS.items():
+             ts_name = meta["default_toolset"]
++            if platform in unsupported:
++                assert ts_name not in TOOLSETS  # Removed in this build.
++                continue
+             assert ts_name in TOOLSETS, (
+                 f"Platform {platform!r} references toolset {ts_name!r} "
+                 f"which is not defined in toolsets.py"
+@@ -333,10 +337,14 @@ class TestPlatformToolsetConsistency:
+         gateway_includes = set(TOOLSETS["hermes-gateway"]["includes"])
+         # Exclude non-messaging platforms from the check
+         non_messaging = {"cli", "api_server", "cron"}
++        unsupported = {"dingtalk", "feishu", "wecom", "wecom_callback", "weixin", "qqbot", "yuanbao"}
+         for platform, meta in PLATFORMS.items():
+             if platform in non_messaging:
+                 continue
+             ts_name = meta["default_toolset"]
++            if platform in unsupported:
++                assert ts_name not in gateway_includes  # Removed from the gateway toolset.
++                continue
+             assert ts_name in gateway_includes, (
+                 f"Platform {platform!r} toolset {ts_name!r} missing from "
+                 f"hermes-gateway includes"
 diff --git a/tests/hermes_cli/test_update_apply_shallow_count.py b/tests/hermes_cli/test_update_apply_shallow_count.py
 index 4dc19589ac..e5321beec8 100644
 --- a/tests/hermes_cli/test_update_apply_shallow_count.py
@@ -4113,6 +4179,57 @@ index b24bf2fd3c..c731ac574a 100644
  def test_admission_apt_termux_command_comes_from_steward_table(tmp_path, monkeypatch):
      """The apt-termux remediation command is read from the config module's
      ``_UPDATE_COMMAND_BY_METHOD`` table (the same one every install method
+diff --git a/tests/hermes_cli/test_update_missing_configured_deps.py b/tests/hermes_cli/test_update_missing_configured_deps.py
+index 45c3480f2f..0a61a81688 100644
+--- a/tests/hermes_cli/test_update_missing_configured_deps.py
++++ b/tests/hermes_cli/test_update_missing_configured_deps.py
+@@ -31,8 +31,8 @@ def configured_update(source_launch, tmp_path, monkeypatch):
+     # Reuse installed core libraries without exposing the updater's site tree:
+     # neither SDK, executable .pth hooks, nor editable package finders cross over.
+     for path in Path(sysconfig.get_path("purelib")).iterdir():
+-        if (path.name in {"lark_oapi", "mcp", "__pycache__"}
+-                or path.name.startswith(("lark_oapi-", "mcp-", "__editable__"))
++        if (path.name in {"mcp", "__pycache__"}
++                or path.name.startswith(("mcp-", "__editable__"))
+                 or path.suffix == ".pth" or (site / path.name).exists()):
+             continue
+         (site / path.name).symlink_to(path, target_is_directory=path.is_dir())
+@@ -64,14 +64,13 @@ def configured_update(source_launch, tmp_path, monkeypatch):
+     home = tmp_path / "home"
+     config = home / "config.yaml"
+     config.write_text(
+-        "platforms:\n  feishu:\n    enabled: true\n    extra:\n      app_id: cli_x\n      app_secret: y\n"
+         "mcp_servers:\n  fixture:\n    command: must-not-run\n",
+         encoding="utf-8",
+     )
+     monkeypatch.setenv("HERMES_DISABLE_LAZY_INSTALLS", "1")
+     # A stale positive verdict in the updater must not conceal missing child SDKs.
+     from types import ModuleType
+-    for name in ("lark_oapi", "mcp"):
++    for name in ("mcp",):
+         monkeypatch.setitem(sys.modules, name, ModuleType(name))
+     return root, selected, site, config, build_in_child
+ 
+@@ -83,8 +82,8 @@ def test_update_names_missing_configured_features_from_selected_child(configured
+     build()
+     out = capfd.readouterr().out
+     assert "fail to load them on restart" in out
+-    assert "Feishu / Lark" in out and "MCP servers" in out
+-    assert "hermes setup" in out and "hermes pm" in out
++    assert "MCP servers" in out
++    assert "hermes pm" in out
+     target = json.loads(next(line.removeprefix("TARGET=") for line in out.splitlines() if line.startswith("TARGET=")))
+     assert Path(target["prefix"]) == selected
+     assert Path(target["python"]).parent.parent == selected
+@@ -92,7 +91,7 @@ def test_update_names_missing_configured_features_from_selected_child(configured
+     assert not (root / ".update-incomplete").exists()
+ 
+     # Only the target gains the anchors; no updater module/cache is repaired.
+-    for name in ("lark_oapi", "mcp"):
++    for name in ("mcp",):
+         (site / f"{name}.py").write_text("# Passive dependency-probe fixture.\n", encoding="utf-8")
+     build()
+     assert "fail to load them on restart" not in capfd.readouterr().out
 diff --git a/tests/hermes_cli/test_web_server.py b/tests/hermes_cli/test_web_server.py
 index 913455c2e9..1b085ce83b 100644
 --- a/tests/hermes_cli/test_web_server.py
@@ -4270,7 +4387,7 @@ index 0000000000..b9559d035f
 +    assert result.returncode == 0, result.stderr
 +    assert tuple(result.stdout.splitlines()) == EXPECTED_URLS
 diff --git a/tests/scripts/install/test_install_sh_repository_stage.py b/tests/scripts/install/test_install_sh_repository_stage.py
-index 4d0da0c4ec..f9de856b92 100644
+index 4d0da0c4ec..3c9be12be2 100644
 --- a/tests/scripts/install/test_install_sh_repository_stage.py
 +++ b/tests/scripts/install/test_install_sh_repository_stage.py
 @@ -56,19 +56,20 @@ def test_piped_one_liner_runs_the_installer():
@@ -4377,6 +4494,29 @@ index 4d0da0c4ec..f9de856b92 100644
  
  
  def test_path_uv_is_never_used_even_when_newer_than_the_pin(tmp_path):
+@@ -169,9 +175,8 @@ def test_interactive_stages_skip_without_a_terminal(tmp_path):
+     assert "no terminal" in result.stdout + result.stderr
+ 
+ 
+-def test_rerun_marks_partial_clone_packs_when_the_fetch_crashes(tmp_path):
+-    """git 2.53+ aborts fetches into a partial clone with unmarked packs (#124272); the installer
+-    rerun is the recovery for installs whose own updater cannot fetch, so it marks them first."""
++def test_rerun_refuses_partial_clone_recovery_without_modifying_packs(tmp_path):
++    """A disabled update must not fetch or modify even an unmarked partial-clone pack."""
+     origin = _origin(tmp_path / "origin")
+     assert _stage(tmp_path, origin).returncode == 0
+     install = tmp_path / "install"
+@@ -187,6 +192,7 @@ def test_rerun_marks_partial_clone_packs_when_the_fetch_crashes(tmp_path):
+         'command git "$@"; }'
+     )
+     result = _stage(tmp_path, origin, prelude=crashing_fetch)
+-    assert result.returncode == 0, result.stdout + result.stderr
+-    assert (install / "README").read_text() == "two"
+-    assert all(p.with_suffix(".promisor").exists() for p in packs)
++    assert result.returncode != 0
++    assert "Updates are disabled" in result.stderr
++    assert (install / "README").read_text() == "one"
++    assert not any(p.with_suffix(".promisor").exists() for p in packs)
 diff --git a/tests/scripts/install/test_install_sh_termux_refusal.py b/tests/scripts/install/test_install_sh_termux_refusal.py
 index d42c4646b2..c1bbaa3bac 100644
 --- a/tests/scripts/install/test_install_sh_termux_refusal.py

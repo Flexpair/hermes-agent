@@ -318,8 +318,12 @@ class TestPlatformToolsetConsistency:
         from hermes_cli.tools_config import PLATFORMS
         from toolsets import TOOLSETS
 
+        unsupported = {"dingtalk", "feishu", "wecom", "wecom_callback", "weixin", "qqbot", "yuanbao"}
         for platform, meta in PLATFORMS.items():
             ts_name = meta["default_toolset"]
+            if platform in unsupported:
+                assert ts_name not in TOOLSETS  # Removed in this build.
+                continue
             assert ts_name in TOOLSETS, (
                 f"Platform {platform!r} references toolset {ts_name!r} "
                 f"which is not defined in toolsets.py"
@@ -333,10 +337,14 @@ class TestPlatformToolsetConsistency:
         gateway_includes = set(TOOLSETS["hermes-gateway"]["includes"])
         # Exclude non-messaging platforms from the check
         non_messaging = {"cli", "api_server", "cron"}
+        unsupported = {"dingtalk", "feishu", "wecom", "wecom_callback", "weixin", "qqbot", "yuanbao"}
         for platform, meta in PLATFORMS.items():
             if platform in non_messaging:
                 continue
             ts_name = meta["default_toolset"]
+            if platform in unsupported:
+                assert ts_name not in gateway_includes  # Removed from the gateway toolset.
+                continue
             assert ts_name in gateway_includes, (
                 f"Platform {platform!r} toolset {ts_name!r} missing from "
                 f"hermes-gateway includes"

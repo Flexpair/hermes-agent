@@ -175,9 +175,8 @@ def test_interactive_stages_skip_without_a_terminal(tmp_path):
     assert "no terminal" in result.stdout + result.stderr
 
 
-def test_rerun_marks_partial_clone_packs_when_the_fetch_crashes(tmp_path):
-    """git 2.53+ aborts fetches into a partial clone with unmarked packs (#124272); the installer
-    rerun is the recovery for installs whose own updater cannot fetch, so it marks them first."""
+def test_rerun_refuses_partial_clone_recovery_without_modifying_packs(tmp_path):
+    """A disabled update must not fetch or modify even an unmarked partial-clone pack."""
     origin = _origin(tmp_path / "origin")
     assert _stage(tmp_path, origin).returncode == 0
     install = tmp_path / "install"
@@ -193,6 +192,7 @@ def test_rerun_marks_partial_clone_packs_when_the_fetch_crashes(tmp_path):
         'command git "$@"; }'
     )
     result = _stage(tmp_path, origin, prelude=crashing_fetch)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert (install / "README").read_text() == "two"
-    assert all(p.with_suffix(".promisor").exists() for p in packs)
+    assert result.returncode != 0
+    assert "Updates are disabled" in result.stderr
+    assert (install / "README").read_text() == "one"
+    assert not any(p.with_suffix(".promisor").exists() for p in packs)
