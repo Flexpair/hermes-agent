@@ -21,6 +21,7 @@ test('input setup survives a fresh-install zoom restore before onboarding', asyn
     const page = launched.page
     await page.waitForSelector('button', { state: 'attached' })
     const appWindow = await app.browserWindow(page)
+    await expect.poll(() => appWindow.evaluate(win => win.webContents.getZoomFactor())).toBeCloseTo(1.5)
     await prepareWindowForInput(app, page)
     const later = page.getByRole('button', { name: /choose a provider later/i })
     await expect(later).toBeVisible({ timeout: 60_000 })

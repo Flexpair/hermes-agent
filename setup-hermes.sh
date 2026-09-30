@@ -43,7 +43,7 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-if [ -e "$SCRIPT_DIR/venv" ] || [ -L "$SCRIPT_DIR/venv" ]; then
+if [ "$runtime_only" != true ] && { [ -e "$SCRIPT_DIR/venv" ] || [ -L "$SCRIPT_DIR/venv" ]; }; then
     printf '%s\n' 'Updates are disabled in this Flexpair build; the existing installation is unchanged.' >&2
     exit 1
 fi

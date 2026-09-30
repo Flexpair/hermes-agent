@@ -21,7 +21,7 @@ import { atom } from 'nanostores'
 
 import { readJson, writeJson } from '@/lib/storage'
 
-import { BUILTIN_THEMES, DEFAULT_SKIN_NAME } from './presets'
+import { BUILTIN_THEMES } from './presets'
 import { skinToDesktopTheme } from './skin'
 import { type DesktopTheme, isValidTheme } from './types'
 
@@ -117,7 +117,7 @@ export function ingestBackendSkin(skin: HermesSkin | undefined | null, { apply }
     // applyTheme can inject it on top of the built-in palette; dropping the
     // field from the YAML clears the entry so stale rules don't linger.
     const css = skin?.customCSS?.trim() ?? ''
-    const cssKey = name === 'default' ? DEFAULT_SKIN_NAME : name
+    const cssKey = name === 'default' ? 'nous' : name
     const current = $backendCustomCSS.get()
 
     if (css) {

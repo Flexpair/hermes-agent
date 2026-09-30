@@ -302,6 +302,17 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
 }
 
 
+# Fork-disabled bundled providers have no registry rows or plugin discovery. Prune their
+# curated fallback models before any picker or model-discovery consumer imports this catalog.
+_DISABLED_BUILTIN_SLUGS = frozenset({
+    "alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn",
+    "alibaba-token-plan", "alibaba-token-plan-cn", "deepseek", "kimi-coding",
+    "kimi-coding-cn", "minimax", "minimax-cn", "minimax-oauth", "qwen-oauth",
+    "stepfun", "xiaomi", "zai",
+})
+for _disabled_slug in _DISABLED_BUILTIN_SLUGS:
+    _PROVIDER_MODELS.pop(_disabled_slug, None)
+
 # ---------------------------------------------------------------------------
 # Canonical provider list — single source of truth for provider identity. Every code path that
 # lists, displays, or iterates providers (hermes model, /model, list_authenticated_providers)
@@ -354,7 +365,7 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [ProviderEntry(*row) for row in (
     ("azure-foundry", "Azure Foundry", "Azure Foundry (OpenAI-style or Anthropic-style endpoint, your Azure AI deployment)"),
     ("ai-gateway", "Vercel AI Gateway", "Vercel AI Gateway (Multi-model aggregator)"),
     ("qwen-oauth", "Qwen OAuth (Portal)", "Qwen OAuth (Reuses local Qwen CLI login)"),
-)]
+) if row[0] not in _DISABLED_BUILTIN_SLUGS]
 
 
 # Auto-extend CANONICAL_PROVIDERS with providers registered under plugins/model-providers/<name>/
@@ -369,8 +380,8 @@ _canonical_slugs = {p.slug for p in CANONICAL_PROVIDERS}
 
 
 def _plugin_provider_enters_picker(pp) -> bool:
-    """Picker admission for a plugin model-provider profile: any slug without a built-in row."""
-    return pp.name not in _canonical_slugs
+    """Picker admission for a registered plugin profile without a built-in row."""
+    return pp.name not in _canonical_slugs and pp.name not in _DISABLED_BUILTIN_SLUGS
 
 
 def sync_plugin_provider_catalog() -> int:
@@ -415,12 +426,9 @@ sync_plugin_provider_catalog()
 # Member order is the order shown inside the group submenu; member detail lives in ``tui_desc``.
 # ---------------------------------------------------------------------------
 PROVIDER_GROUPS: dict[str, tuple[str, str, list[str]]] = {
-    "kimi":     ("Kimi / Moonshot", "Coding Plan, Moonshot global & China endpoints", ["kimi-coding", "kimi-coding-cn"]),
-    "minimax":  ("MiniMax",         "Global, OAuth Coding Plan & China endpoints",     ["minimax", "minimax-oauth", "minimax-cn"]),
     "xai":      ("xAI Grok",        "Direct API or SuperGrok / Premium+ OAuth",        ["xai", "xai-oauth"]),
     "google":   ("Google Gemini",   "Google AI Studio (API key)",                     ["gemini"]),
     "openai":   ("OpenAI",          "ChatGPT/Codex subscription or direct OpenAI API", ["openai-codex", "openai-api"]),
-    "qwen":     ("Qwen",            "Qwen Cloud / DashScope, Coding Plan, Token Plan & Qwen CLI OAuth", ["alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn", "alibaba-token-plan", "alibaba-token-plan-cn", "qwen-oauth"]),
     "opencode": ("OpenCode",        "Zen pay-as-you-go or Go subscription", ["opencode-zen", "opencode-go"]),
     "copilot":  ("GitHub Copilot",  "GitHub token API or copilot --acp process",       ["copilot", "copilot-acp"]),
     "tencent":  ("Tencent Hy",      "Hy4 / Hy3 via TokenHub & TokenPlan", ["tencent-tokenhub", "tencent-tokenplan"]),

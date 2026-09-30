@@ -2157,6 +2157,16 @@ def select_provider_and_model(args=None):
         _prompt_main_reasoning_effort(current_model, active or "")
         return
 
+    # A provider can disappear from the auth registry between rendering the picker and
+    # selection (or have a stale canonical row). Never dispatch a flow that indexes it.
+    from hermes_cli.auth import PROVIDER_REGISTRY
+    if (selected_provider not in PROVIDER_REGISTRY
+            and selected_provider not in {"openrouter", "moa", "custom", "remove-custom"}
+            and not selected_provider.startswith("custom:")
+            and selected_provider not in _custom_provider_map):
+        print("Warning: the selected provider is no longer available. No change.")
+        return
+
     # Provider-specific setup + model selection. Flows resolve the
     # _model_flow_* names at call time so test monkeypatches on
     # hermes_cli.main keep intercepting.

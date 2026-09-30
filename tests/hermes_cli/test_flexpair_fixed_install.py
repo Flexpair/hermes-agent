@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from hermes_cli import banner, main
+from hermes_cli import banner, main, source_check
 from hermes_cli.update_contract import evaluate_update_admission
 
 
@@ -29,6 +29,17 @@ def test_cli_update_exits_before_update_preflight(monkeypatch, tmp_path):
 def test_passive_update_check_does_not_contact_network(monkeypatch):
     monkeypatch.setattr(banner, "_github_branch_tip", lambda *a, **kw: pytest.fail("network probed"))
     assert banner.check_for_updates() is None
+
+
+@pytest.mark.parametrize("passive", [True, False])
+def test_shared_source_check_refuses_without_git_or_network(monkeypatch, tmp_path, passive):
+    monkeypatch.setattr(source_check, "_git_run", lambda *a, **kw: pytest.fail("git probed"))
+    monkeypatch.setattr(source_check, "_request", lambda *a, **kw: pytest.fail("network probed"))
+    status = source_check.check_for_updates(install_root=tmp_path, home=tmp_path, passive=passive)
+    assert status["supported"] is False
+    assert status["reason"] == "updates-disabled"
+    assert status["updateAvailable"] is False
+    assert status["behind"] is None
 
 
 def test_desktop_update_script_refuses_before_touching_install(tmp_path):
@@ -93,3 +104,18 @@ def test_setup_script_rejects_existing_venv_before_deleting_it(tmp_path: Path):
     assert result.returncode == 1
     assert "Updates are disabled" in result.stderr
     assert sentinel.read_text() == "unchanged"
+
+
+def test_runtime_only_setup_bypasses_install_guard(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    script = repo / "setup-hermes.sh"
+    script.write_bytes((Path(__file__).resolve().parents[2] / "setup-hermes.sh").read_bytes())
+    (repo / "venv").mkdir()
+    result = subprocess.run(
+        ["bash", str(script), "--runtime-only"], capture_output=True, text=True,
+        timeout=10,
+    )
+    # No lockfile in this fixture, but activation must pass the update guard.
+    assert "Updates are disabled" not in result.stderr
+    assert "pm/lock.json not found" in result.stderr

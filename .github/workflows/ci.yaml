@@ -112,16 +112,18 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────
   # Lane-gated sub-workflows. Each runs in parallel after detect finishes.
-  # The required Linux lane targets the configuration, installer, and CI
-  # surfaces maintained by this fork. The complete affordable Linux suite is
-  # split across normal runners in flexpair-linux-full.yml and runs weekly or
-  # on demand instead of blocking every configuration PR.
+  # The standard affected-Python workflow remains required on pull requests.
+  # Fork-specific configuration checks run alongside it.
   # ─────────────────────────────────────────────────────────────────────
   tests:
     name: Linux Python tests
     needs: detect
-    # Focused regressions for the fork's maintained surfaces. Explicit
-    # macos_only/windows_only items are skipped by conftest on Linux.
+    if: needs.detect.outputs.python == 'true'
+    uses: ./.github/workflows/tests.yml
+
+  fork-tests:
+    name: Flexpair Linux configuration tests
+    needs: detect
     if: needs.detect.outputs.python == 'true'
     uses: ./.github/workflows/flexpair-linux-config.yml
 
@@ -152,8 +154,8 @@ jobs:
   js-tests:
     name: JS & TS checks
     needs: detect
-    # Frontend/browser coverage is upstream-owned for this Linux fork.
-    if: false
+    # Fork-only desktop changes must pass the same JS/TS checks as upstream.
+    if: needs.detect.outputs.frontend == 'true'
     uses: ./.github/workflows/js-tests.yml
 
   installer-tests:
@@ -317,6 +319,7 @@ jobs:
     needs:
       - detect
       - tests
+      - fork-tests
       - tests-os
       - lint
       - js-tests
@@ -365,8 +368,8 @@ jobs:
           args=()
           if [ "$RELEASE" = true ]; then args+=(--release); fi
           # Fork-disabled upstream lanes intentionally skip on every event,
-          # including release. Keep strict release checks for active lanes.
-          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "js-tests", "installer-tests", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
+          # including release. Active Python and JS lanes remain strict.
+          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "installer-tests", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
 
   # ─────────────────────────────────────────────────────────────────────
   # CI timing report: collect per-job/step durations from the GitHub API,

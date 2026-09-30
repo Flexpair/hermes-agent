@@ -16,12 +16,16 @@ def _workflow(name: str) -> dict:
     return data
 
 
-def test_fork_orchestrator_keeps_linux_lane() -> None:
+def test_fork_orchestrator_keeps_standard_and_focused_linux_lanes() -> None:
     ci = _workflow("ci.yaml")
     jobs = ci["jobs"]
 
-    assert jobs["tests"]["uses"] == "./.github/workflows/flexpair-linux-config.yml"
+    assert jobs["tests"]["uses"] == "./.github/workflows/tests.yml"
     assert jobs["tests"]["if"] == "needs.detect.outputs.python == 'true'"
+    assert jobs["fork-tests"]["uses"] == "./.github/workflows/flexpair-linux-config.yml"
+    assert jobs["fork-tests"]["if"] == "needs.detect.outputs.python == 'true'"
+    assert {"tests", "fork-tests", "js-tests"} <= set(jobs["all-checks-pass"]["needs"])
+    assert jobs["js-tests"]["if"] == "needs.detect.outputs.frontend == 'true'"
 
 
 def test_change_detection_allows_for_slow_repository_checkout() -> None:

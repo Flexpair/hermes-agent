@@ -1,5 +1,5 @@
 diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
-index a9a641b0a3..c64f0a4bc3 100644
+index a9a641b0a3..f287f4d600 100644
 --- a/.github/workflows/ci.yaml
 +++ b/.github/workflows/ci.yaml
 @@ -55,14 +55,17 @@ jobs:
@@ -22,31 +22,32 @@ index a9a641b0a3..c64f0a4bc3 100644
      outputs:
        python: ${{ steps.gate-lanes.outputs.python }}
        python_prod: ${{ steps.gate-lanes.outputs.python_prod }}
-@@ -109,22 +112,26 @@ jobs:
+@@ -109,22 +112,28 @@ jobs:
  
    # ─────────────────────────────────────────────────────────────────────
    # Lane-gated sub-workflows. Each runs in parallel after detect finishes.
 -  # Skipped workflows (if condition is false) don't spin up runners.
-+  # The required Linux lane targets the configuration, installer, and CI
-+  # surfaces maintained by this fork. The complete affordable Linux suite is
-+  # split across normal runners in flexpair-linux-full.yml and runs weekly or
-+  # on demand instead of blocking every configuration PR.
++  # The standard affected-Python workflow remains required on pull requests.
++  # Fork-specific configuration checks run alongside it.
    # ─────────────────────────────────────────────────────────────────────
    tests:
 -    name: Python tests
 +    name: Linux Python tests
      needs: detect
-+    # Focused regressions for the fork's maintained surfaces. Explicit
-+    # macos_only/windows_only items are skipped by conftest on Linux.
      if: needs.detect.outputs.python == 'true'
--    uses: ./.github/workflows/tests.yml
-+    uses: ./.github/workflows/flexpair-linux-config.yml
-+
+     uses: ./.github/workflows/tests.yml
  
 -  # macOS + Windows lanes. The main `tests` lane above is Linux-only, and
 -  # the OS-marked tests it collects are skipped there by design (see the
 -  # `_OS_MARKS` comment in tests/conftest.py) — this is where they run.
 -  # Same `python` lane gate: if no Python changed, neither runs.
++  fork-tests:
++    name: Flexpair Linux configuration tests
++    needs: detect
++    if: needs.detect.outputs.python == 'true'
++    uses: ./.github/workflows/flexpair-linux-config.yml
++
++
    tests-os:
      name: OS-specific tests
      needs: detect
@@ -57,7 +58,7 @@ index a9a641b0a3..c64f0a4bc3 100644
      uses: ./.github/workflows/tests-os.yml
      with:
        # The Windows lane spawns the real desktop-update hand-off script
-@@ -135,7 +142,9 @@ jobs:
+@@ -135,7 +144,9 @@ jobs:
    lint:
      name: Python lints
      needs: detect
@@ -68,13 +69,12 @@ index a9a641b0a3..c64f0a4bc3 100644
      uses: ./.github/workflows/lint.yml
      with:
        event_name: ${{ needs.detect.outputs.event_name }}
-@@ -143,23 +152,29 @@ jobs:
+@@ -143,23 +154,29 @@ jobs:
    js-tests:
      name: JS & TS checks
      needs: detect
--    if: needs.detect.outputs.frontend == 'true'
-+    # Frontend/browser coverage is upstream-owned for this Linux fork.
-+    if: false
++    # Fork-only desktop changes must pass the same JS/TS checks as upstream.
+     if: needs.detect.outputs.frontend == 'true'
      uses: ./.github/workflows/js-tests.yml
  
 +  installer-tests:
@@ -104,7 +104,7 @@ index a9a641b0a3..c64f0a4bc3 100644
      if: needs.detect.outputs.bootstrap == 'true'
      uses: ./.github/workflows/bootstrap-installer.yml
  
-@@ -202,7 +217,8 @@ jobs:
+@@ -202,7 +219,8 @@ jobs:
    docs-site:
      name: Docs Site
      needs: detect
@@ -114,7 +114,7 @@ index a9a641b0a3..c64f0a4bc3 100644
      uses: ./.github/workflows/docs-site-checks.yml
  
    history-check:
-@@ -214,7 +230,8 @@ jobs:
+@@ -214,7 +232,8 @@ jobs:
    contributor-check:
      name: Check contributors
      needs: detect
@@ -124,7 +124,7 @@ index a9a641b0a3..c64f0a4bc3 100644
      uses: ./.github/workflows/contributor-check.yml
  
    uv-lockfile:
-@@ -225,7 +242,8 @@ jobs:
+@@ -225,7 +244,8 @@ jobs:
      # blip, a blocking red X — for diffs that cannot desync the lockfile
      # (docs, frontend, prose). Only pyproject.toml / uv.lock can. A
      # `.github/` change still forces it on via the classifier's fail-open.
@@ -134,7 +134,7 @@ index a9a641b0a3..c64f0a4bc3 100644
      uses: ./.github/workflows/uv-lockfile-check.yml
  
    infographic-check:
-@@ -256,13 +274,15 @@ jobs:
+@@ -256,13 +276,15 @@ jobs:
    lockfile-diff:
      name: package-lock.json diff
      needs: detect
@@ -152,7 +152,7 @@ index a9a641b0a3..c64f0a4bc3 100644
      uses: ./.github/workflows/docker-lint.yml
  
    supply-chain:
-@@ -275,16 +295,6 @@ jobs:
+@@ -275,16 +297,6 @@ jobs:
        scan: ${{ needs.detect.outputs.scan == 'true' }}
        deps: ${{ needs.detect.outputs.deps == 'true' }}
  
@@ -169,7 +169,11 @@ index a9a641b0a3..c64f0a4bc3 100644
  
    # ─────────────────────────────────────────────────────────────────────
    # Gate: runs after everything. ``if: always()`` ensures it reports a
-@@ -310,6 +320,7 @@ jobs:
+@@ -307,9 +319,11 @@ jobs:
+     needs:
+       - detect
+       - tests
++      - fork-tests
        - tests-os
        - lint
        - js-tests
@@ -177,7 +181,7 @@ index a9a641b0a3..c64f0a4bc3 100644
        - rust-tests
        - bootstrap-installer
        - e2e-desktop
-@@ -327,11 +338,8 @@ jobs:
+@@ -327,11 +341,8 @@ jobs:
        - profile-artifact-check
        - icons-freshness-check
        - supply-chain
@@ -191,14 +195,14 @@ index a9a641b0a3..c64f0a4bc3 100644
        # The image build runs in its own workflow (docker.yml) and reports
        # its own check. It was never required here, because it is too slow
        # to block a merge. A separate run also stops it from holding this
-@@ -356,7 +364,9 @@ jobs:
+@@ -356,7 +367,9 @@ jobs:
          run: |
            args=()
            if [ "$RELEASE" = true ]; then args+=(--release); fi
 -          printf '%s' "$NEEDS" | python3 scripts/ci/required_results.py "${args[@]}"
 +          # Fork-disabled upstream lanes intentionally skip on every event,
-+          # including release. Keep strict release checks for active lanes.
-+          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "js-tests", "installer-tests", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
++          # including release. Active Python and JS lanes remain strict.
++          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "installer-tests", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
  
    # ─────────────────────────────────────────────────────────────────────
    # CI timing report: collect per-job/step durations from the GitHub API,
@@ -1063,10 +1067,10 @@ index 674d6f5508..b1a7ccea44 100644
    // and fail pointer interception + snapshot diffs.
 diff --git a/apps/desktop/e2e/onboarding-settings.spec.ts b/apps/desktop/e2e/onboarding-settings.spec.ts
 new file mode 100644
-index 0000000000..d29ca26ab3
+index 0000000000..c25551a6f4
 --- /dev/null
 +++ b/apps/desktop/e2e/onboarding-settings.spec.ts
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,83 @@
 +import { readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 +import { createRequire } from 'node:module'
 +import path from 'node:path'
@@ -1090,6 +1094,7 @@ index 0000000000..d29ca26ab3
 +    const page = launched.page
 +    await page.waitForSelector('button', { state: 'attached' })
 +    const appWindow = await app.browserWindow(page)
++    await expect.poll(() => appWindow.evaluate(win => win.webContents.getZoomFactor())).toBeCloseTo(1.5)
 +    await prepareWindowForInput(app, page)
 +    const later = page.getByRole('button', { name: /choose a provider later/i })
 +    await expect(later).toBeVisible({ timeout: 60_000 })
@@ -1150,12 +1155,17 @@ index 0000000000..d29ca26ab3
 +  })
 +}
 diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
-index c7b9664916..05d552a49a 100644
+index c7b9664916..630c8eb517 100644
 --- a/apps/desktop/electron/main.ts
 +++ b/apps/desktop/electron/main.ts
-@@ -16259,6 +16259,9 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
+@@ -16258,7 +16258,14 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
+ // fleet fan-out below, this path owns the remote serve lifecycle: it gates new
  // dials, drains only exact Desktop-owned processes, runs the launcher outside
  // those serves, proves the correlated receipt, and restores every prior scope.
++// This fork ships without an update channel. Keep the IPC handlers present for
++// older renderers, but reject both remote-update entry points before dispatch.
++const updatesAreDisabled = () => true
++
  async function requestManagedSshUpdate(rawId) {
 +  if (updatesAreDisabled()) {
 +    return refusedManagedSshUpdate(String(rawId || '').trim(), crypto.randomUUID(), 'Updates are disabled in this Flexpair build.')
@@ -1163,7 +1173,7 @@ index c7b9664916..05d552a49a 100644
    const connectionId = String(rawId || '').trim()
    const existing = managedConnectionUpdates.get(connectionId)
  
-@@ -16310,6 +16313,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
+@@ -16310,6 +16317,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
  // app's own update pipeline; Desktop-managed SSH uses the transactional
  // drain/update/restore lifecycle; URL remotes POST their backend updater.
  ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
@@ -1414,6 +1424,63 @@ index 9c9a3a89b7..46db9467ea 100644
 +:root[data-hermes-theme^='flexpair'][data-hermes-mode='light'] [data-slot='composer-surface']:focus-within {
 +  border-color: #157878 !important;
 +}
+diff --git a/apps/desktop/src/themes/backend-sync.test.ts b/apps/desktop/src/themes/backend-sync.test.ts
+index fe8f517058..da87d556d1 100644
+--- a/apps/desktop/src/themes/backend-sync.test.ts
++++ b/apps/desktop/src/themes/backend-sync.test.ts
+@@ -107,7 +107,7 @@ describe('ingestBackendSkin', () => {
+     ingestBackendSkin(skinWithCSS('default', 'body { background: red; }'), { apply: true })
+ 
+     expect($backendThemes.get().default).toBeUndefined()
+-    // setTheme normalizes `default` → DEFAULT_SKIN_NAME ('nous'), so the CSS
++    // setTheme normalizes explicit `default` → `nous`, so the CSS
+     // must be findable under that name when the theme is derived.
+     expect($backendCustomCSS.get().nous).toBe('body { background: red; }')
+   })
+diff --git a/apps/desktop/src/themes/backend-sync.ts b/apps/desktop/src/themes/backend-sync.ts
+index dc855b06ac..40edfe5067 100644
+--- a/apps/desktop/src/themes/backend-sync.ts
++++ b/apps/desktop/src/themes/backend-sync.ts
+@@ -21,7 +21,7 @@ import { atom } from 'nanostores'
+ 
+ import { readJson, writeJson } from '@/lib/storage'
+ 
+-import { BUILTIN_THEMES, DEFAULT_SKIN_NAME } from './presets'
++import { BUILTIN_THEMES } from './presets'
+ import { skinToDesktopTheme } from './skin'
+ import { type DesktopTheme, isValidTheme } from './types'
+ 
+@@ -117,7 +117,7 @@ export function ingestBackendSkin(skin: HermesSkin | undefined | null, { apply }
+     // applyTheme can inject it on top of the built-in palette; dropping the
+     // field from the YAML clears the entry so stale rules don't linger.
+     const css = skin?.customCSS?.trim() ?? ''
+-    const cssKey = name === 'default' ? DEFAULT_SKIN_NAME : name
++    const cssKey = name === 'default' ? 'nous' : name
+     const current = $backendCustomCSS.get()
+ 
+     if (css) {
+diff --git a/apps/desktop/src/themes/context.tsx b/apps/desktop/src/themes/context.tsx
+index 892802c804..1b11caae85 100644
+--- a/apps/desktop/src/themes/context.tsx
++++ b/apps/desktop/src/themes/context.tsx
+@@ -50,7 +50,7 @@ const PROFILE_MODES_KEY = 'hermes-desktop-profile-modes-v1'
+ const LAST_PROFILE_KEY = 'hermes-desktop-active-profile-v1'
+ // Skins that no longer exist. A profile still pointing at one falls back to
+ // DEFAULT_SKIN_NAME rather than painting a name nothing resolves.
+-const RETIRED_SKINS = new Set(['nous-light', 'default', 'gold'])
++const RETIRED_SKINS = new Set(['nous-light', 'gold'])
+ 
+ export type ThemeMode = 'light' | 'dark' | 'system'
+ 
+@@ -60,7 +60,7 @@ const resolveMode = (mode: ThemeMode, systemDark = matchesQuery('(prefers-color-
+   mode === 'system' ? (systemDark ? 'dark' : 'light') : mode
+ 
+ const normalizeSkin = (name: string | null): string =>
+-  name && resolveTheme(name) && !RETIRED_SKINS.has(name) ? name : DEFAULT_SKIN_NAME
++  name === 'default' ? 'nous' : name && resolveTheme(name) && !RETIRED_SKINS.has(name) ? name : DEFAULT_SKIN_NAME
+ 
+ /**
+  * A stored mode, or `system` when there isn't one.
 diff --git a/apps/desktop/src/themes/presets.test.ts b/apps/desktop/src/themes/presets.test.ts
 index 3bc94baefe..fb6bf7d565 100644
 --- a/apps/desktop/src/themes/presets.test.ts
@@ -1651,6 +1718,25 @@ index f4f24f9426..f3952d37c8 100644
  /** Skin used when nothing is persisted or the persisted name is retired. */
 -export const DEFAULT_SKIN_NAME = 'nous'
 +export const DEFAULT_SKIN_NAME = 'flexpair-dark'
+diff --git a/apps/desktop/src/themes/profile-theme.test.ts b/apps/desktop/src/themes/profile-theme.test.ts
+index 34387b710c..81abc67d1c 100644
+--- a/apps/desktop/src/themes/profile-theme.test.ts
++++ b/apps/desktop/src/themes/profile-theme.test.ts
+@@ -46,3 +46,14 @@ describe.each(cases)('per-profile $name', ({ pref, fallback, a, b, junk }) => {
+     expect(pref.resolve('work')).toBe(fallback)
+   })
+ })
++
++describe('explicit default skin alias', () => {
++  beforeEach(() => window.localStorage.clear())
++
++  it('selects classic nous while an unset profile inherits Flexpair dark', () => {
++    expect(skinPref.resolve('default')).toBe(DEFAULT_SKIN_NAME)
++    skinPref.assign('default', 'default')
++    expect(skinPref.resolve('default')).toBe('nous')
++    expect(skinPref.resolve('work')).toBe('nous')
++  })
++})
 diff --git a/apps/desktop/tsconfig.electron.json b/apps/desktop/tsconfig.electron.json
 index c8ed7be261..15ed2c8290 100644
 --- a/apps/desktop/tsconfig.electron.json
@@ -1684,21 +1770,6 @@ index 0000000000..41686158df
 +/** Appearance zoom default shared by the renderer and Electron main process. */
 +export const DEFAULT_ZOOM_PERCENT = 150
 \ No newline at end of file
-diff --git a/apps/shared/src/i18n.ts b/apps/shared/src/i18n.ts
-index a4f59181bb..28c0d1c3c4 100644
---- a/apps/shared/src/i18n.ts
-+++ b/apps/shared/src/i18n.ts
-@@ -182,9 +182,7 @@ export const LOCALE_ENDONYMS = {
-   pt: 'Português',
-   ru: 'Русский',
-   tr: 'Türkçe',
--  uk: 'Українська',
--  zh: '简体中文',
--  'zh-hant': '繁體中文'
-+  uk: 'Українська'
- } as const satisfies Record<string, string>
- 
- export type EndonymLocale = keyof typeof LOCALE_ENDONYMS
 diff --git a/apps/shared/src/index.ts b/apps/shared/src/index.ts
 index 35ddac34f6..3c949682d5 100644
 --- a/apps/shared/src/index.ts
@@ -2448,7 +2519,7 @@ index 9f702a1cf9..e8541674a5 100644
  
  
 diff --git a/hermes_cli/main.py b/hermes_cli/main.py
-index b85bf11fe7..c557a24ad0 100644
+index b85bf11fe7..2393e78f48 100644
 --- a/hermes_cli/main.py
 +++ b/hermes_cli/main.py
 @@ -770,15 +770,11 @@ from hermes_cli.model_setup_flows import (
@@ -2482,7 +2553,24 @@ index b85bf11fe7..c557a24ad0 100644
      "bedrock": lambda c, m, a: _model_flow_bedrock(c, m),
      "vertex": lambda c, m, a: _model_flow_vertex(c, m),
      "azure-foundry": lambda c, m, a: _model_flow_azure_foundry(c, m),
-@@ -2486,7 +2478,14 @@ from hermes_cli.update_receipt import update_receipt_scope
+@@ -2165,6 +2157,16 @@ def select_provider_and_model(args=None):
+         _prompt_main_reasoning_effort(current_model, active or "")
+         return
+ 
++    # A provider can disappear from the auth registry between rendering the picker and
++    # selection (or have a stale canonical row). Never dispatch a flow that indexes it.
++    from hermes_cli.auth import PROVIDER_REGISTRY
++    if (selected_provider not in PROVIDER_REGISTRY
++            and selected_provider not in {"openrouter", "moa", "custom", "remove-custom"}
++            and not selected_provider.startswith("custom:")
++            and selected_provider not in _custom_provider_map):
++        print("Warning: the selected provider is no longer available. No change.")
++        return
++
+     # Provider-specific setup + model selection. Flows resolve the
+     # _model_flow_* names at call time so test monkeypatches on
+     # hermes_cli.main keep intercepting.
+@@ -2486,7 +2488,14 @@ from hermes_cli.update_receipt import update_receipt_scope
  
  @update_receipt_scope()
  def cmd_update(args):
@@ -2498,6 +2586,96 @@ index b85bf11fe7..c557a24ad0 100644
      # Marks this frame as the CURRENT updater for
      # _old_updater.in_historical_update(); historical on-disk updaters do not
      # declare this local, so only they hand off through retired shims.
+diff --git a/hermes_cli/main_provider_setup.py b/hermes_cli/main_provider_setup.py
+index a1878344d6..381eff4ba7 100644
+--- a/hermes_cli/main_provider_setup.py
++++ b/hermes_cli/main_provider_setup.py
+@@ -22,10 +22,9 @@ def _is_profile_api_key_provider(provider_id: str) -> bool:
+ 
+ 
+ _GENERIC_API_KEY_PROVIDERS = frozenset({
+-    "openai-api", "gemini", "deepseek", "xai", "zai", "kimi-coding-cn",
+-    "minimax", "minimax-cn", "kilocode", "opencode-zen", "opencode-go",
+-    "alibaba", "huggingface", "xiaomi", "arcee", "gmi",
+-    "nvidia", "ollama-cloud", "tencent-tokenhub", "tencent-tokenplan", "lmstudio"})
++    "openai-api", "gemini", "xai", "kilocode", "opencode-zen", "opencode-go",
++    "huggingface", "arcee", "gmi", "nvidia", "ollama-cloud",
++    "tencent-tokenhub", "tencent-tokenplan", "lmstudio"})
+ 
+ 
+ def _short_url(url: str) -> str:
+@@ -883,6 +882,7 @@ def _build_provider_picker_rows(config: dict, active: str, provider_labels: dict
+     ``model_catalog.excluded_providers`` (slug or alias, case-insensitive) like the gateway/TUI."""
+     from hermes_cli.models import CANONICAL_PROVIDERS, _PROVIDER_ALIASES
+     from hermes_cli.models_catalog_static import group_providers, provider_group_for_slug
++    from hermes_cli.auth import PROVIDER_REGISTRY
+     canonical_descs = {p.slug: p.tui_desc for p in CANONICAL_PROVIDERS}
+     _cli_excluded = {
+         str(p).strip().lower()
+@@ -897,6 +897,8 @@ def _build_provider_picker_rows(config: dict, active: str, provider_labels: dict
+     else:
+         _visible_slugs = [p.slug for p in CANONICAL_PROVIDERS]
+ 
++    _visible_slugs = [slug for slug in _visible_slugs if slug in PROVIDER_REGISTRY or slug in {"openrouter", "moa"}]
++
+     # The active provider's group when grouped, otherwise the active slug itself.
+     active_group = provider_group_for_slug(active) if active else ""
+ 
+diff --git a/hermes_cli/models_catalog_static.py b/hermes_cli/models_catalog_static.py
+index c0684ee2aa..456ba005fa 100644
+--- a/hermes_cli/models_catalog_static.py
++++ b/hermes_cli/models_catalog_static.py
+@@ -302,6 +302,17 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
+ }
+ 
+ 
++# Fork-disabled bundled providers have no registry rows or plugin discovery. Prune their
++# curated fallback models before any picker or model-discovery consumer imports this catalog.
++_DISABLED_BUILTIN_SLUGS = frozenset({
++    "alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn",
++    "alibaba-token-plan", "alibaba-token-plan-cn", "deepseek", "kimi-coding",
++    "kimi-coding-cn", "minimax", "minimax-cn", "minimax-oauth", "qwen-oauth",
++    "stepfun", "xiaomi", "zai",
++})
++for _disabled_slug in _DISABLED_BUILTIN_SLUGS:
++    _PROVIDER_MODELS.pop(_disabled_slug, None)
++
+ # ---------------------------------------------------------------------------
+ # Canonical provider list — single source of truth for provider identity. Every code path that
+ # lists, displays, or iterates providers (hermes model, /model, list_authenticated_providers)
+@@ -354,7 +365,7 @@ CANONICAL_PROVIDERS: list[ProviderEntry] = [ProviderEntry(*row) for row in (
+     ("azure-foundry", "Azure Foundry", "Azure Foundry (OpenAI-style or Anthropic-style endpoint, your Azure AI deployment)"),
+     ("ai-gateway", "Vercel AI Gateway", "Vercel AI Gateway (Multi-model aggregator)"),
+     ("qwen-oauth", "Qwen OAuth (Portal)", "Qwen OAuth (Reuses local Qwen CLI login)"),
+-)]
++) if row[0] not in _DISABLED_BUILTIN_SLUGS]
+ 
+ 
+ # Auto-extend CANONICAL_PROVIDERS with providers registered under plugins/model-providers/<name>/
+@@ -369,8 +380,8 @@ _canonical_slugs = {p.slug for p in CANONICAL_PROVIDERS}
+ 
+ 
+ def _plugin_provider_enters_picker(pp) -> bool:
+-    """Picker admission for a plugin model-provider profile: any slug without a built-in row."""
+-    return pp.name not in _canonical_slugs
++    """Picker admission for a registered plugin profile without a built-in row."""
++    return pp.name not in _canonical_slugs and pp.name not in _DISABLED_BUILTIN_SLUGS
+ 
+ 
+ def sync_plugin_provider_catalog() -> int:
+@@ -415,12 +426,9 @@ sync_plugin_provider_catalog()
+ # Member order is the order shown inside the group submenu; member detail lives in ``tui_desc``.
+ # ---------------------------------------------------------------------------
+ PROVIDER_GROUPS: dict[str, tuple[str, str, list[str]]] = {
+-    "kimi":     ("Kimi / Moonshot", "Coding Plan, Moonshot global & China endpoints", ["kimi-coding", "kimi-coding-cn"]),
+-    "minimax":  ("MiniMax",         "Global, OAuth Coding Plan & China endpoints",     ["minimax", "minimax-oauth", "minimax-cn"]),
+     "xai":      ("xAI Grok",        "Direct API or SuperGrok / Premium+ OAuth",        ["xai", "xai-oauth"]),
+     "google":   ("Google Gemini",   "Google AI Studio (API key)",                     ["gemini"]),
+     "openai":   ("OpenAI",          "ChatGPT/Codex subscription or direct OpenAI API", ["openai-codex", "openai-api"]),
+-    "qwen":     ("Qwen",            "Qwen Cloud / DashScope, Coding Plan, Token Plan & Qwen CLI OAuth", ["alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn", "alibaba-token-plan", "alibaba-token-plan-cn", "qwen-oauth"]),
+     "opencode": ("OpenCode",        "Zen pay-as-you-go or Go subscription", ["opencode-zen", "opencode-go"]),
+     "copilot":  ("GitHub Copilot",  "GitHub token API or copilot --acp process",       ["copilot", "copilot-acp"]),
+     "tencent":  ("Tencent Hy",      "Hy4 / Hy3 via TokenHub & TokenPlan", ["tencent-tokenhub", "tencent-tokenplan"]),
 diff --git a/hermes_cli/plugin_catalog.py b/hermes_cli/plugin_catalog.py
 index 09057524df..29ff0882fb 100644
 --- a/hermes_cli/plugin_catalog.py
@@ -2646,6 +2824,27 @@ index b859fcc828..1daffd27b1 100644
  
  
  def _active_branding(key: str, fallback: str) -> str:
+diff --git a/hermes_cli/source_check.py b/hermes_cli/source_check.py
+index 1c6e08d33f..70b96a8b80 100644
+--- a/hermes_cli/source_check.py
++++ b/hermes_cli/source_check.py
+@@ -380,6 +380,16 @@ def check_for_updates(*, install_root: Path | None = None, home: Path | None = N
+     Only the default (running installation) may use HERMES_REVISION. An explicit
+     target must never inherit the host process's embedded revision or stamp.
+     """
++    # Flexpair ships a fixed build. Keep every caller (banner prefetch, fast
++    # version output, desktop and dashboard) off the network and Git probes.
++    return {
++        "supported": False,
++        "reason": "updates-disabled",
++        "behind": None,
++        "commits": [],
++        "updateAvailable": False,
++    }
++
+     from hermes_cli.config import get_project_root, require_readable_config_before_write
+     from hermes_cli.steward import read_install_stamp
+     from hermes_cli.update_channel import install_id, resolve_update_channel
 diff --git a/hermes_cli/tools_config.py b/hermes_cli/tools_config.py
 index 7c42c29c9c..066cd421b8 100644
 --- a/hermes_cli/tools_config.py
@@ -3141,7 +3340,7 @@ index f9e09c78fe..c139a9523d 100644
      const artifactById = new Map();
      if (values.artifacts) {
 diff --git a/setup-hermes.sh b/setup-hermes.sh
-index b169bedc09..a97069e655 100755
+index b169bedc09..3b62efe1f7 100755
 --- a/setup-hermes.sh
 +++ b/setup-hermes.sh
 @@ -15,6 +15,13 @@
@@ -3162,7 +3361,7 @@ index b169bedc09..a97069e655 100755
  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
  cd "$SCRIPT_DIR"
  
-+if [ -e "$SCRIPT_DIR/venv" ] || [ -L "$SCRIPT_DIR/venv" ]; then
++if [ "$runtime_only" != true ] && { [ -e "$SCRIPT_DIR/venv" ] || [ -L "$SCRIPT_DIR/venv" ]; }; then
 +    printf '%s\n' 'Updates are disabled in this Flexpair build; the existing installation is unchanged.' >&2
 +    exit 1
 +fi
@@ -3212,10 +3411,10 @@ index 0000000000..a9049419c1
 +});
 diff --git a/tests/ci/test_fork_ci_policy.py b/tests/ci/test_fork_ci_policy.py
 new file mode 100644
-index 0000000000..1baa361262
+index 0000000000..b1f1b75ff8
 --- /dev/null
 +++ b/tests/ci/test_fork_ci_policy.py
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,108 @@
 +"""Workflow policy tests for the Linux fork's GitHub Actions workflows."""
 +
 +from __future__ import annotations
@@ -3234,12 +3433,16 @@ index 0000000000..1baa361262
 +    return data
 +
 +
-+def test_fork_orchestrator_keeps_linux_lane() -> None:
++def test_fork_orchestrator_keeps_standard_and_focused_linux_lanes() -> None:
 +    ci = _workflow("ci.yaml")
 +    jobs = ci["jobs"]
 +
-+    assert jobs["tests"]["uses"] == "./.github/workflows/flexpair-linux-config.yml"
++    assert jobs["tests"]["uses"] == "./.github/workflows/tests.yml"
 +    assert jobs["tests"]["if"] == "needs.detect.outputs.python == 'true'"
++    assert jobs["fork-tests"]["uses"] == "./.github/workflows/flexpair-linux-config.yml"
++    assert jobs["fork-tests"]["if"] == "needs.detect.outputs.python == 'true'"
++    assert {"tests", "fork-tests", "js-tests"} <= set(jobs["all-checks-pass"]["needs"])
++    assert jobs["js-tests"]["if"] == "needs.detect.outputs.frontend == 'true'"
 +
 +
 +def test_change_detection_allows_for_slow_repository_checkout() -> None:
@@ -3563,10 +3766,10 @@ index c96dc66a22..636fe4599e 100644
      ):
 diff --git a/tests/hermes_cli/test_flexpair_fixed_install.py b/tests/hermes_cli/test_flexpair_fixed_install.py
 new file mode 100644
-index 0000000000..4306952e10
+index 0000000000..1b5bc81e21
 --- /dev/null
 +++ b/tests/hermes_cli/test_flexpair_fixed_install.py
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,121 @@
 +"""A Flexpair checkout cannot be advanced by the bundled update surfaces."""
 +
 +from pathlib import Path
@@ -3576,7 +3779,7 @@ index 0000000000..4306952e10
 +
 +import pytest
 +
-+from hermes_cli import banner, main
++from hermes_cli import banner, main, source_check
 +from hermes_cli.update_contract import evaluate_update_admission
 +
 +
@@ -3598,6 +3801,17 @@ index 0000000000..4306952e10
 +def test_passive_update_check_does_not_contact_network(monkeypatch):
 +    monkeypatch.setattr(banner, "_github_branch_tip", lambda *a, **kw: pytest.fail("network probed"))
 +    assert banner.check_for_updates() is None
++
++
++@pytest.mark.parametrize("passive", [True, False])
++def test_shared_source_check_refuses_without_git_or_network(monkeypatch, tmp_path, passive):
++    monkeypatch.setattr(source_check, "_git_run", lambda *a, **kw: pytest.fail("git probed"))
++    monkeypatch.setattr(source_check, "_request", lambda *a, **kw: pytest.fail("network probed"))
++    status = source_check.check_for_updates(install_root=tmp_path, home=tmp_path, passive=passive)
++    assert status["supported"] is False
++    assert status["reason"] == "updates-disabled"
++    assert status["updateAvailable"] is False
++    assert status["behind"] is None
 +
 +
 +def test_desktop_update_script_refuses_before_touching_install(tmp_path):
@@ -3662,6 +3876,72 @@ index 0000000000..4306952e10
 +    assert result.returncode == 1
 +    assert "Updates are disabled" in result.stderr
 +    assert sentinel.read_text() == "unchanged"
++
++
++def test_runtime_only_setup_bypasses_install_guard(tmp_path: Path):
++    repo = tmp_path / "repo"
++    repo.mkdir()
++    script = repo / "setup-hermes.sh"
++    script.write_bytes((Path(__file__).resolve().parents[2] / "setup-hermes.sh").read_bytes())
++    (repo / "venv").mkdir()
++    result = subprocess.run(
++        ["bash", str(script), "--runtime-only"], capture_output=True, text=True,
++        timeout=10,
++    )
++    # No lockfile in this fixture, but activation must pass the update guard.
++    assert "Updates are disabled" not in result.stderr
++    assert "pm/lock.json not found" in result.stderr
+diff --git a/tests/hermes_cli/test_fork_provider_picker.py b/tests/hermes_cli/test_fork_provider_picker.py
+new file mode 100644
+index 0000000000..eb151b63b5
+--- /dev/null
++++ b/tests/hermes_cli/test_fork_provider_picker.py
+@@ -0,0 +1,45 @@
++"""Fork provider removal stays consistent across catalog and interactive selection."""
++
++
++def test_removed_builtin_providers_absent_from_catalog_and_picker():
++    from hermes_cli.models_catalog_static import CANONICAL_PROVIDERS, PROVIDER_GROUPS, _PROVIDER_MODELS
++    from hermes_cli.main_provider_setup import _GENERIC_API_KEY_PROVIDERS, _build_provider_picker_rows
++    from hermes_cli.models import list_available_providers
++
++    removed = {"alibaba", "deepseek", "kimi-coding", "kimi-coding-cn", "minimax",
++               "minimax-oauth", "minimax-cn", "qwen-oauth", "stepfun", "xiaomi", "zai"}
++    assert not removed.intersection(_PROVIDER_MODELS)
++    assert not removed.intersection(p.slug for p in CANONICAL_PROVIDERS)
++    assert not removed.intersection(_GENERIC_API_KEY_PROVIDERS)
++    assert not removed.intersection(member for _, _, members in PROVIDER_GROUPS.values() for member in members)
++    assert not removed.intersection(p["id"] for p in list_available_providers())
++    rows, _ = _build_provider_picker_rows({}, "", {}, {})
++    assert not removed.intersection(slug for key, _, members in rows for slug in ([key] + members))
++
++
++def test_picker_excludes_canonical_provider_missing_from_registry(monkeypatch):
++    from hermes_cli import auth
++    from hermes_cli.main_provider_setup import _build_provider_picker_rows
++
++    monkeypatch.delitem(auth.PROVIDER_REGISTRY, "gemini")
++    rows, _ = _build_provider_picker_rows({}, "", {}, {})
++    assert "gemini" not in {member for key, _, members in rows for member in [key, *members]}
++
++
++def test_missing_registry_provider_selection_does_not_dispatch(monkeypatch, capsys):
++    import sys
++    from types import ModuleType
++
++    monkeypatch.setitem(sys.modules, "hermes_bootstrap", ModuleType("hermes_bootstrap"))
++    import hermes_cli._early_recovery as recovery
++    monkeypatch.setattr(recovery, "restore_interrupted_pull", lambda: False)
++    import hermes_cli.main as main
++    from hermes_cli import auth
++
++    monkeypatch.setattr(main, "_pick_provider", lambda *args: "gemini")
++    monkeypatch.setattr(main, "_resolve_active_provider", lambda *args: None)
++    monkeypatch.setattr("hermes_cli.config.load_config", lambda: {"model": {"provider": "nous", "default": "old"}})
++    monkeypatch.delitem(auth.PROVIDER_REGISTRY, "gemini")
++    monkeypatch.setattr(main, "_model_flow_api_key_provider", lambda *args: (_ for _ in ()).throw(AssertionError("dispatched")))
++    main.select_provider_and_model()
++    assert "no longer available" in capsys.readouterr().out
 diff --git a/tests/hermes_cli/test_passive_update_opt_out.py b/tests/hermes_cli/test_passive_update_opt_out.py
 index 9444956589..26cfcd12da 100644
 --- a/tests/hermes_cli/test_passive_update_opt_out.py
