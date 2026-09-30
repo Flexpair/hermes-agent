@@ -414,6 +414,71 @@ index 0000000000..b055f3c0e1
 +            exit 1
 +          fi
 +          echo "Patch reproduces tree $expected from base $base"
+diff --git a/.github/workflows/install-e2e.yml b/.github/workflows/install-e2e.yml
+index 8fa2bb5ec5..0e84f80cd5 100644
+--- a/.github/workflows/install-e2e.yml
++++ b/.github/workflows/install-e2e.yml
+@@ -166,21 +166,29 @@ concurrency:
+   cancel-in-progress: ${{ inputs.release != true }}
+ 
+ jobs:
++  # Flexpair intentionally refuses self-updates. Running an upstream-release
++  # upgrade matrix against this fork (which has no upstream release tags)
++  # cannot validate that contract; exercise the refusal regressions instead.
++  fork-update-refusal:
++    if: github.repository == 'Flexpair/hermes-agent'
++    name: Flexpair update refusal regressions
++    uses: ./.github/workflows/flexpair-linux-config.yml
++
+   pick-releases:
+     name: Pick release tags
++    if: github.repository != 'Flexpair/hermes-agent'
+     runs-on: ubuntu-latest
+     timeout-minutes: 5
+     outputs:
+       tags: ${{ steps.pick.outputs.tags }}
+     steps:
+-      # This job only reads tag names and trees, so take the cheap
+-      # checkout: no blobs (filter), no other files (sparse), but DO fetch
+-      # tags -- they are the whole input, and the default shallow checkout
+-      # has none.
++      # This job reads historical release tags and their trees. Fetch full
++      # history: fetch-tags alone with the default shallow depth only fetches
++      # tags pointing into the shallow commit, leaving old baselines absent.
+       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+         with:
+           filter: blob:none
+-          fetch-tags: true
++          fetch-depth: 0
+           sparse-checkout: |
+             scripts/sandbox/pick-release-tags.sh
+             scripts/releases/pick_tags.py
+@@ -383,6 +391,7 @@ jobs:
+   # looks it up by that name.
+   leg-player:
+     name: Upload leg player
++    if: github.repository != 'Flexpair/hermes-agent'
+     runs-on: ubuntu-latest
+     timeout-minutes: 5
+     steps:
+@@ -408,7 +417,7 @@ jobs:
+   # the source install/update paths.
+   source-gate:
+     name: Source matrix gate
+-    if: always() && inputs.release == true
++    if: always() && github.repository != 'Flexpair/hermes-agent' && inputs.release == true
+     needs: [generate-matrix, linux, windows, macos]
+     runs-on: ubuntu-latest
+     timeout-minutes: 5
+@@ -450,7 +459,7 @@ jobs:
+   # the per-OS aggregates.
+   report:
+     name: Result chart
+-    if: always()
++    if: always() && github.repository != 'Flexpair/hermes-agent'
+     needs: [leg-player, pick-releases, linux, windows, macos, bundle-inputs, windows-bundled, macos-bundled]
+     runs-on: ubuntu-latest
+     timeout-minutes: 10
 diff --git a/.github/workflows/js-autofix.yml b/.github/workflows/js-autofix.yml
 deleted file mode 100644
 index 8db763fd28..0000000000
@@ -3060,6 +3125,21 @@ index 502c882fda..8e892372c7 100755
      # An interrupted clone from an older installer can leave a .git with no
      # initial commit, where stash/checkout abort ("You do not have the
      # initial commit yet", #40998). Move it aside -- never delete it, it may
+diff --git a/scripts/sandbox/generate-e2e-matrix.mjs b/scripts/sandbox/generate-e2e-matrix.mjs
+index f9e09c78fe..c139a9523d 100644
+--- a/scripts/sandbox/generate-e2e-matrix.mjs
++++ b/scripts/sandbox/generate-e2e-matrix.mjs
+@@ -531,7 +531,9 @@ async function main() {
+   });
+   if (values.format === 'results') {
+     const jobs = (await readStdin()).split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
+-    const annotations = /** @type {TagAnnotation[]} */ (JSON.parse(values.tags));
++    // The picker may have failed before emitting an output. The report job
++    // still runs under always(); missing annotations must not hide that failure.
++    const annotations = /** @type {TagAnnotation[]} */ (JSON.parse(values.tags || '[]'));
+     /** @type {Map<string, number>} */
+     const artifactById = new Map();
+     if (values.artifacts) {
 diff --git a/setup-hermes.sh b/setup-hermes.sh
 index b169bedc09..a97069e655 100755
 --- a/setup-hermes.sh
@@ -3090,6 +3170,46 @@ index b169bedc09..a97069e655 100755
  # Prevent uv from discovering config files (uv.toml, pyproject.toml) from the
  # wrong user's home directory when running under sudo -u <user>.  See #21269.
  export UV_NO_CONFIG=1
+diff --git a/tests-js/install-e2e-ci.test.mjs b/tests-js/install-e2e-ci.test.mjs
+new file mode 100644
+index 0000000000..a9049419c1
+--- /dev/null
++++ b/tests-js/install-e2e-ci.test.mjs
+@@ -0,0 +1,34 @@
++import assert from 'node:assert/strict';
++import { execFileSync } from 'node:child_process';
++import fs from 'node:fs';
++import path from 'node:path';
++import { test } from 'node:test';
++import { fileURLToPath } from 'node:url';
++
++const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
++const workflow = fs.readFileSync(path.join(root, '.github/workflows/install-e2e.yml'), 'utf8');
++const script = path.join(root, 'scripts/sandbox/generate-e2e-matrix.mjs');
++
++test('Flexpair checks update refusal instead of the unsupported release upgrade matrix', () => {
++  const fork = workflow.split('  fork-update-refusal:\n')[1].split('  pick-releases:\n')[0];
++  const picker = workflow.split('  pick-releases:\n')[1].split('  generate-matrix:\n')[0];
++  const report = workflow.split('  report:\n')[1];
++  assert.match(fork, /if: github\.repository == 'Flexpair\/hermes-agent'/);
++  assert.match(fork, /uses: \.\/\.github\/workflows\/flexpair-linux-config\.yml/);
++  assert.match(picker, /if: github\.repository != 'Flexpair\/hermes-agent'/);
++  assert.match(report, /if: always\(\) && github\.repository != 'Flexpair\/hermes-agent'/);
++});
++
++test('release picker fetches complete tag history rather than shallow tag tips', () => {
++  const pick = workflow.split('  pick-releases:\n')[1].split('  generate-matrix:\n')[0];
++  assert.match(pick, /fetch-depth: 0/);
++});
++
++test('result chart renders a failed picker with missing tag annotations', () => {
++  const output = execFileSync(process.execPath, [script, '--format', 'results', '--tags', ''], {
++    cwd: root,
++    input: '{"name":"Pick release tags","conclusion":"failure"}\n',
++    encoding: 'utf8',
++  });
++  assert.match(output, /no legs found/);
++});
 diff --git a/tests/ci/test_fork_ci_policy.py b/tests/ci/test_fork_ci_policy.py
 new file mode 100644
 index 0000000000..1baa361262
