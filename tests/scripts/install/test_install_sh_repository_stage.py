@@ -56,19 +56,20 @@ def test_piped_one_liner_runs_the_installer():
     assert json.loads(result.stdout)["protocol_version"] == 1
 
 
-def test_rerun_parks_local_work_before_updating(tmp_path):
+def test_rerun_preserves_local_work_without_updating(tmp_path):
     origin = _origin(tmp_path / "origin")
     assert _stage(tmp_path, origin).returncode == 0
     install = tmp_path / "install"
     (install / "README").write_text("local edit")
     _commit(origin, "two")
     result = _stage(tmp_path, origin)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert (install / "README").read_text() == "two"
-    assert "local edit" in _git(install, "stash", "show", "-p", "stash@{0}")
+    assert result.returncode != 0
+    assert "Updates are disabled" in result.stderr
+    assert (install / "README").read_text() == "local edit"
+    assert not _git(install, "stash", "list")
 
 
-def test_rerun_stops_when_local_work_cannot_be_parked(tmp_path):
+def test_rerun_stops_before_attempting_to_stash_local_work(tmp_path):
     origin = _origin(tmp_path / "origin")
     assert _stage(tmp_path, origin).returncode == 0
     install = tmp_path / "install"
@@ -78,8 +79,10 @@ def test_rerun_stops_when_local_work_cannot_be_parked(tmp_path):
     failing_stash = 'git() { [ "${3:-}" = stash ] && return 1; command git "$@"; }'
     result = _stage(tmp_path, origin, prelude=failing_stash)
     assert result.returncode != 0
+    assert "Updates are disabled" in result.stderr
     assert (install / "README").read_text() == "local edit"
     assert _git(install, "rev-parse", "HEAD") == before
+    assert not _git(install, "stash", "list")
 
 
 def test_commit_pin_must_come_from_the_installed_branch(tmp_path):
@@ -92,25 +95,27 @@ def test_commit_pin_must_come_from_the_installed_branch(tmp_path):
     refused = _stage(tmp_path, origin, commit=off_branch)
     assert refused.returncode != 0
     assert "is not on branch main" in refused.stdout + refused.stderr
+    before = _git(tmp_path / "install", "rev-parse", "HEAD")
     pinned = _stage(tmp_path, origin, commit=on_branch)
-    assert pinned.returncode == 0, pinned.stdout + pinned.stderr
-    assert _git(tmp_path / "install", "rev-parse", "HEAD") == on_branch
+    assert pinned.returncode != 0
+    assert "Updates are disabled" in pinned.stderr
+    assert _git(tmp_path / "install", "rev-parse", "HEAD") == before
 
 
-def test_commitless_checkout_is_moved_aside_and_recloned(tmp_path):
+def test_commitless_checkout_is_left_untouched(tmp_path):
     origin = _origin(tmp_path / "origin")
     install = tmp_path / "install"
     install.mkdir()
     _git(install, "init", "-q")
     (install / "keep").write_text("user file")
     result = _stage(tmp_path, origin)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert (install / "README").read_text() == "one"
-    [broken] = tmp_path.glob("install.broken-*")
-    assert (broken / "keep").read_text() == "user file"
+    assert result.returncode != 0
+    assert "Updates are disabled" in result.stderr
+    assert (install / "keep").read_text() == "user file"
+    assert not list(tmp_path.glob("install.broken-*"))
 
 
-def test_unmerged_index_is_cleared_then_stashed(tmp_path):
+def test_unmerged_index_is_left_untouched(tmp_path):
     origin = _origin(tmp_path / "origin")
     assert _stage(tmp_path, origin).returncode == 0
     install = tmp_path / "install"
@@ -123,22 +128,23 @@ def test_unmerged_index_is_cleared_then_stashed(tmp_path):
     assert _git(install, "ls-files", "--unmerged")
     _commit(origin, "two")
     result = _stage(tmp_path, origin)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert (install / "README").read_text() == "two"
-    assert not _git(install, "ls-files", "--unmerged")
+    assert result.returncode != 0
+    assert "Updates are disabled" in result.stderr
+    assert _git(install, "ls-files", "--unmerged")
 
 
-def test_rerun_follows_an_explicit_repo_url(tmp_path):
+def test_rerun_does_not_change_explicit_repo_url(tmp_path):
     first = _origin(tmp_path / "first")
     assert _stage(tmp_path, first).returncode == 0
     moved = tmp_path / "moved"
     subprocess.run(["git", "clone", "-q", str(first), str(moved)], check=True)
     tip = _commit(moved, "moved")
     result = _stage(tmp_path, moved)
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "Updates are disabled" in result.stderr
     install = tmp_path / "install"
-    assert _git(install, "rev-parse", "HEAD") == tip
-    assert _git(install, "remote", "get-url", "origin") == moved.as_posix()
+    assert _git(install, "rev-parse", "HEAD") != tip
+    assert _git(install, "remote", "get-url", "origin") == first.as_posix()
 
 
 def test_path_uv_is_never_used_even_when_newer_than_the_pin(tmp_path):
@@ -169,9 +175,8 @@ def test_interactive_stages_skip_without_a_terminal(tmp_path):
     assert "no terminal" in result.stdout + result.stderr
 
 
-def test_rerun_marks_partial_clone_packs_when_the_fetch_crashes(tmp_path):
-    """git 2.53+ aborts fetches into a partial clone with unmarked packs (#124272); the installer
-    rerun is the recovery for installs whose own updater cannot fetch, so it marks them first."""
+def test_rerun_refuses_partial_clone_recovery_without_modifying_packs(tmp_path):
+    """A disabled update must not fetch or modify even an unmarked partial-clone pack."""
     origin = _origin(tmp_path / "origin")
     assert _stage(tmp_path, origin).returncode == 0
     install = tmp_path / "install"
@@ -187,6 +192,7 @@ def test_rerun_marks_partial_clone_packs_when_the_fetch_crashes(tmp_path):
         'command git "$@"; }'
     )
     result = _stage(tmp_path, origin, prelude=crashing_fetch)
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert (install / "README").read_text() == "two"
-    assert all(p.with_suffix(".promisor").exists() for p in packs)
+    assert result.returncode != 0
+    assert "Updates are disabled" in result.stderr
+    assert (install / "README").read_text() == "one"
+    assert not any(p.with_suffix(".promisor").exists() for p in packs)

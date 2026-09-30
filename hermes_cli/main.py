@@ -770,15 +770,11 @@ from hermes_cli.model_setup_flows import (
     _model_flow_nous,
     _model_flow_openai_codex,
     _model_flow_xai_oauth,
-    _model_flow_qwen_oauth,
-    _model_flow_minimax_oauth,
     _model_flow_custom,
     _model_flow_azure_foundry,
     _model_flow_named_custom,
     _model_flow_copilot,
     _model_flow_copilot_acp,
-    _model_flow_kimi,
-    _model_flow_stepfun,
     _model_flow_bedrock,
     _model_flow_vertex,
     _model_flow_api_key_provider,
@@ -2012,14 +2008,10 @@ _PROVIDER_MODEL_FLOWS = {
     "nous": lambda c, m, a: _model_flow_nous(c, m, args=a),
     "openai-codex": lambda c, m, a: _model_flow_openai_codex(c, m),
     "xai-oauth": lambda c, m, a: _model_flow_xai_oauth(c, m, args=a),
-    "qwen-oauth": lambda c, m, a: _model_flow_qwen_oauth(c, m),
-    "minimax-oauth": lambda c, m, a: _model_flow_minimax_oauth(c, m, args=a),
     "copilot-acp": lambda c, m, a: _model_flow_copilot_acp(c, m),
     "copilot": lambda c, m, a: _model_flow_copilot(c, m),
     "custom": lambda c, m, a: _model_flow_custom(c),
     "anthropic": lambda c, m, a: _model_flow_anthropic(c, m),
-    "kimi-coding": lambda c, m, a: _model_flow_kimi(c, m),
-    "stepfun": lambda c, m, a: _model_flow_stepfun(c, m),
     "bedrock": lambda c, m, a: _model_flow_bedrock(c, m),
     "vertex": lambda c, m, a: _model_flow_vertex(c, m),
     "azure-foundry": lambda c, m, a: _model_flow_azure_foundry(c, m),
@@ -2163,6 +2155,16 @@ def select_provider_and_model(args=None):
     if selected_provider == "reasoning":
         # Effort for the CURRENT default model, no model change.
         _prompt_main_reasoning_effort(current_model, active or "")
+        return
+
+    # A provider can disappear from the auth registry between rendering the picker and
+    # selection (or have a stale canonical row). Never dispatch a flow that indexes it.
+    from hermes_cli.auth import PROVIDER_REGISTRY
+    if (selected_provider not in PROVIDER_REGISTRY
+            and selected_provider not in {"openrouter", "moa", "custom", "remove-custom"}
+            and not selected_provider.startswith("custom:")
+            and selected_provider not in _custom_provider_map):
+        print("Warning: the selected provider is no longer available. No change.")
         return
 
     # Provider-specific setup + model selection. Flows resolve the
@@ -2486,7 +2488,14 @@ from hermes_cli.update_receipt import update_receipt_scope
 
 @update_receipt_scope()
 def cmd_update(args):
-    """Update Hermes Agent: hangup protection + update lock around ``_cmd_update_impl``."""
+    """Refuse bundled updates before reaching any update preflight or mutation."""
+    from hermes_cli.update_contract import evaluate_update_admission, record_refusal_receipt
+
+    refusal = evaluate_update_admission(PROJECT_ROOT)
+    if refusal is not None:
+        print(refusal.message)
+        record_refusal_receipt(refusal)
+        sys.exit(2)
     # Marks this frame as the CURRENT updater for
     # _old_updater.in_historical_update(); historical on-disk updaters do not
     # declare this local, so only they hand off through retired shims.

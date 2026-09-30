@@ -1,0 +1,65 @@
+name: Flexpair patch replay
+
+on:
+  push:
+    branches: ['*-patched']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regressions:
+    name: Linux config, installer, and freeze regressions
+    uses: ./.github/workflows/flexpair-linux-config.yml
+
+  desktop-freeze:
+    name: Desktop update refusal
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm exec --workspace apps/desktop -- vitest run --project electron electron/update-handoff-marker.test.ts
+
+  replay:
+    name: Patch reproduces branch tree
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout complete history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Replay patch from upstream-synced base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f flexpair.patch
+          # Fork main carries the patch across upstream merges. Follow its
+          # first-parent history to the latest upstream merge, then replay
+          # against that merge's upstream (second) parent, not fork history.
+          upstream_merge=$(git rev-list --first-parent --merges -1 HEAD)
+          test -n "$upstream_merge"
+          base=$(git rev-parse "${upstream_merge}^2")
+          index=$(mktemp "${RUNNER_TEMP}/flexpair-index.XXXXXX")
+          trap 'rm -f "$index"' EXIT
+          rm -f "$index"
+          export GIT_INDEX_FILE="$index"
+          git read-tree "$base"
+          git update-index --force-remove flexpair.patch
+          git apply --cached --check flexpair.patch
+          git apply --cached flexpair.patch
+          replayed=$(git write-tree)
+          git read-tree HEAD
+          git update-index --force-remove flexpair.patch
+          expected=$(git write-tree)
+          if [[ "$replayed" != "$expected" ]]; then
+            git diff --stat "$replayed" "$expected"
+            echo '::error::flexpair.patch does not reproduce the patched branch tree'
+            exit 1
+          fi
+          echo "Patch reproduces tree $expected from base $base"

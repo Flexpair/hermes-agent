@@ -380,6 +380,16 @@ def check_for_updates(*, install_root: Path | None = None, home: Path | None = N
     Only the default (running installation) may use HERMES_REVISION. An explicit
     target must never inherit the host process's embedded revision or stamp.
     """
+    # Flexpair ships a fixed build. Keep every caller (banner prefetch, fast
+    # version output, desktop and dashboard) off the network and Git probes.
+    return {
+        "supported": False,
+        "reason": "updates-disabled",
+        "behind": None,
+        "commits": [],
+        "updateAvailable": False,
+    }
+
     from hermes_cli.config import get_project_root, require_readable_config_before_write
     from hermes_cli.steward import read_install_stamp
     from hermes_cli.update_channel import install_id, resolve_update_channel

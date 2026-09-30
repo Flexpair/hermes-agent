@@ -16258,7 +16258,14 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
 // fleet fan-out below, this path owns the remote serve lifecycle: it gates new
 // dials, drains only exact Desktop-owned processes, runs the launcher outside
 // those serves, proves the correlated receipt, and restores every prior scope.
+// This fork ships without an update channel. Keep the IPC handlers present for
+// older renderers, but reject both remote-update entry points before dispatch.
+const updatesAreDisabled = () => true
+
 async function requestManagedSshUpdate(rawId) {
+  if (updatesAreDisabled()) {
+    return refusedManagedSshUpdate(String(rawId || '').trim(), crypto.randomUUID(), 'Updates are disabled in this Flexpair build.')
+  }
   const connectionId = String(rawId || '').trim()
   const existing = managedConnectionUpdates.get(connectionId)
 
@@ -16310,6 +16317,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
 // app's own update pipeline; Desktop-managed SSH uses the transactional
 // drain/update/restore lifecycle; URL remotes POST their backend updater.
 ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
+  if (updatesAreDisabled()) {
+    return { ok: false, error: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
+  }
   const registry = readDesktopConnectionsRegistry()
 
   // Optional renderer-side exclusions: the everything-update flow dispatches

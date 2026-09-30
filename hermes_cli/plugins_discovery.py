@@ -273,6 +273,17 @@ def gate_manifest(
             f"plugins.toml, or use {RELAY_PLUGINS_CONFIG_ENV} for an explicit user-file override"
         )
         return _placeholder(error, logging.WARNING, "Refusing to load removed Hermes Relay plugin '%s'; %s", error)
+    # Local removal: China-market platforms from all install sources.
+    removed_cn_platform_keys = frozenset({
+        "platforms/dingtalk", "platforms/feishu", "platforms/wecom",
+        "dingtalk-platform", "feishu-platform", "wecom-platform",
+        "dingtalk", "feishu", "wecom",
+    })
+    manifest_path = str(manifest.path or "")
+    if (names & removed_cn_platform_keys
+            or any(k in manifest_path for k in ("/platforms/dingtalk", "/platforms/feishu", "/platforms/wecom"))):
+        error = "removed — China-market platform disabled by local patch"
+        return _placeholder(error, logging.WARNING, "Refusing to load removed China-market plugin '%s'; %s", error)
     if names & disabled:
         return _placeholder("disabled via config", logging.DEBUG, "Skipping disabled plugin '%s'")
     # Exclusive plugins (memory providers) have their own activation path; record only.

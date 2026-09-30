@@ -28,23 +28,21 @@ from agent.i18n_languages import language_options
 
 logger = logging.getLogger(__name__)
 
+# Local removal: "zh" / "zh-hant" deleted (China-market locales).
+# locales/zh.yaml + zh-hant.yaml are removed; requests for them fall back to "en".
 # Bundled catalogs (compat: tests and the parity check iterate this). ``supported_languages()`` is the
 # live set including overlay and pack languages.
 SUPPORTED_LANGUAGES: tuple[str, ...] = (
-    "en", "zh", "zh-hant", "ja", "de", "es", "fr", "tr", "uk",
+    "en", "ja", "de", "es", "fr", "tr", "uk",
     "af", "ko", "it", "ga", "pt", "ru", "hu", "ar",
 )
 DEFAULT_LANGUAGE = "en"
 
-# Natural aliases so "chinese" / "zh-CN" / "jp" hit the right catalog instead of
-# silently falling back to English. Bare "chinese" defaults to Simplified;
-# Taiwan/HK/Macau tags route to the distinct Traditional catalog. pt-br shares
-# the pt catalog unless a pack supplies a real pt-br one (a supplied id always wins over an alias).
+# Natural aliases for bundled languages. pt-br shares the pt catalog unless
+# a pack supplies a real pt-br one (a supplied id always wins over an alias).
 _LANGUAGE_ALIASES: dict[str, str] = {
     "english": "en", "en-us": "en", "en-gb": "en",
-    "chinese": "zh", "mandarin": "zh", "zh-cn": "zh", "zh-hans": "zh", "zh-sg": "zh",
-    "traditional-chinese": "zh-hant", "traditional_chinese": "zh-hant",
-    "zh-tw": "zh-hant", "zh-hk": "zh-hant", "zh-mo": "zh-hant",
+    # Local removal: Chinese aliases fall back to English.
     "japanese": "ja", "jp": "ja", "ja-jp": "ja",
     "german": "de", "deutsch": "de", "de-de": "de", "de-at": "de", "de-ch": "de",
     "spanish": "es", "español": "es", "espanol": "es", "es-es": "es", "es-mx": "es", "es-ar": "es",
