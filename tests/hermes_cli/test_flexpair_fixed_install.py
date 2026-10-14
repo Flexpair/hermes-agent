@@ -112,8 +112,14 @@ def test_runtime_only_setup_bypasses_install_guard(tmp_path: Path):
     script = repo / "setup-hermes.sh"
     script.write_bytes((Path(__file__).resolve().parents[2] / "setup-hermes.sh").read_bytes())
     (repo / "venv").mkdir()
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    uname = fake_bin / "uname"
+    uname.write_text("#!/bin/sh\nprintf 'Linux\\n'\n")
+    uname.chmod(0o755)
     result = subprocess.run(
         ["bash", str(script), "--runtime-only"], capture_output=True, text=True,
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
         timeout=10,
     )
     # No lockfile in this fixture, but activation must pass the update guard.

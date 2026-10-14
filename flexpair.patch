@@ -1,5 +1,5 @@
 diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
-index a9a641b0a3..f287f4d600 100644
+index a9a641b0a3..355ed3c8be 100644
 --- a/.github/workflows/ci.yaml
 +++ b/.github/workflows/ci.yaml
 @@ -55,14 +55,17 @@ jobs:
@@ -69,7 +69,7 @@ index a9a641b0a3..f287f4d600 100644
      uses: ./.github/workflows/lint.yml
      with:
        event_name: ${{ needs.detect.outputs.event_name }}
-@@ -143,23 +154,29 @@ jobs:
+@@ -143,23 +154,22 @@ jobs:
    js-tests:
      name: JS & TS checks
      needs: detect
@@ -77,13 +77,6 @@ index a9a641b0a3..f287f4d600 100644
      if: needs.detect.outputs.frontend == 'true'
      uses: ./.github/workflows/js-tests.yml
  
-+  installer-tests:
-+    name: Installer tests
-+    needs: detect
-+    # Windows-only installer coverage remains upstream-owned.
-+    if: false
-+    uses: ./.github/workflows/installer-tests.yml
-+
    rust-tests:
      name: Rust tests
      needs: detect
@@ -104,7 +97,7 @@ index a9a641b0a3..f287f4d600 100644
      if: needs.detect.outputs.bootstrap == 'true'
      uses: ./.github/workflows/bootstrap-installer.yml
  
-@@ -202,7 +219,8 @@ jobs:
+@@ -202,7 +212,8 @@ jobs:
    docs-site:
      name: Docs Site
      needs: detect
@@ -114,7 +107,7 @@ index a9a641b0a3..f287f4d600 100644
      uses: ./.github/workflows/docs-site-checks.yml
  
    history-check:
-@@ -214,7 +232,8 @@ jobs:
+@@ -214,7 +225,8 @@ jobs:
    contributor-check:
      name: Check contributors
      needs: detect
@@ -124,7 +117,7 @@ index a9a641b0a3..f287f4d600 100644
      uses: ./.github/workflows/contributor-check.yml
  
    uv-lockfile:
-@@ -225,7 +244,8 @@ jobs:
+@@ -225,7 +237,8 @@ jobs:
      # blip, a blocking red X — for diffs that cannot desync the lockfile
      # (docs, frontend, prose). Only pyproject.toml / uv.lock can. A
      # `.github/` change still forces it on via the classifier's fail-open.
@@ -134,7 +127,7 @@ index a9a641b0a3..f287f4d600 100644
      uses: ./.github/workflows/uv-lockfile-check.yml
  
    infographic-check:
-@@ -256,13 +276,15 @@ jobs:
+@@ -256,13 +269,15 @@ jobs:
    lockfile-diff:
      name: package-lock.json diff
      needs: detect
@@ -152,7 +145,7 @@ index a9a641b0a3..f287f4d600 100644
      uses: ./.github/workflows/docker-lint.yml
  
    supply-chain:
-@@ -275,16 +297,6 @@ jobs:
+@@ -275,16 +290,6 @@ jobs:
        scan: ${{ needs.detect.outputs.scan == 'true' }}
        deps: ${{ needs.detect.outputs.deps == 'true' }}
  
@@ -169,7 +162,7 @@ index a9a641b0a3..f287f4d600 100644
  
    # ─────────────────────────────────────────────────────────────────────
    # Gate: runs after everything. ``if: always()`` ensures it reports a
-@@ -307,9 +319,11 @@ jobs:
+@@ -307,6 +312,7 @@ jobs:
      needs:
        - detect
        - tests
@@ -177,11 +170,7 @@ index a9a641b0a3..f287f4d600 100644
        - tests-os
        - lint
        - js-tests
-+      - installer-tests
-       - rust-tests
-       - bootstrap-installer
-       - e2e-desktop
-@@ -327,11 +341,8 @@ jobs:
+@@ -327,11 +333,8 @@ jobs:
        - profile-artifact-check
        - icons-freshness-check
        - supply-chain
@@ -195,14 +184,14 @@ index a9a641b0a3..f287f4d600 100644
        # The image build runs in its own workflow (docker.yml) and reports
        # its own check. It was never required here, because it is too slow
        # to block a merge. A separate run also stops it from holding this
-@@ -356,7 +367,9 @@ jobs:
+@@ -356,7 +359,9 @@ jobs:
          run: |
            args=()
            if [ "$RELEASE" = true ]; then args+=(--release); fi
 -          printf '%s' "$NEEDS" | python3 scripts/ci/required_results.py "${args[@]}"
 +          # Fork-disabled upstream lanes intentionally skip on every event,
 +          # including release. Active Python and JS lanes remain strict.
-+          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "installer-tests", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
++          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
  
    # ─────────────────────────────────────────────────────────────────────
    # CI timing report: collect per-job/step durations from the GitHub API,
@@ -1269,7 +1258,7 @@ index 9756de43d2..1fd55f87ec 100644
 +  assert.equal(fs.existsSync(home), false, 'the self-test sandbox must not leak into the OS temp directory')
  })
 diff --git a/apps/desktop/electron/zoom.test.ts b/apps/desktop/electron/zoom.test.ts
-index 20bd5d70fb..a1b836b687 100644
+index 20bd5d70fb..3680c79670 100644
 --- a/apps/desktop/electron/zoom.test.ts
 +++ b/apps/desktop/electron/zoom.test.ts
 @@ -6,6 +6,7 @@
@@ -1280,6 +1269,18 @@ index 20bd5d70fb..a1b836b687 100644
  import { test, vi } from 'vitest'
  
  import {
+@@ -29,6 +30,11 @@ test('storage key stays stable so persisted zoom survives upgrades', () => {
+   assert.equal(ZOOM_STORAGE_KEY, 'hermes:desktop:zoomLevel')
+ })
+ 
++test('fresh installs and Actual Size use the shared appearance default', () => {
++  assert.equal(DEFAULT_ZOOM_PERCENT, 150)
++  assert.equal(zoomLevelToPercent(DEFAULT_ZOOM_LEVEL), DEFAULT_ZOOM_PERCENT)
++})
++
+ test('clampZoomLevel rejects garbage and enforces bounds', () => {
+   assert.equal(clampZoomLevel(NaN), DEFAULT_ZOOM_LEVEL)
+   assert.equal(clampZoomLevel(Infinity), DEFAULT_ZOOM_LEVEL)
 diff --git a/apps/desktop/electron/zoom.ts b/apps/desktop/electron/zoom.ts
 index 20471174cf..2b672ab722 100644
 --- a/apps/desktop/electron/zoom.ts
@@ -2054,7 +2055,7 @@ index 75d52b7aa4..bf3f94c763 100644
          login=lambda args: auth_mod._openrouter_pkce_login(
              open_browser=not getattr(args, "no_browser", False),
 diff --git a/hermes_cli/banner.py b/hermes_cli/banner.py
-index 9a3d9dee57..2c315cd31f 100644
+index 9a3d9dee57..7748b16c1c 100644
 --- a/hermes_cli/banner.py
 +++ b/hermes_cli/banner.py
 @@ -4,8 +4,10 @@ import logging
@@ -2068,7 +2069,7 @@ index 9a3d9dee57..2c315cd31f 100644
  from pathlib import Path
  from hermes_cli import source_check
  # Historical updater import (tests/compat/old_updater_surface.json). In-tree callers use the owner.
-@@ -143,6 +145,367 @@ def get_available_skills() -> Dict[str, List[str]]:
+@@ -143,6 +145,271 @@ def get_available_skills() -> Dict[str, List[str]]:
      return {} if result is _UNCACHED else result
  
  
@@ -2333,104 +2334,8 @@ index 9a3d9dee57..2c315cd31f 100644
 +
 +
 +def check_for_updates(*, passive: bool = False) -> Optional[int]:
-+    """Check whether a Hermes update is available.
-+
-+    If ``HERMES_REVISION`` is set (nix builds embed it), compare it to upstream main; otherwise
-+    compare the local checkout's HEAD. Both go through the GitHub API, never ``git fetch``.
-+    """
++    """Historical updater entry point; fixed Flexpair installs never probe."""
 +    return None  # Flexpair installs are pinned; do not probe for updates.
-+
-+    def _read_config_opt_out():
-+        from hermes_cli.config import load_config
-+        return load_config().get("updates", {}).get("check", True) is False
-+
-+    if passive and _quiet(_read_config_opt_out) is True:
-+        return None
-+
-+    cache_file = get_hermes_home() / ".update_check"
-+    embedded_rev = os.environ.get("HERMES_REVISION") or None
-+    # Docker images have no working tree (the image excludes `.git`) and set no HERMES_REVISION.
-+    # None makes both the Rich banner and the Ink badge show nothing, mirroring the dashboard's
-+    # `/api/hermes/update/check` short-circuit so the surfaces agree.
-+    def _install_method():
-+        from hermes_cli.config import detect_install_method, get_project_root
-+        return detect_install_method(get_project_root())
-+
-+    if _quiet(_install_method) in {"docker", "apt"}:
-+        return None
-+    # Cache is invalidated when the embedded rev OR installed version changed since the last check.
-+    # For a git checkout the local HEAD is part of the key too: `hermes update` moves HEAD, and a
-+    # stale "3 behind" must not survive the update it just prompted.
-+    now = time.time()
-+    repo_dir = None if embedded_rev else _resolve_repo_dir()
-+    head_rev = (
-+        _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
-+        if repo_dir is not None
-+        else None
-+    )
-+    cached = _read_json(cache_file)
-+    origin_url = (
-+        _git_stdout(
-+            ["remote", "get-url", "origin"], cwd=repo_dir, network=True
-+        )
-+        if repo_dir
-+        else None
-+    )
-+    canonical = _canonical_github_remote(origin_url)
-+    current_repo_slug = (
-+        canonical.removeprefix("github.com/")
-+        if canonical.startswith("github.com/")
-+        else None
-+    )
-+    cached_repo = (
-+        cached.get(
-+            "repo", _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
-+        )
-+        if cached
-+        else None
-+    )
-+    if (
-+        cached is not None
-+        and cached.get("rev") == embedded_rev
-+        and cached.get("ver") == VERSION
-+        and cached.get("head") == head_rev
-+        and cached_repo == (
-+            current_repo_slug
-+            or _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/")
-+        )
-+    ):
-+        ttl = (
-+            _UPDATE_CHECK_CACHE_SECONDS
-+            if cached.get("behind") is not None
-+            else _UPDATE_CHECK_FAILURE_CACHE_SECONDS
-+        )
-+        if now - cached.get("ts", 0) < ttl:
-+            return cached.get("behind")
-+    repo_slug = None
-+    if embedded_rev:
-+        behind = _check_via_rev(embedded_rev)
-+    else:
-+        # No checkout and no embedded revision — status can't be determined.
-+        behind = _check_via_local_git(repo_dir) if repo_dir is not None else None
-+        repo_slug = current_repo_slug
-+    _quiet(
-+        lambda: cache_file.write_text(
-+            json.dumps(
-+                {
-+                    "ts": now,
-+                    "behind": behind,
-+                    "rev": embedded_rev,
-+                    "ver": VERSION,
-+                    "head": head_rev or embedded_rev,
-+                    "target": _last_target_rev,
-+                    "repo": repo_slug
-+                    or _OFFICIAL_REPO_CANONICAL.removeprefix("github.com/"),
-+                }
-+            ),
-+            encoding="utf-8",
-+        )
-+    )
-+    return behind
 +
 +
  def _resolve_repo_dir() -> Optional[Path]:
@@ -3411,10 +3316,10 @@ index 0000000000..a9049419c1
 +});
 diff --git a/tests/ci/test_fork_ci_policy.py b/tests/ci/test_fork_ci_policy.py
 new file mode 100644
-index 0000000000..b1f1b75ff8
+index 0000000000..1c62cbd2cb
 --- /dev/null
 +++ b/tests/ci/test_fork_ci_policy.py
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,126 @@
 +"""Workflow policy tests for the Linux fork's GitHub Actions workflows."""
 +
 +from __future__ import annotations
@@ -3449,6 +3354,24 @@ index 0000000000..b1f1b75ff8
 +    detect = _workflow("ci.yaml")["jobs"]["detect"]
 +
 +    assert detect["timeout-minutes"] >= 5
++
++
++def test_local_reusable_workflow_references_exist_even_when_disabled() -> None:
++    for path in sorted(WORKFLOWS.glob("*.y*ml")):
++        workflow = _workflow(path.name)
++        for name, job in workflow.get("jobs", {}).items():
++            reference = job.get("uses", "")
++            if reference.startswith("./"):
++                assert (REPO_ROOT / reference).is_file(), (path.name, name, reference)
++
++
++def test_orchestrator_dependencies_reference_existing_jobs() -> None:
++    jobs = _workflow("ci.yaml")["jobs"]
++    for name, job in jobs.items():
++        needs = job.get("needs", [])
++        if isinstance(needs, str):
++            needs = [needs]
++        assert set(needs) <= set(jobs), (name, needs)
 +
 +
 +def test_fork_does_not_require_manual_ci_review_label() -> None:
@@ -3766,10 +3689,10 @@ index c96dc66a22..636fe4599e 100644
      ):
 diff --git a/tests/hermes_cli/test_flexpair_fixed_install.py b/tests/hermes_cli/test_flexpair_fixed_install.py
 new file mode 100644
-index 0000000000..1b5bc81e21
+index 0000000000..49508de2db
 --- /dev/null
 +++ b/tests/hermes_cli/test_flexpair_fixed_install.py
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,127 @@
 +"""A Flexpair checkout cannot be advanced by the bundled update surfaces."""
 +
 +from pathlib import Path
@@ -3884,8 +3807,14 @@ index 0000000000..1b5bc81e21
 +    script = repo / "setup-hermes.sh"
 +    script.write_bytes((Path(__file__).resolve().parents[2] / "setup-hermes.sh").read_bytes())
 +    (repo / "venv").mkdir()
++    fake_bin = tmp_path / "bin"
++    fake_bin.mkdir()
++    uname = fake_bin / "uname"
++    uname.write_text("#!/bin/sh\nprintf 'Linux\\n'\n")
++    uname.chmod(0o755)
 +    result = subprocess.run(
 +        ["bash", str(script), "--runtime-only"], capture_output=True, text=True,
++        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
 +        timeout=10,
 +    )
 +    # No lockfile in this fixture, but activation must pass the update guard.
@@ -3942,6 +3871,22 @@ index 0000000000..eb151b63b5
 +    monkeypatch.setattr(main, "_model_flow_api_key_provider", lambda *args: (_ for _ in ()).throw(AssertionError("dispatched")))
 +    main.select_provider_and_model()
 +    assert "no longer available" in capsys.readouterr().out
+diff --git a/tests/hermes_cli/test_minimax_model_validation.py b/tests/hermes_cli/test_minimax_model_validation.py
+index 67dc6c4acd..12950de3e2 100644
+--- a/tests/hermes_cli/test_minimax_model_validation.py
++++ b/tests/hermes_cli/test_minimax_model_validation.py
+@@ -27,7 +27,10 @@ class TestMiniMaxModelValidation:
+             "used_fallback": False,
+         }
+         with patch("hermes_cli.models.fetch_api_models", return_value=None), \
+-             patch("hermes_cli.models.probe_api_models", return_value=probe_payload):
++             patch("hermes_cli.models.probe_api_models", return_value=probe_payload), \
++             patch("hermes_cli.models.provider_model_ids", return_value=["MiniMax-M2.7"]):
++            # Exercise the catalog validator with an explicit fixture, not the
++            # removed built-in provider's production catalog.
+             yield
+ 
+     # -------------------------------------------------------------------------
 diff --git a/tests/hermes_cli/test_passive_update_opt_out.py b/tests/hermes_cli/test_passive_update_opt_out.py
 index 9444956589..26cfcd12da 100644
 --- a/tests/hermes_cli/test_passive_update_opt_out.py

@@ -27,7 +27,10 @@ class TestMiniMaxModelValidation:
             "used_fallback": False,
         }
         with patch("hermes_cli.models.fetch_api_models", return_value=None), \
-             patch("hermes_cli.models.probe_api_models", return_value=probe_payload):
+             patch("hermes_cli.models.probe_api_models", return_value=probe_payload), \
+             patch("hermes_cli.models.provider_model_ids", return_value=["MiniMax-M2.7"]):
+            # Exercise the catalog validator with an explicit fixture, not the
+            # removed built-in provider's production catalog.
             yield
 
     # -------------------------------------------------------------------------

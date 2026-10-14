@@ -30,6 +30,11 @@ test('storage key stays stable so persisted zoom survives upgrades', () => {
   assert.equal(ZOOM_STORAGE_KEY, 'hermes:desktop:zoomLevel')
 })
 
+test('fresh installs and Actual Size use the shared appearance default', () => {
+  assert.equal(DEFAULT_ZOOM_PERCENT, 150)
+  assert.equal(zoomLevelToPercent(DEFAULT_ZOOM_LEVEL), DEFAULT_ZOOM_PERCENT)
+})
+
 test('clampZoomLevel rejects garbage and enforces bounds', () => {
   assert.equal(clampZoomLevel(NaN), DEFAULT_ZOOM_LEVEL)
   assert.equal(clampZoomLevel(Infinity), DEFAULT_ZOOM_LEVEL)

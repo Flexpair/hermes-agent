@@ -34,6 +34,24 @@ def test_change_detection_allows_for_slow_repository_checkout() -> None:
     assert detect["timeout-minutes"] >= 5
 
 
+def test_local_reusable_workflow_references_exist_even_when_disabled() -> None:
+    for path in sorted(WORKFLOWS.glob("*.y*ml")):
+        workflow = _workflow(path.name)
+        for name, job in workflow.get("jobs", {}).items():
+            reference = job.get("uses", "")
+            if reference.startswith("./"):
+                assert (REPO_ROOT / reference).is_file(), (path.name, name, reference)
+
+
+def test_orchestrator_dependencies_reference_existing_jobs() -> None:
+    jobs = _workflow("ci.yaml")["jobs"]
+    for name, job in jobs.items():
+        needs = job.get("needs", [])
+        if isinstance(needs, str):
+            needs = [needs]
+        assert set(needs) <= set(jobs), (name, needs)
+
+
 def test_fork_does_not_require_manual_ci_review_label() -> None:
     jobs = _workflow("ci.yaml")["jobs"]
 

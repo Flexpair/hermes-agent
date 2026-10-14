@@ -158,13 +158,6 @@ jobs:
     if: needs.detect.outputs.frontend == 'true'
     uses: ./.github/workflows/js-tests.yml
 
-  installer-tests:
-    name: Installer tests
-    needs: detect
-    # Windows-only installer coverage remains upstream-owned.
-    if: false
-    uses: ./.github/workflows/installer-tests.yml
-
   rust-tests:
     name: Rust tests
     needs: detect
@@ -323,7 +316,6 @@ jobs:
       - tests-os
       - lint
       - js-tests
-      - installer-tests
       - rust-tests
       - bootstrap-installer
       - e2e-desktop
@@ -369,7 +361,7 @@ jobs:
           if [ "$RELEASE" = true ]; then args+=(--release); fi
           # Fork-disabled upstream lanes intentionally skip on every event,
           # including release. Active Python and JS lanes remain strict.
-          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "installer-tests", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
+          printf '%s' "$NEEDS" | python3 -c 'import json,sys; n=json.load(sys.stdin); disabled=("tests-os", "lint", "rust-tests", "docs-site", "uv-lockfile", "docker-lint"); [n.pop(k,None) for k in disabled if n.get(k,{}).get("result") == "skipped"]; json.dump(n,sys.stdout)' | python3 scripts/ci/required_results.py "${args[@]}"
 
   # ─────────────────────────────────────────────────────────────────────
   # CI timing report: collect per-job/step durations from the GitHub API,
