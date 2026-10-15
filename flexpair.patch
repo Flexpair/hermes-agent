@@ -4699,6 +4699,19 @@ index 913455c2e9cabb13d2fb74a0e6925f0ce9040287..1b085ce83b445b9ca7a69dfaf52bbdd0
  
      def test_timezone_field_is_searchable_select(self):
          """timezone must ship as a searchable, clearable select of IANA ids.
+diff --git a/tests/scripts/install/test_install_clone_throttle_fallback.py b/tests/scripts/install/test_install_clone_throttle_fallback.py
+index a8d69c401eea008feddcd432004127ba1b7272c7..279290a49a4ab1c6cc74f208a1715baafe8f7b15 100644
+--- a/tests/scripts/install/test_install_clone_throttle_fallback.py
++++ b/tests/scripts/install/test_install_clone_throttle_fallback.py
+@@ -26,7 +26,7 @@ def test_clone_retries_and_publishes_only_materialized_tree(tmp_path, materializ
+     env = dict(os.environ, HOME=tmp_path.as_posix(), HERMES_HOME=(tmp_path / "home").as_posix(),
+                HERMES_INSTALL_DIR=dest.as_posix(), HERMES_REPO_URL=origin.as_posix())
+     # Inject throttling at the network boundary; the fallback and checkout use real Git.
+-    script = f'''source {shlex.quote((ROOT / 'scripts/install.sh').as_posix())} --manifest
++    script = f'''source {shlex.quote((ROOT / 'scripts/install.sh').as_posix())} --branch main --manifest
+ sleep() {{ :; }}
+ git() {{
+     if [ "$1" = clone ]; then
 diff --git a/tests/scripts/install/test_install_diverged_rescue_ref.py b/tests/scripts/install/test_install_diverged_rescue_ref.py
 index b6da914a40a8f3eefd993f0afa8bb1e30c7067b1..6824dc268e8c71f86a9670b8e6731184b02420ae 100644
 --- a/tests/scripts/install/test_install_diverged_rescue_ref.py
