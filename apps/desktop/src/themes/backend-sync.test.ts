@@ -107,7 +107,7 @@ describe('ingestBackendSkin', () => {
     ingestBackendSkin(skinWithCSS('default', 'body { background: red; }'), { apply: true })
 
     expect($backendThemes.get().default).toBeUndefined()
-    // setTheme normalizes `default` → DEFAULT_SKIN_NAME ('nous'), so the CSS
+    // setTheme normalizes explicit `default` → `nous`, so the CSS
     // must be findable under that name when the theme is derived.
     expect($backendCustomCSS.get().nous).toBe('body { background: red; }')
   })

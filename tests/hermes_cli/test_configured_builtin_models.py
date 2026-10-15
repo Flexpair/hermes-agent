@@ -19,6 +19,8 @@ def _provider_row(configured_models, *, max_models=None):
             "hermes_cli.models.cached_provider_model_ids",
             return_value=["live-a", "shared"],
         ),
+        patch("hermes_cli.model_switch_providers._live_or_curated_ids", return_value=["live-a", "shared"]),
+        patch("hermes_cli.auth.is_runtime_provider_routable", return_value=True),
         patch("hermes_cli.providers.HERMES_OVERLAYS", {}),
         patch.dict("os.environ", {"DEEPSEEK_API_KEY": "test-key"}),
     ):

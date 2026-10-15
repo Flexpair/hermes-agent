@@ -27,10 +27,26 @@ def test_shipped_catalog_entries_are_all_valid_and_pinned():
     shipping regression the admission CI only catches on changed files."""
     root = pc.get_catalog_dir()
     files = [p for p in root.glob("*.yaml") if p.name != "removed.yaml"]
+    parsed = [pc.entry_from_mapping(pc._read_yaml(path), str(path)) for path in files]
+    assert parsed and all(entry is not None for entry in parsed)
     entries = pc.load_catalog()
-    assert len(entries) == len(files) >= 1
+    assert {entry.name for entry in entries} == {
+        entry.name for entry in parsed if entry is not None and pc._catalog_entry_allowed(entry)
+    }
     assert all(pc._SHA_RE.match(e.sha) and e.repo.startswith("https://") for e in entries)
     assert all(e.install_identifier.startswith(e.repo) for e in entries)
+
+
+@pytest.mark.parametrize("name", sorted(pc._EXCLUDED_CATALOG_NAMES))
+def test_flexpair_catalog_policy_filters_local_and_live_identity(tmp_path, monkeypatch, name):
+    (tmp_path / "renamed.yaml").write_text(yaml.safe_dump(_entry(name)))
+    (tmp_path / "good.yaml").write_text(yaml.safe_dump(_entry()))
+    monkeypatch.setattr(pc, "get_catalog_dir", lambda: tmp_path)
+    monkeypatch.setattr(pc, "fetch_live_catalog", lambda: {
+        "entries": [_entry(name), _entry()], "removed": [],
+    })
+    assert [entry.name for entry in pc.load_catalog()] == ["good-plugin"]
+    assert [entry.name for entry in pc.load_catalog_live()] == ["good-plugin"]
 
 
 def test_category_defaults_to_other_and_unknown_category_is_rejected(tmp_path):

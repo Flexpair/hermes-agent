@@ -71,7 +71,7 @@ $script:BoundParams = $PSBoundParameters
 # Under iex, script scope is the caller's session and outlives a run; start
 # each run without the previous run's answer (see Set-LauncherUserPath).
 $script:BinDirOnCallerPath = $null
-$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/NousResearch/hermes-agent.git" }
+$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/Flexpair/hermes-agent.git" }
 
 # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
 # Derived from pm/lock.json. DO NOT EDIT BY HAND:
@@ -1274,6 +1274,12 @@ if ($Manifest) {
     @{ protocol_version = 1; stages = $Stages } | ConvertTo-Json -Depth 4 -Compress | Write-Output
     exit 0
 }
+
+# Read-only protocol queries above remain available; installation stays Linux-only.
+Write-Error "Flexpair installation requires Linux; refusing to install on this OS."
+if ($script:RunAsFile) { exit 1 }
+$global:LASTEXITCODE = 1
+return
 
 if ($Stage) {
     # The $Stages table is the single authoritative list: it drives the

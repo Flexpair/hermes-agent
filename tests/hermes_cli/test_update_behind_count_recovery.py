@@ -13,7 +13,7 @@ indicator said 1). The fix has two halves:
 """
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -37,10 +37,15 @@ class _FakeResponse:
         return False
 
 
-def _patch_urlopen(payload):
+def _patch_urlopen(payloads):
+    if not isinstance(payloads, list):
+        payloads = [payloads]
+    responses = [
+        _FakeResponse(json.dumps(payload).encode()) for payload in payloads
+    ]
     return patch(
         "urllib.request.urlopen",
-        return_value=_FakeResponse(json.dumps(payload).encode()),
+        side_effect=responses,
     )
 
 

@@ -50,7 +50,7 @@ const PROFILE_MODES_KEY = 'hermes-desktop-profile-modes-v1'
 const LAST_PROFILE_KEY = 'hermes-desktop-active-profile-v1'
 // Skins that no longer exist. A profile still pointing at one falls back to
 // DEFAULT_SKIN_NAME rather than painting a name nothing resolves.
-const RETIRED_SKINS = new Set(['nous-light', 'default', 'gold'])
+const RETIRED_SKINS = new Set(['nous-light', 'gold'])
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
@@ -60,7 +60,7 @@ const resolveMode = (mode: ThemeMode, systemDark = matchesQuery('(prefers-color-
   mode === 'system' ? (systemDark ? 'dark' : 'light') : mode
 
 const normalizeSkin = (name: string | null): string =>
-  name && resolveTheme(name) && !RETIRED_SKINS.has(name) ? name : DEFAULT_SKIN_NAME
+  name === 'default' ? 'nous' : name && resolveTheme(name) && !RETIRED_SKINS.has(name) ? name : DEFAULT_SKIN_NAME
 
 /**
  * A stored mode, or `system` when there isn't one.

@@ -94,6 +94,18 @@ _BUNDLED_PLUGINS_DIR = (
 )
 
 
+# Local removal: China-market model providers (vendors headquartered in
+# mainland China). Both the international and the explicit *-cn endpoints are
+# skipped, because the vendor itself is China-specific.
+# Covers: alibaba (+ -cn, token-plan, token-plan-cn), alibaba-coding-plan
+# (+ -cn), deepseek, kimi-coding (+ -cn / Moonshot), minimax (+ -cn, -oauth),
+# qwen-oauth (Alibaba Qwen), stepfun, xiaomi (MiMo), zai (Zhipu Z.AI / GLM).
+_REMOVED_CN_MODEL_PROVIDERS = frozenset({
+    "alibaba", "alibaba-coding-plan", "deepseek", "kimi-coding", "minimax",
+    "qwen-oauth", "stepfun", "xiaomi", "zai",
+})
+
+
 def _sync_auth_registry() -> None:
     """Mirror profiles into the ``hermes_cli`` snapshots (auth registry, picker catalog) that are loaded.
 
@@ -600,6 +612,9 @@ def _run_discovery_steps() -> None:
     if _BUNDLED_PLUGINS_DIR.is_dir():
         for child in sorted(_BUNDLED_PLUGINS_DIR.iterdir()):
             if not child.is_dir() or child.name.startswith(("_", ".")):
+                continue
+            if child.name in _REMOVED_CN_MODEL_PROVIDERS:
+                logger.debug("Skipping removed China-market provider '%s'", child.name)
                 continue
             _import_plugin_dir(child, "bundled")
 

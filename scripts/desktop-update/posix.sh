@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+echo "Updates are disabled in this Flexpair build; the installed version is fixed." >&2
+exit 2
 # posix.sh -- repo-owned macOS/Linux Desktop update hand-off.
 #
 # The whole job: wait for the Desktop to exit, run `hermes update`, tell the

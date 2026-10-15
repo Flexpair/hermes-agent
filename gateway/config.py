@@ -255,12 +255,18 @@ class Platform(Enum):
         """Directory names of bundled platform plugins under ``plugins/platforms/``, plus a map of
         manifest ``name:`` keys that differ from their directory (alias -> directory name). Aliases
         never shadow a directory name, so the directory stays the canonical platform value."""
+        # Local removal: China-market messaging platforms.
+        # dingtalk (Alibaba), feishu (ByteDance Feishu; shares code with
+        # international Lark -- removing this dir removes Lark as well),
+        # wecom (Tencent WeCom / Enterprise WeChat, incl. wecom_callback).
+        _REMOVED_CN_PLATFORMS = {"dingtalk", "feishu", "wecom"}
         try:
             platforms_dir = Path(__file__).parent.parent / "plugins" / "platforms"
             dirs = [
                 child for child in (platforms_dir.iterdir() if platforms_dir.is_dir() else ())
                 if child.is_dir() and (child / "__init__.py").exists()
                 and ((child / "plugin.yaml").exists() or (child / "plugin.yml").exists())
+                and child.name.lower() not in _REMOVED_CN_PLATFORMS
             ]
             names = {child.name.lower() for child in dirs}
             aliases = {}

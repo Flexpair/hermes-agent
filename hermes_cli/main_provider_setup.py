@@ -22,10 +22,9 @@ def _is_profile_api_key_provider(provider_id: str) -> bool:
 
 
 _GENERIC_API_KEY_PROVIDERS = frozenset({
-    "openai-api", "gemini", "deepseek", "xai", "zai", "kimi-coding-cn",
-    "minimax", "minimax-cn", "kilocode", "opencode-zen", "opencode-go",
-    "alibaba", "huggingface", "xiaomi", "arcee", "gmi",
-    "nvidia", "ollama-cloud", "tencent-tokenhub", "tencent-tokenplan", "lmstudio"})
+    "openai-api", "gemini", "xai", "kilocode", "opencode-zen", "opencode-go",
+    "huggingface", "arcee", "gmi", "nvidia", "ollama-cloud",
+    "tencent-tokenhub", "tencent-tokenplan", "lmstudio"})
 
 
 def _short_url(url: str) -> str:
@@ -883,6 +882,7 @@ def _build_provider_picker_rows(config: dict, active: str, provider_labels: dict
     ``model_catalog.excluded_providers`` (slug or alias, case-insensitive) like the gateway/TUI."""
     from hermes_cli.models import CANONICAL_PROVIDERS, _PROVIDER_ALIASES
     from hermes_cli.models_catalog_static import group_providers, provider_group_for_slug
+    from hermes_cli.auth import PROVIDER_REGISTRY
     canonical_descs = {p.slug: p.tui_desc for p in CANONICAL_PROVIDERS}
     _cli_excluded = {
         str(p).strip().lower()
@@ -896,6 +896,8 @@ def _build_provider_picker_rows(config: dict, active: str, provider_labels: dict
         _visible_slugs = [p.slug for p in CANONICAL_PROVIDERS if not _names_for.get(p.slug, {p.slug.lower()}) & _cli_excluded]
     else:
         _visible_slugs = [p.slug for p in CANONICAL_PROVIDERS]
+
+    _visible_slugs = [slug for slug in _visible_slugs if slug in PROVIDER_REGISTRY or slug in {"openrouter", "moa"}]
 
     # The active provider's group when grouped, otherwise the active slug itself.
     active_group = provider_group_for_slug(active) if active else ""

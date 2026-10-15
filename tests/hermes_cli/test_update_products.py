@@ -23,6 +23,9 @@ from hermes_cli import main, update_cmd
 def test_command_reports_outcome_and_releases_real_lock(tmp_path, monkeypatch, failure, exception, code, reexec):
     from hermes_cli import update_lock, update_receipt
 
+    # Exercise retained transaction cleanup explicitly; real admission stays covered
+    # by test_flexpair_fixed_install and must refuse before entering this path.
+    monkeypatch.setattr("hermes_cli.update_contract.evaluate_update_admission", lambda _: None)
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("HERMES_UPDATE_REEXEC", "1" if reexec else "")
     monkeypatch.setattr("os._exit", lambda *_: pytest.fail("normal cleanup bypassed"))

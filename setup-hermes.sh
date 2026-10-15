@@ -15,6 +15,13 @@
 
 set -e
 
+# Developer setup obeys the Linux-only installation policy before mutations.
+if [ "$(uname -s)" != "Linux" ] || [ -n "${TERMUX_VERSION:-}" ] ||
+   [[ "${PREFIX:-}" == *"com.termux/files/usr"* ]]; then
+    printf '%s\n' 'Flexpair installation requires Linux; refusing to install on this OS.' >&2
+    exit 1
+fi
+
 # Setup and activation prepare the isolated test environment. Installers call
 # pm.cli directly and never select it.
 runtime_only=false
@@ -35,6 +42,11 @@ NC='\033[0m'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+if [ "$runtime_only" != true ] && { [ -e "$SCRIPT_DIR/venv" ] || [ -L "$SCRIPT_DIR/venv" ]; }; then
+    printf '%s\n' 'Updates are disabled in this Flexpair build; the existing installation is unchanged.' >&2
+    exit 1
+fi
 
 # Prevent uv from discovering config files (uv.toml, pyproject.toml) from the
 # wrong user's home directory when running under sudo -u <user>.  See #21269.

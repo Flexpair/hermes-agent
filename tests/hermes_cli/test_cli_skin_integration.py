@@ -31,6 +31,35 @@ def _make_cli_stub():
 
 class TestCliSkinPromptIntegration:
 
+    def test_empty_cli_defaults_to_flexpair_skin(self):
+        from hermes_cli.cli_config_load import _cli_config_defaults
+        from hermes_cli.skin_engine import init_skin_from_config
+
+        config = _cli_config_defaults()
+        assert config["display"]["skin"] == "flexpair-dark"
+        init_skin_from_config(config)
+        assert get_active_skin().name == "flexpair-dark"
+
+    def test_install_seed_uses_fork_default_without_changing_classic_alias(self):
+        from pathlib import Path
+        from ruamel.yaml import YAML
+        from hermes_cli.cli_config_load import _cli_config_defaults
+        from hermes_cli.skin_engine import init_skin_from_config, load_skin
+
+        seed = Path(__file__).resolve().parents[2] / "cli-config.yaml.example"
+        config = YAML(typ="safe").load(seed.read_text())
+        assert config["display"]["skin"] == _cli_config_defaults()["display"]["skin"]
+        init_skin_from_config(config)
+        assert get_active_skin().name == config["display"]["skin"]
+        init_skin_from_config({"display": {"skin": "default"}})
+        assert get_active_skin() == load_skin("default")
+
+
+    def test_ares_prompt_fragments_use_skin_symbol(self):
+        cli = _make_cli_stub()
+
+        set_active_skin("ares")
+        assert cli._get_tui_prompt_fragments() == [("class:prompt", "⚔ ")]
 
     def test_secret_prompt_fragments_preserve_secret_state(self):
         cli = _make_cli_stub()

@@ -53,24 +53,12 @@ def _diverged_managed_checkout(tmp_path: Path) -> tuple[Path, str]:
     return managed, local_sha
 
 
-def _assert_local_commit_parked(repo: Path, local_sha: str, output: str) -> None:
-    assert _git(repo, "rev-parse", "HEAD") == _git(repo, "rev-parse", "origin/main")
-    refs = dict(
-        line.split()[::-1] for line in _git(
-            repo, "for-each-ref", "--format=%(refname) %(objectname)",
-            "refs/hermes-update-backups/").splitlines())
-    ref = refs.get(local_sha)
-    assert ref and ref.startswith("refs/hermes-update-backups/diverged-main-"), refs
-    assert ref in output, "the installer must print where the commits went"
-    assert _git(repo, "log", "--format=%H", f"origin/main..{ref}").split() == [local_sha]
-
-
 @pytest.mark.live_system_guard_bypass
 @pytest.mark.skipif(
     shutil.which("git") is None or shutil.which("bash") is None,
     reason="needs git and bash",
 )
-def test_install_sh_repository_stage_parks_local_commits_before_reset(tmp_path: Path) -> None:
+def test_install_sh_repository_stage_refuses_without_reset(tmp_path: Path) -> None:
     managed, local_sha = _diverged_managed_checkout(tmp_path)
     env = os.environ | {
         "HERMES_HOME": str(tmp_path / "hermes-home"),
@@ -82,8 +70,10 @@ def test_install_sh_repository_stage_parks_local_commits_before_reset(tmp_path: 
         cwd=tmp_path, env=env, capture_output=True, text=True,
     )
 
-    assert result.returncode == 0, result.stderr
-    _assert_local_commit_parked(managed, local_sha, result.stdout + result.stderr)
+    assert result.returncode != 0
+    assert "Updates are disabled" in result.stderr
+    assert _git(managed, "rev-parse", "HEAD") == local_sha
+    assert not _git(managed, "for-each-ref", "--format=%(refname)", "refs/hermes-update-backups/")
 
 
 @pytest.mark.live_system_guard_bypass
@@ -91,7 +81,7 @@ def test_install_sh_repository_stage_parks_local_commits_before_reset(tmp_path: 
     shutil.which("git") is None or POWERSHELL is None,
     reason="needs git and PowerShell",
 )
-def test_install_ps1_repository_stage_parks_local_commits_before_reset(tmp_path: Path) -> None:
+def test_install_ps1_repository_stage_refuses_without_reset(tmp_path: Path) -> None:
     managed, local_sha = _diverged_managed_checkout(tmp_path)
     env = os.environ.copy()
     if os.name != "nt":
@@ -120,5 +110,7 @@ def test_install_ps1_repository_stage_parks_local_commits_before_reset(tmp_path:
         cwd=tmp_path, env=env, capture_output=True, text=True,
     )
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    _assert_local_commit_parked(managed, local_sha, result.stdout + result.stderr)
+    assert result.returncode != 0
+    assert "Flexpair installation requires Linux" in result.stdout + result.stderr
+    assert _git(managed, "rev-parse", "HEAD") == local_sha
+    assert not _git(managed, "for-each-ref", "--format=%(refname)", "refs/hermes-update-backups/")

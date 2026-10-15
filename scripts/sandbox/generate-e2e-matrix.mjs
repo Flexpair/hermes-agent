@@ -531,7 +531,9 @@ async function main() {
   });
   if (values.format === 'results') {
     const jobs = (await readStdin()).split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
-    const annotations = /** @type {TagAnnotation[]} */ (JSON.parse(values.tags));
+    // The picker may have failed before emitting an output. The report job
+    // still runs under always(); missing annotations must not hide that failure.
+    const annotations = /** @type {TagAnnotation[]} */ (JSON.parse(values.tags || '[]'));
     /** @type {Map<string, number>} */
     const artifactById = new Map();
     if (values.artifacts) {

@@ -11,15 +11,23 @@ from hermes_cli.provider_catalog import (
     provider_catalog_by_slug,
 )
 
+def test_disabled_providers_do_not_leak_into_public_catalogs():
+    from hermes_cli.models import list_available_providers
+    from hermes_cli.models_catalog_static import _DISABLED_BUILTIN_SLUGS, _PROVIDER_MODELS
+
+    assert not (_DISABLED_BUILTIN_SLUGS & {row["id"] for row in list_available_providers()})
+    assert not (_DISABLED_BUILTIN_SLUGS & set(provider_catalog_by_slug()))
+    assert not (_DISABLED_BUILTIN_SLUGS & set(_PROVIDER_MODELS))
+
 def test_profileless_providers_still_present():
     """Providers without a ProviderProfile must still resolve via fallbacks.
 
-    lmstudio / openai-api / tencent-tokenhub / xai-oauth have no profile on
+    lmstudio / openai-api / xai-oauth have no profile on
     main; they exist only as registry + canonical entries. The catalog must
     not require a profile to include a provider.
     """
     by = provider_catalog_by_slug()
-    for slug in ("lmstudio", "openai-api", "tencent-tokenhub", "xai-oauth"):
+    for slug in ("lmstudio", "openai-api", "xai-oauth"):
         assert slug in by, f"{slug} dropped from catalog (profile-less provider)"
         assert by[slug].label, f"{slug} has empty label despite canonical fallback"
         assert by[slug].description, f"{slug} has empty description despite fallback"

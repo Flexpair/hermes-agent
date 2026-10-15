@@ -46,3 +46,14 @@ describe.each(cases)('per-profile $name', ({ pref, fallback, a, b, junk }) => {
     expect(pref.resolve('work')).toBe(fallback)
   })
 })
+
+describe('explicit default skin alias', () => {
+  beforeEach(() => window.localStorage.clear())
+
+  it('selects classic nous while an unset profile inherits Flexpair dark', () => {
+    expect(skinPref.resolve('default')).toBe(DEFAULT_SKIN_NAME)
+    skinPref.assign('default', 'default')
+    expect(skinPref.resolve('default')).toBe('nous')
+    expect(skinPref.resolve('work')).toBe('nous')
+  })
+})

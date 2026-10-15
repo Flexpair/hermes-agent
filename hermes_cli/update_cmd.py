@@ -687,6 +687,14 @@ def _is_shallow_checkout(git_cmd) -> bool:
     return _git_run(git_cmd, ["rev-parse", "--is-shallow-repository"]).stdout.strip() == "true"
 
 
+def _github_repo_slug(origin_url: str | None) -> str | None:
+    """Return the GitHub ``owner/repo`` slug for an origin URL."""
+    from hermes_cli.banner import _canonical_github_remote
+
+    canonical = _canonical_github_remote(origin_url)
+    return canonical.removeprefix("github.com/") if canonical.startswith("github.com/") else None
+
+
 def _tip_shas(git_cmd, target_ref: str, base: str = "HEAD") -> tuple[str, str]:
     """``(<base> sha, <target_ref> sha)`` as printed by rev-parse ("" when unresolvable)."""
     return tuple(_git_run(git_cmd, ["rev-parse", ref]).stdout.strip() for ref in (base, target_ref))
@@ -1107,7 +1115,9 @@ def _prepare_checkout_for_update(
     apply_is_shallow = _is_shallow_checkout(git_cmd)
     if commit_count > 0 and apply_is_shallow:
         from hermes_cli.source_check import _github_compare_behind
-        counted = _github_compare_behind(*_tip_shas(git_cmd, target_ref, base))
+        head_sha, target_sha = _tip_shas(git_cmd, target_ref, base)
+        repo_slug = _github_repo_slug(_m()._get_origin_url(git_cmd, _m().PROJECT_ROOT)) if target_ref.startswith("origin/") else None
+        counted = _github_compare_behind(head_sha, target_sha, repo_slug) if repo_slug else _github_compare_behind(head_sha, target_sha)
         # counted == 0 means local-ahead: falls through to the up-to-date path.
         commit_count = counted if counted is not None else -1
 

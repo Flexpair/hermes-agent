@@ -29,6 +29,10 @@ class Installation(tuple):
 
 @pytest.fixture
 def installation(tmp_path, monkeypatch):
+    # These tests exercise the retained upstream implementation, not admission.
+    # The public fixed-build refusal is tested below and in test_flexpair_fixed_install.
+    from hermes_cli import source_check
+    monkeypatch.setattr(source_check, "check_for_updates", source_check._check_for_updates)
     from hermes_cli import source_releases
 
     root = tmp_path / "checkout"
