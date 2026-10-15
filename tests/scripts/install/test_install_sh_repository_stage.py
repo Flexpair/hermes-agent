@@ -36,7 +36,7 @@ def _commit(repo: Path, content: str) -> str:
 
 
 def _run(tmp_path: Path, body: str, *, env: dict | None = None, **kwargs) -> subprocess.CompletedProcess:
-    script = f"source {shlex.quote(INSTALL_SH.as_posix())} --manifest\nsleep() {{ :; }}\n{body}\n"
+    script = f"source {shlex.quote(INSTALL_SH.as_posix())} --branch main --manifest\nsleep() {{ :; }}\n{body}\n"
     full_env = dict(os.environ, HOME=tmp_path.as_posix(), HERMES_HOME=(tmp_path / "home").as_posix(),
                     HERMES_INSTALL_DIR=(tmp_path / "install").as_posix(), **(env or {}))
     return subprocess.run(["bash", "-c", script], env=full_env, capture_output=True, text=True, timeout=60, **kwargs)

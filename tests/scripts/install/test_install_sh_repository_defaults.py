@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import subprocess
 import os
+import re
 from pathlib import Path
 
 
@@ -26,7 +27,7 @@ def test_installer_uses_flexpair_repository_defaults(tmp_path: Path) -> None:
     probe = f"""
 set -eu
 source "{INSTALL_SH!s}" --manifest >/dev/null
-printf '%s\\n' "$REPO_URL_SSH" "$REPO_URL_HTTPS"
+printf '%s\\n' "$REPO_URL_SSH" "$REPO_URL_HTTPS" "$BRANCH"
 """
     result = subprocess.run(
         ["bash", "-c", probe],
@@ -38,4 +39,7 @@ printf '%s\\n' "$REPO_URL_SSH" "$REPO_URL_HTTPS"
     )
 
     assert result.returncode == 0, result.stderr
-    assert tuple(result.stdout.splitlines()) == EXPECTED_URLS
+    lines = result.stdout.splitlines()
+    assert tuple(lines[:2]) == EXPECTED_URLS
+    assert len(lines) == 3
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-patched", lines[2])

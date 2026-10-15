@@ -1,3 +1,23 @@
+diff --git a/.github/workflows/bootstrap-installer.yml b/.github/workflows/bootstrap-installer.yml
+index fccf19a2a6f0e5aa1939d07e6a811c4fe636065a..46f4e42f0b39ebf10971b3266ab88f69f3b87e15 100644
+--- a/.github/workflows/bootstrap-installer.yml
++++ b/.github/workflows/bootstrap-installer.yml
+@@ -154,3 +154,15 @@ jobs:
+           $json = pwsh -NoProfile -File scripts/install.ps1 -Manifest | ConvertFrom-Json
+           if ($json.protocol_version -ne 1) { Write-Error "manifest protocol_version != 1"; exit 1 }
+           Write-Host "stage manifest ok (pwsh 7)"
++
++      - name: Installation remains Linux-only
++        shell: pwsh
++        run: |
++          foreach ($engine in @("powershell", "pwsh")) {
++            $output = & $engine -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1 -Stage flexpair-refusal-probe 2>&1
++            if ($LASTEXITCODE -ne 1) { throw "$engine did not refuse installation" }
++            if (($output | Out-String) -notmatch "Flexpair installation requires Linux") {
++              throw "$engine did not reach the Linux-only installation gate"
++            }
++          }
++          exit 0
 diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
 index a9a641b0a3466ca6c1adbf2efaa262e70c11e217..355ed3c8be8f0e8af66d614957bcdf1c28e7e9d7 100644
 --- a/.github/workflows/ci.yaml
@@ -3185,7 +3205,7 @@ index bb1f0a93a2a278e5deb33cb5db0fa4e8d708ade5..3eb36ba0f291f3096d60ec9026014901
      throw "-Branch and -Channel are mutually exclusive"
  }
 diff --git a/scripts/install.ps1 b/scripts/install.ps1
-index dce40f5f2a19e0197acf90643f279226a837dc5f..fe467c102e25ec572e2c1e10791b79eddfe4e99a 100644
+index dce40f5f2a19e0197acf90643f279226a837dc5f..0f27321b488d0e5dc777228b23a33c5dd6830a7a 100644
 --- a/scripts/install.ps1
 +++ b/scripts/install.ps1
 @@ -71,7 +71,7 @@ $script:BoundParams = $PSBoundParameters
@@ -3197,24 +3217,24 @@ index dce40f5f2a19e0197acf90643f279226a837dc5f..fe467c102e25ec572e2c1e10791b79ed
  
  # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
  # Derived from pm/lock.json. DO NOT EDIT BY HAND:
-@@ -1251,6 +1251,12 @@ if ($script:IsDotSourced) {
- # switch is honored, so every contract below sees long-form paths.
- Initialize-ResolvedPaths
+@@ -1275,6 +1275,12 @@ if ($Manifest) {
+     exit 0
+ }
  
-+# The source-only Flexpair fork cannot be installed from Windows.
++# Read-only protocol queries above remain available; installation stays Linux-only.
 +Write-Error "Flexpair installation requires Linux; refusing to install on this OS."
 +if ($script:RunAsFile) { exit 1 }
 +$global:LASTEXITCODE = 1
 +return
 +
- # Keep uv from discovering uv.toml / pyproject.toml config from whatever
- # directory or user profile the installer runs under (mirrors install.sh).
- $env:UV_NO_CONFIG = "1"
+ if ($Stage) {
+     # The $Stages table is the single authoritative list: it drives the
+     # -Manifest output AND the no-flag ladder, so -IncludeDesktop affects
 diff --git a/scripts/install.sh b/scripts/install.sh
-index 502c882fda8350ad49b13cad87569bfb932e9dec..8e892372c7303438b486fc0598ac63f9cecc1aa4 100755
+index 502c882fda8350ad49b13cad87569bfb932e9dec..9d4c4b8adaa42d09bf6d2fb936d49c301736135b 100755
 --- a/scripts/install.sh
 +++ b/scripts/install.sh
-@@ -14,13 +14,22 @@
+@@ -14,14 +14,23 @@
  #                         off a terminal and in CI)
  set -u
  
@@ -3232,12 +3252,14 @@ index 502c882fda8350ad49b13cad87569bfb932e9dec..8e892372c7303438b486fc0598ac63f9
  export UV_NO_CONFIG=1
  
 -REPO_URL="${HERMES_REPO_URL:-https://github.com/NousResearch/hermes-agent.git}"
+-BRANCH="main"
 +REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
 +REPO_URL_SSH="git@github.com:Flexpair/hermes-agent.git"
 +REPO_URL_HTTPS="https://github.com/Flexpair/hermes-agent.git"
- BRANCH="main"
++BRANCH="2026-09-30-patched"
  INSTALL_COMMIT=""
  INSTALL_DIR="${HERMES_INSTALL_DIR:-}"
+ HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
 @@ -443,6 +452,9 @@ stage_prerequisites() {
  }
  
@@ -4768,10 +4790,10 @@ index 6958f00fbb4b29ec02288edb9b19b8d266198ccb..35d01bad56b14b52c03735f2f0525d44
      assert not (dest / "tree").exists()
 diff --git a/tests/scripts/install/test_install_sh_repository_defaults.py b/tests/scripts/install/test_install_sh_repository_defaults.py
 new file mode 100644
-index 0000000000000000000000000000000000000000..b9559d035f850547f36c4e4ff21e41635c5981e3
+index 0000000000000000000000000000000000000000..275b2bf33c3b466c7e3d657ea1a333e3ceef7aaa
 --- /dev/null
 +++ b/tests/scripts/install/test_install_sh_repository_defaults.py
-@@ -0,0 +1,41 @@
+@@ -0,0 +1,45 @@
 +"""The published installer must clone the Flexpair Hermes fork.
 +
 +Run the real shell script in manifest mode so these assertions cover the
@@ -4782,6 +4804,7 @@ index 0000000000000000000000000000000000000000..b9559d035f850547f36c4e4ff21e4163
 +
 +import subprocess
 +import os
++import re
 +from pathlib import Path
 +
 +
@@ -4800,7 +4823,7 @@ index 0000000000000000000000000000000000000000..b9559d035f850547f36c4e4ff21e4163
 +    probe = f"""
 +set -eu
 +source "{INSTALL_SH!s}" --manifest >/dev/null
-+printf '%s\\n' "$REPO_URL_SSH" "$REPO_URL_HTTPS"
++printf '%s\\n' "$REPO_URL_SSH" "$REPO_URL_HTTPS" "$BRANCH"
 +"""
 +    result = subprocess.run(
 +        ["bash", "-c", probe],
@@ -4812,11 +4835,23 @@ index 0000000000000000000000000000000000000000..b9559d035f850547f36c4e4ff21e4163
 +    )
 +
 +    assert result.returncode == 0, result.stderr
-+    assert tuple(result.stdout.splitlines()) == EXPECTED_URLS
++    lines = result.stdout.splitlines()
++    assert tuple(lines[:2]) == EXPECTED_URLS
++    assert len(lines) == 3
++    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-patched", lines[2])
 diff --git a/tests/scripts/install/test_install_sh_repository_stage.py b/tests/scripts/install/test_install_sh_repository_stage.py
-index 4d0da0c4ec5474f20c980dd9e97158e71d72bac7..3c9be12be2176d3b4a6826040f48579565d169d3 100644
+index 4d0da0c4ec5474f20c980dd9e97158e71d72bac7..a248682c5856620923e02a39ae5f467eb6e4e405 100644
 --- a/tests/scripts/install/test_install_sh_repository_stage.py
 +++ b/tests/scripts/install/test_install_sh_repository_stage.py
+@@ -36,7 +36,7 @@ def _commit(repo: Path, content: str) -> str:
+ 
+ 
+ def _run(tmp_path: Path, body: str, *, env: dict | None = None, **kwargs) -> subprocess.CompletedProcess:
+-    script = f"source {shlex.quote(INSTALL_SH.as_posix())} --manifest\nsleep() {{ :; }}\n{body}\n"
++    script = f"source {shlex.quote(INSTALL_SH.as_posix())} --branch main --manifest\nsleep() {{ :; }}\n{body}\n"
+     full_env = dict(os.environ, HOME=tmp_path.as_posix(), HERMES_HOME=(tmp_path / "home").as_posix(),
+                     HERMES_INSTALL_DIR=(tmp_path / "install").as_posix(), **(env or {}))
+     return subprocess.run(["bash", "-c", script], env=full_env, capture_output=True, text=True, timeout=60, **kwargs)
 @@ -56,19 +56,20 @@ def test_piped_one_liner_runs_the_installer():
      assert json.loads(result.stdout)["protocol_version"] == 1
  

@@ -154,3 +154,15 @@ jobs:
           $json = pwsh -NoProfile -File scripts/install.ps1 -Manifest | ConvertFrom-Json
           if ($json.protocol_version -ne 1) { Write-Error "manifest protocol_version != 1"; exit 1 }
           Write-Host "stage manifest ok (pwsh 7)"
+
+      - name: Installation remains Linux-only
+        shell: pwsh
+        run: |
+          foreach ($engine in @("powershell", "pwsh")) {
+            $output = & $engine -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1 -Stage flexpair-refusal-probe 2>&1
+            if ($LASTEXITCODE -ne 1) { throw "$engine did not refuse installation" }
+            if (($output | Out-String) -notmatch "Flexpair installation requires Linux") {
+              throw "$engine did not reach the Linux-only installation gate"
+            }
+          }
+          exit 0

@@ -1251,12 +1251,6 @@ if ($script:IsDotSourced) {
 # switch is honored, so every contract below sees long-form paths.
 Initialize-ResolvedPaths
 
-# The source-only Flexpair fork cannot be installed from Windows.
-Write-Error "Flexpair installation requires Linux; refusing to install on this OS."
-if ($script:RunAsFile) { exit 1 }
-$global:LASTEXITCODE = 1
-return
-
 # Keep uv from discovering uv.toml / pyproject.toml config from whatever
 # directory or user profile the installer runs under (mirrors install.sh).
 $env:UV_NO_CONFIG = "1"
@@ -1280,6 +1274,12 @@ if ($Manifest) {
     @{ protocol_version = 1; stages = $Stages } | ConvertTo-Json -Depth 4 -Compress | Write-Output
     exit 0
 }
+
+# Read-only protocol queries above remain available; installation stays Linux-only.
+Write-Error "Flexpair installation requires Linux; refusing to install on this OS."
+if ($script:RunAsFile) { exit 1 }
+$global:LASTEXITCODE = 1
+return
 
 if ($Stage) {
     # The $Stages table is the single authoritative list: it drives the
