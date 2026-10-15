@@ -196,22 +196,21 @@ def _removed_from_list(raw_list: Any) -> List[RemovedEntry]:
 
 # ── In-tree catalog ──────────────────────────────────────────────────────────
 
+_EXCLUDED_CATALOG_NAMES = frozenset({
+    "wechat-social-assistant", "volcengine-voice",
+    "dashscope-image", "dashscope-video", "minimax-image", "minimax-video",
+    "kimi-code-delegate", "deepseek-whale", "hermes-zh", "cjk_sanitizer", "desensitize",
+})
+
+
+def _catalog_entry_allowed(entry: PluginCatalogEntry) -> bool:
+    """Apply the Flexpair entry-identity policy to every catalog source."""
+    return entry.name not in _EXCLUDED_CATALOG_NAMES
+
+
 def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]:
     """Every valid ``*.yaml`` entry in the catalog dir (``removed.yaml`` excluded), sorted by file name.
     Malformed entries are skipped with a warning — never raises."""
-    # Local removal: China-market catalog entries.
-    # wechat-social-assistant (WeChat), volcengine-voice (ByteDance Doubao),
-    # dashscope-image/-video (Alibaba), minimax-image/-video (MiniMax),
-    # kimi-code-delegate (Moonshot Kimi), deepseek-whale (DeepSeek),
-    # hermes-zh (Simplified-Chinese UI pack), cjk_sanitizer (CJK filter),
-    # desensitize (Chinese-context PII, siliconflow.cn fallback).
-    _REMOVED_CN_CATALOG_FILES = frozenset({
-        "wechat-social-assistant.yaml", "volcengine-voice.yaml",
-        "dashscope-image.yaml", "dashscope-video.yaml",
-        "minimax-image.yaml", "minimax-video.yaml",
-        "kimi-code-delegate.yaml", "deepseek-whale.yaml",
-        "hermes-zh.yaml", "cjk_sanitizer.yaml", "desensitize.yaml",
-    })
     root = catalog_dir or get_catalog_dir()
     if not root.is_dir():
         return []
@@ -219,11 +218,9 @@ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]
     for path in sorted(root.glob("*.yaml")):
         if path.name == "removed.yaml":
             continue
-        if path.name in _REMOVED_CN_CATALOG_FILES:
-            continue
         data = _read_yaml(path)
         entry = entry_from_mapping(data, str(path)) if data is not None else None
-        if entry is not None:
+        if entry is not None and _catalog_entry_allowed(entry):
             entries.append(entry)
     return entries
 
@@ -465,7 +462,8 @@ def load_catalog_live() -> List[PluginCatalogEntry]:
     if data is None:
         return load_catalog()
     entries = [e for i, raw in enumerate(data["entries"])
-               if (e := entry_from_mapping(raw, f"{LIVE_CATALOG_URL}#{i}")) is not None]
+               if (e := entry_from_mapping(raw, f"{LIVE_CATALOG_URL}#{i}")) is not None
+               and _catalog_entry_allowed(e)]
     if not entries:
         return load_catalog()
     in_tree = {e.name: e for e in load_catalog()}

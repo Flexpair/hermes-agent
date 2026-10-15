@@ -390,6 +390,13 @@ def check_for_updates(*, install_root: Path | None = None, home: Path | None = N
         "updateAvailable": False,
     }
 
+
+def _check_for_updates(*, install_root: Path | None = None, home: Path | None = None,
+                       branch: str | None = None, channel: str | None = None,
+                       cache_path: Path | None = None, branch_config_path: Path | None = None,
+                       force: bool = False,
+                       passive: bool = False, git: str = "git") -> dict:
+    """Retained upstream source-check implementation; not a public update surface."""
     from hermes_cli.config import get_project_root, require_readable_config_before_write
     from hermes_cli.steward import read_install_stamp
     from hermes_cli.update_channel import install_id, resolve_update_channel

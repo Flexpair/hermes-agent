@@ -1,5 +1,5 @@
 diff --git a/.github/workflows/ci.yaml b/.github/workflows/ci.yaml
-index a9a641b0a3..355ed3c8be 100644
+index a9a641b0a3466ca6c1adbf2efaa262e70c11e217..355ed3c8be8f0e8af66d614957bcdf1c28e7e9d7 100644
 --- a/.github/workflows/ci.yaml
 +++ b/.github/workflows/ci.yaml
 @@ -55,14 +55,17 @@ jobs:
@@ -197,7 +197,7 @@ index a9a641b0a3..355ed3c8be 100644
    # CI timing report: collect per-job/step durations from the GitHub API,
 diff --git a/.github/workflows/flexpair-linux-config.yml b/.github/workflows/flexpair-linux-config.yml
 new file mode 100644
-index 0000000000..12d560dd49
+index 0000000000000000000000000000000000000000..12d560dd49a4d08d7043e643336e217011955da1
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-config.yml
 @@ -0,0 +1,73 @@
@@ -276,7 +276,7 @@ index 0000000000..12d560dd49
 +          NOUS_API_KEY: ""
 diff --git a/.github/workflows/flexpair-linux-full.yml b/.github/workflows/flexpair-linux-full.yml
 new file mode 100644
-index 0000000000..f0ee2bbb25
+index 0000000000000000000000000000000000000000..007274f50a97a44f9a694bfd7098b8d108c2ef1c
 --- /dev/null
 +++ b/.github/workflows/flexpair-linux-full.yml
 @@ -0,0 +1,55 @@
@@ -326,7 +326,7 @@ index 0000000000..f0ee2bbb25
 +      - name: Install Linux test dependencies
 +        uses: ./.github/actions/retry
 +        with:
-+          command: uv sync --locked --python 3.14 --extra all --group dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra hindsight --extra parallel-web
++          command: uv sync --locked --python 3.14 --extra all --group dev --extra anthropic --extra mistral --extra fal --extra modal --extra daytona --extra parallel-web
 +
 +      - name: Run Linux-compatible test slice
 +        run: uv run --no-sync scripts/run_tests.sh
@@ -338,7 +338,7 @@ index 0000000000..f0ee2bbb25
 \ No newline at end of file
 diff --git a/.github/workflows/flexpair-patch-replay.yml b/.github/workflows/flexpair-patch-replay.yml
 new file mode 100644
-index 0000000000..b055f3c0e1
+index 0000000000000000000000000000000000000000..b055f3c0e18f38871326a0071e2e5b1fdce754f5
 --- /dev/null
 +++ b/.github/workflows/flexpair-patch-replay.yml
 @@ -0,0 +1,65 @@
@@ -408,7 +408,7 @@ index 0000000000..b055f3c0e1
 +          fi
 +          echo "Patch reproduces tree $expected from base $base"
 diff --git a/.github/workflows/install-e2e.yml b/.github/workflows/install-e2e.yml
-index 8fa2bb5ec5..0e84f80cd5 100644
+index 8fa2bb5ec546d6b1ad62ad4a7a3c5f01d1c35aa5..0e84f80cd50445bd828fd94847b104c5158f89ed 100644
 --- a/.github/workflows/install-e2e.yml
 +++ b/.github/workflows/install-e2e.yml
 @@ -166,21 +166,29 @@ concurrency:
@@ -474,7 +474,7 @@ index 8fa2bb5ec5..0e84f80cd5 100644
      timeout-minutes: 10
 diff --git a/.github/workflows/js-autofix.yml b/.github/workflows/js-autofix.yml
 deleted file mode 100644
-index 8db763fd28..0000000000
+index 8db763fd28c69576b8bf799ca743ca3f672d9b7b..0000000000000000000000000000000000000000
 --- a/.github/workflows/js-autofix.yml
 +++ /dev/null
 @@ -1,273 +0,0 @@
@@ -752,7 +752,7 @@ index 8db763fd28..0000000000
 -
 -          echo "Timeout reached. Auto-merge will handle PR #$PR_NUM if CI passes."
 diff --git a/.github/workflows/label-rerun.yml b/.github/workflows/label-rerun.yml
-index 6eb1a4445e..a14f5980b4 100644
+index 6eb1a4445e723ac51701f1e5b428162d7ba7b91c..a14f5980b4e30cf2b5f2d79d9b7ba64acfe68562 100644
 --- a/.github/workflows/label-rerun.yml
 +++ b/.github/workflows/label-rerun.yml
 @@ -1,8 +1,8 @@
@@ -777,7 +777,7 @@ index 6eb1a4445e..a14f5980b4 100644
      timeout-minutes: 40
      steps:
 diff --git a/.github/workflows/nix.yml b/.github/workflows/nix.yml
-index 5dc68c84ab..45ad834f66 100644
+index 5dc68c84aba1a697c036f64709b9c54d757d1fd7..45ad834f6658c7f9be92e64bb6125f93483ae8ee 100644
 --- a/.github/workflows/nix.yml
 +++ b/.github/workflows/nix.yml
 @@ -11,7 +11,6 @@ name: Nix flake check
@@ -789,7 +789,7 @@ index 5dc68c84ab..45ad834f66 100644
      branches: [main]
    workflow_call:
 diff --git a/.github/workflows/supply-chain-audit.yml b/.github/workflows/supply-chain-audit.yml
-index d73b749ab4..489810c8e9 100644
+index d73b749ab489ea2c475fb6e5cf187b60f148e669..489810c8e9c49095a3d72609c3d5fc0bd17417d9 100644
 --- a/.github/workflows/supply-chain-audit.yml
 +++ b/.github/workflows/supply-chain-audit.yml
 @@ -13,15 +13,14 @@ name: Supply Chain Audit
@@ -967,7 +967,7 @@ index d73b749ab4..489810c8e9 100644
            if [ -z "$ADDED" ]; then
              echo "found=false" >> "$GITHUB_OUTPUT"
 diff --git a/AGENTS.md b/AGENTS.md
-index 65aa3e61bc..39b0bdb7d7 100644
+index 65aa3e61bcba610da21279a17385671263be39e9..39b0bdb7d7740eff637ce9fac8677941e47d738a 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
 @@ -7,6 +7,23 @@ past that); see the **routing table** at the end and read the area file before e
@@ -995,7 +995,7 @@ index 65aa3e61bc..39b0bdb7d7 100644
  
  Hermes is a personal AI agent that runs the same agent core across a CLI, a messaging
 diff --git a/agent/i18n.py b/agent/i18n.py
-index 9ee5f1c29f..7231583b17 100644
+index 9ee5f1c29f3330cd789f26828058dca3611f3252..7231583b171ca6367a57c85a2746ab61053cbeb6 100644
 --- a/agent/i18n.py
 +++ b/agent/i18n.py
 @@ -28,23 +28,21 @@ from agent.i18n_languages import language_options
@@ -1029,7 +1029,7 @@ index 9ee5f1c29f..7231583b17 100644
      "german": "de", "deutsch": "de", "de-de": "de", "de-at": "de", "de-ch": "de",
      "spanish": "es", "español": "es", "espanol": "es", "es-es": "es", "es-mx": "es", "es-ar": "es",
 diff --git a/agent/i18n_languages.py b/agent/i18n_languages.py
-index 519f986af4..988742a85f 100644
+index 519f986af4fb6328e003bab2da86ff6b43850894..988742a85f9a34b8d51e1758e74300141b02b897 100644
 --- a/agent/i18n_languages.py
 +++ b/agent/i18n_languages.py
 @@ -35,8 +35,6 @@ BUNDLED_LANGUAGE_INFO: dict[str, tuple[str, bool]] = {
@@ -1042,7 +1042,7 @@ index 519f986af4..988742a85f 100644
  
  BUNDLED_SOURCE = "bundled"
 diff --git a/apps/desktop/e2e/fixtures.ts b/apps/desktop/e2e/fixtures.ts
-index 674d6f5508..b1a7ccea44 100644
+index 674d6f550834112629175080e21e32b8936e4dd1..b1a7ccea44dfba08e8d79f5f719c2c74c0e3e976 100644
 --- a/apps/desktop/e2e/fixtures.ts
 +++ b/apps/desktop/e2e/fixtures.ts
 @@ -134,7 +134,7 @@ export function createSandbox(prefix: string): Sandbox {
@@ -1056,7 +1056,7 @@ index 674d6f5508..b1a7ccea44 100644
    // and fail pointer interception + snapshot diffs.
 diff --git a/apps/desktop/e2e/onboarding-settings.spec.ts b/apps/desktop/e2e/onboarding-settings.spec.ts
 new file mode 100644
-index 0000000000..c25551a6f4
+index 0000000000000000000000000000000000000000..c25551a6f48d59c3631d806817d022420db5b545
 --- /dev/null
 +++ b/apps/desktop/e2e/onboarding-settings.spec.ts
 @@ -0,0 +1,83 @@
@@ -1144,7 +1144,7 @@ index 0000000000..c25551a6f4
 +  })
 +}
 diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
-index c7b9664916..630c8eb517 100644
+index c7b96649160cd1a60c58c6677d0adf7f70eb4271..630c8eb5172b9c0085f34fc05043b0db5c7dcf09 100644
 --- a/apps/desktop/electron/main.ts
 +++ b/apps/desktop/electron/main.ts
 @@ -16258,7 +16258,14 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
@@ -1173,7 +1173,7 @@ index c7b9664916..630c8eb517 100644
  
    // Optional renderer-side exclusions: the everything-update flow dispatches
 diff --git a/apps/desktop/electron/update-handoff-marker.test.ts b/apps/desktop/electron/update-handoff-marker.test.ts
-index 9756de43d2..1fd55f87ec 100644
+index 9756de43d21489e07ea8ed3b1c72070ddcd4500b..1fd55f87ec412dccc62613b1044299b845c9f5e0 100644
 --- a/apps/desktop/electron/update-handoff-marker.test.ts
 +++ b/apps/desktop/electron/update-handoff-marker.test.ts
 @@ -23,12 +23,6 @@ function cleanupSandbox(home: string) {
@@ -1258,7 +1258,7 @@ index 9756de43d2..1fd55f87ec 100644
 +  assert.equal(fs.existsSync(home), false, 'the self-test sandbox must not leak into the OS temp directory')
  })
 diff --git a/apps/desktop/electron/zoom.test.ts b/apps/desktop/electron/zoom.test.ts
-index 20bd5d70fb..3680c79670 100644
+index 20bd5d70fb254f0dcbe461ff038eeed84863c88c..3680c7967040b6389d679022df23b48cc9f423e4 100644
 --- a/apps/desktop/electron/zoom.test.ts
 +++ b/apps/desktop/electron/zoom.test.ts
 @@ -6,6 +6,7 @@
@@ -1282,7 +1282,7 @@ index 20bd5d70fb..3680c79670 100644
    assert.equal(clampZoomLevel(NaN), DEFAULT_ZOOM_LEVEL)
    assert.equal(clampZoomLevel(Infinity), DEFAULT_ZOOM_LEVEL)
 diff --git a/apps/desktop/electron/zoom.ts b/apps/desktop/electron/zoom.ts
-index 20471174cf..2b672ab722 100644
+index 20471174cf5ec5c36a17df325bc80bd5b716b605..2b672ab7220e6fc63c08a3c3983c809ef9286c0e 100644
 --- a/apps/desktop/electron/zoom.ts
 +++ b/apps/desktop/electron/zoom.ts
 @@ -5,6 +5,7 @@
@@ -1304,7 +1304,7 @@ index 20471174cf..2b672ab722 100644
  export function clampZoomLevel(value) {
    if (!Number.isFinite(value)) {
 diff --git a/apps/desktop/src/app/chat/right-rail/preview-input.test.ts b/apps/desktop/src/app/chat/right-rail/preview-input.test.ts
-index 3df85775f5..a46c7929ac 100644
+index 3df85775f5025913d4ab0aec9a18296b036bf447..a46c7929ac40ab66e9daf9dc356dc3d9dc43868e 100644
 --- a/apps/desktop/src/app/chat/right-rail/preview-input.test.ts
 +++ b/apps/desktop/src/app/chat/right-rail/preview-input.test.ts
 @@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest'
@@ -1327,7 +1327,7 @@ index 3df85775f5..a46c7929ac 100644
        deltaX: 0,
        deltaY: 600,
 diff --git a/apps/desktop/src/app/chat/right-rail/preview-input.ts b/apps/desktop/src/app/chat/right-rail/preview-input.ts
-index 7b6ed80260..7f4feccc36 100644
+index 7b6ed80260fb2fd50675fc2fa675f8d97906b887..7f4feccc362b4591c70134a563b1713c072f7ed0 100644
 --- a/apps/desktop/src/app/chat/right-rail/preview-input.ts
 +++ b/apps/desktop/src/app/chat/right-rail/preview-input.ts
 @@ -16,7 +16,8 @@
@@ -1341,7 +1341,7 @@ index 7b6ed80260..7f4feccc36 100644
  
  import { $rightRailActiveTabId } from '@/store/layout'
 diff --git a/apps/desktop/src/app/settings/appearance-settings.tsx b/apps/desktop/src/app/settings/appearance-settings.tsx
-index fca1c10454..d3ae8d6e74 100644
+index fca1c10454e5cb78394e7e84ce544431b38093d1..d3ae8d6e74e4371786a0308876321a2b03f58953 100644
 --- a/apps/desktop/src/app/settings/appearance-settings.tsx
 +++ b/apps/desktop/src/app/settings/appearance-settings.tsx
 @@ -169,6 +169,11 @@ function ThemePreview({ name, mode }: { name: string; mode: 'light' | 'dark' })
@@ -1357,7 +1357,7 @@ index fca1c10454..d3ae8d6e74 100644
  const ids = SETTING_IDS.appearance
  type UiScalePreset = (typeof UI_SCALE_PRESETS)[number]
 diff --git a/apps/desktop/src/store/zoom.ts b/apps/desktop/src/store/zoom.ts
-index cabfe7e089..98f560d397 100644
+index cabfe7e089d296d65d0ee8f7c022760a2213af53..98f560d3976591477d8017c6c6aba9f4889500eb 100644
 --- a/apps/desktop/src/store/zoom.ts
 +++ b/apps/desktop/src/store/zoom.ts
 @@ -8,9 +8,12 @@
@@ -1375,10 +1375,10 @@ index cabfe7e089..98f560d397 100644
  export function setZoomPercent(percent: number): void {
    window.hermesDesktop?.zoom?.setPercent(percent)
 diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
-index 9c9a3a89b7..46db9467ea 100644
+index 9c9a3a89b730bb410aaaafcf1b012fefe4db424e..537a2ed8902febe0295dc5c43b2eb210eac04ace 100644
 --- a/apps/desktop/src/styles.css
 +++ b/apps/desktop/src/styles.css
-@@ -3782,3 +3782,46 @@ html[data-hud-window] [data-slot='popover-content'] {
+@@ -3782,3 +3782,49 @@ html[data-hud-window] [data-slot='popover-content'] {
  [data-hud-shell] [data-slot='composer-bounds'] *::-webkit-scrollbar {
    display: none;
  }
@@ -1415,6 +1415,9 @@ index 9c9a3a89b7..46db9467ea 100644
 +:root[data-hermes-theme^='flexpair'][data-hermes-mode='light'] {
 +  --ui-sash-hover-border: #00e6e6;
 +  --ui-success: #157878 !important;
++  --ui-green: #157878;
++  --ui-cyan: #157878;
++  --ui-yellow: #157878;
 +}
 +
 +/* The chat composer has no focus state of its own — cyan border while typing. */
@@ -1426,7 +1429,7 @@ index 9c9a3a89b7..46db9467ea 100644
 +  border-color: #157878 !important;
 +}
 diff --git a/apps/desktop/src/themes/backend-sync.test.ts b/apps/desktop/src/themes/backend-sync.test.ts
-index fe8f517058..da87d556d1 100644
+index fe8f51705873ec7de90948aee52ff9ce8cde3b6a..da87d556d1e6dc03c661a905339c208abaf3a49f 100644
 --- a/apps/desktop/src/themes/backend-sync.test.ts
 +++ b/apps/desktop/src/themes/backend-sync.test.ts
 @@ -107,7 +107,7 @@ describe('ingestBackendSkin', () => {
@@ -1439,7 +1442,7 @@ index fe8f517058..da87d556d1 100644
      expect($backendCustomCSS.get().nous).toBe('body { background: red; }')
    })
 diff --git a/apps/desktop/src/themes/backend-sync.ts b/apps/desktop/src/themes/backend-sync.ts
-index dc855b06ac..40edfe5067 100644
+index dc855b06acaa62ea041a2f62825c306798384c1b..40edfe5067c86c7704a342b4ffaceb130a6cc449 100644
 --- a/apps/desktop/src/themes/backend-sync.ts
 +++ b/apps/desktop/src/themes/backend-sync.ts
 @@ -21,7 +21,7 @@ import { atom } from 'nanostores'
@@ -1461,7 +1464,7 @@ index dc855b06ac..40edfe5067 100644
  
      if (css) {
 diff --git a/apps/desktop/src/themes/context.tsx b/apps/desktop/src/themes/context.tsx
-index 892802c804..1b11caae85 100644
+index 892802c80450e315babae3ac9df72728787e59b0..1b11caae85c8c10ed7e668b9c7681964fac2f455 100644
 --- a/apps/desktop/src/themes/context.tsx
 +++ b/apps/desktop/src/themes/context.tsx
 @@ -50,7 +50,7 @@ const PROFILE_MODES_KEY = 'hermes-desktop-profile-modes-v1'
@@ -1483,7 +1486,7 @@ index 892802c804..1b11caae85 100644
  /**
   * A stored mode, or `system` when there isn't one.
 diff --git a/apps/desktop/src/themes/presets.test.ts b/apps/desktop/src/themes/presets.test.ts
-index 3bc94baefe..fb6bf7d565 100644
+index 3bc94baefe973ef5b2994e9152635403563f5e27..fb6bf7d565f8985fa0046c7ec289548ca30a47c4 100644
 --- a/apps/desktop/src/themes/presets.test.ts
 +++ b/apps/desktop/src/themes/presets.test.ts
 @@ -1,6 +1,6 @@
@@ -1566,7 +1569,7 @@ index 3bc94baefe..fb6bf7d565 100644
 +  })
 +})
 diff --git a/apps/desktop/src/themes/presets.ts b/apps/desktop/src/themes/presets.ts
-index f4f24f9426..f3952d37c8 100644
+index f4f24f9426a4addbb06464e736f766c145c8d298..f3952d37c8297169092ddb43c79101829118442d 100644
 --- a/apps/desktop/src/themes/presets.ts
 +++ b/apps/desktop/src/themes/presets.ts
 @@ -20,7 +20,7 @@
@@ -1720,7 +1723,7 @@ index f4f24f9426..f3952d37c8 100644
 -export const DEFAULT_SKIN_NAME = 'nous'
 +export const DEFAULT_SKIN_NAME = 'flexpair-dark'
 diff --git a/apps/desktop/src/themes/profile-theme.test.ts b/apps/desktop/src/themes/profile-theme.test.ts
-index 34387b710c..81abc67d1c 100644
+index 34387b710cbed816f652e9d301b63fb9e9afa62a..81abc67d1c593d85837409e516143ba3c7b5aa5a 100644
 --- a/apps/desktop/src/themes/profile-theme.test.ts
 +++ b/apps/desktop/src/themes/profile-theme.test.ts
 @@ -46,3 +46,14 @@ describe.each(cases)('per-profile $name', ({ pref, fallback, a, b, junk }) => {
@@ -1739,7 +1742,7 @@ index 34387b710c..81abc67d1c 100644
 +  })
 +})
 diff --git a/apps/desktop/tsconfig.electron.json b/apps/desktop/tsconfig.electron.json
-index c8ed7be261..15ed2c8290 100644
+index c8ed7be26169f546ea0a70288662e525bf2585b9..15ed2c829038f37e0f33db9c12ad6a94842e6267 100644
 --- a/apps/desktop/tsconfig.electron.json
 +++ b/apps/desktop/tsconfig.electron.json
 @@ -17,6 +17,6 @@
@@ -1751,7 +1754,7 @@ index c8ed7be261..15ed2c8290 100644
    "exclude": ["src", "electron/**/*.e2e.mts"]
  }
 diff --git a/apps/shared/package.json b/apps/shared/package.json
-index a62f7e2ae8..9e185b9b7c 100644
+index a62f7e2ae83c27b300624c8dd3bae22f3de2b96e..9e185b9b7c35d7d9678c803e2c5106890cdf4c4d 100644
 --- a/apps/shared/package.json
 +++ b/apps/shared/package.json
 @@ -10,6 +10,7 @@
@@ -1764,7 +1767,7 @@ index a62f7e2ae8..9e185b9b7c 100644
      "./gateway-events": "./src/gateway-events.ts",
 diff --git a/apps/shared/src/desktop-zoom.ts b/apps/shared/src/desktop-zoom.ts
 new file mode 100644
-index 0000000000..41686158df
+index 0000000000000000000000000000000000000000..41686158df0981f7267e91c5bad86c95c992ce6c
 --- /dev/null
 +++ b/apps/shared/src/desktop-zoom.ts
 @@ -0,0 +1,2 @@
@@ -1772,7 +1775,7 @@ index 0000000000..41686158df
 +export const DEFAULT_ZOOM_PERCENT = 150
 \ No newline at end of file
 diff --git a/apps/shared/src/index.ts b/apps/shared/src/index.ts
-index 35ddac34f6..3c949682d5 100644
+index 35ddac34f6126085a350f08d3358f734dc4c3c7c..3c949682d5fd8a4ca21981b346cbe339a8e0563c 100644
 --- a/apps/shared/src/index.ts
 +++ b/apps/shared/src/index.ts
 @@ -60,6 +60,7 @@ export {
@@ -1785,7 +1788,7 @@ index 35ddac34f6..3c949682d5 100644
  export * from './gateway-events'
 diff --git a/contributors/emails/Kame696@users.noreply.github.com b/contributors/emails/Kame696@users.noreply.github.com
 new file mode 100644
-index 0000000000..71658c9bf3
+index 0000000000000000000000000000000000000000..71658c9bf358cdeb1607d9b94e305a44df6f1025
 --- /dev/null
 +++ b/contributors/emails/Kame696@users.noreply.github.com
 @@ -0,0 +1,2 @@
@@ -1793,14 +1796,14 @@ index 0000000000..71658c9bf3
 +# Upstream sync attribution
 diff --git a/contributors/emails/mail@flexpair.com b/contributors/emails/mail@flexpair.com
 new file mode 100644
-index 0000000000..ee529dd10d
+index 0000000000000000000000000000000000000000..ee529dd10d4983c6ca3025efc61b5690a44c4c30
 --- /dev/null
 +++ b/contributors/emails/mail@flexpair.com
 @@ -0,0 +1,2 @@
 +Flexpair
 +# Installer fork PR #43
 diff --git a/gateway/config.py b/gateway/config.py
-index 97613384d3..0a1a667790 100644
+index 97613384d33bc08f9018c0c4c5236c405fe1160b..0a1a667790bd9f06bc87add3620241e640f0f95e 100644
 --- a/gateway/config.py
 +++ b/gateway/config.py
 @@ -255,12 +255,18 @@ class Platform(Enum):
@@ -1823,7 +1826,7 @@ index 97613384d3..0a1a667790 100644
              names = {child.name.lower() for child in dirs}
              aliases = {}
 diff --git a/gateway/run.py b/gateway/run.py
-index 620fe26bfe..767df5ee58 100644
+index 620fe26bfe9730e85871f680e81bd8608dd4577f..767df5ee58af3661d8a59fdecd89d0d6f46c3cbb 100644
 --- a/gateway/run.py
 +++ b/gateway/run.py
 @@ -3335,13 +3335,16 @@ def _builtin_adapter_import(module: str, adapter_name: str, requirement: str):
@@ -1870,7 +1873,7 @@ index 620fe26bfe..767df5ee58 100644
      if spec is None:
          return None
 diff --git a/hermes_cli/auth.py b/hermes_cli/auth.py
-index 3c5ae49891..2032904f76 100644
+index 3c5ae498919b643bc4c08e5d7f622906d79c8b1d..2032904f76732655de3e07ab19bb46d0364cc53b 100644
 --- a/hermes_cli/auth.py
 +++ b/hermes_cli/auth.py
 @@ -181,7 +181,6 @@ _REGISTRY_ROWS: Tuple[Any, ...] = (
@@ -2007,7 +2010,7 @@ index 3c5ae49891..2032904f76 100644
      "lmstudio": lambda *a: _normalize_lmstudio_runtime_base_url(_default_api_key_base_url(*a)),
      "actual": lambda *a: normalize_actual_base_url(_default_api_key_base_url(*a))}
 diff --git a/hermes_cli/auth_commands.py b/hermes_cli/auth_commands.py
-index 75d52b7aa4..bf3f94c763 100644
+index 75d52b7aa4d5230982ae6da78d55e7a287fd2780..bf3f94c763f67be856c196363c769d3c14c8e249 100644
 --- a/hermes_cli/auth_commands.py
 +++ b/hermes_cli/auth_commands.py
 @@ -27,7 +27,7 @@ from hermes_cli.secret_prompt import masked_secret_prompt
@@ -2055,7 +2058,7 @@ index 75d52b7aa4..bf3f94c763 100644
          login=lambda args: auth_mod._openrouter_pkce_login(
              open_browser=not getattr(args, "no_browser", False),
 diff --git a/hermes_cli/banner.py b/hermes_cli/banner.py
-index 9a3d9dee57..7748b16c1c 100644
+index 9a3d9dee57a2cbae56f76dba5646c3b553ca5648..7748b16c1cd1a718c3c1571b4a1ab2a23415e39b 100644
 --- a/hermes_cli/banner.py
 +++ b/hermes_cli/banner.py
 @@ -4,8 +4,10 @@ import logging
@@ -2342,7 +2345,7 @@ index 9a3d9dee57..7748b16c1c 100644
      """The active Hermes git checkout, or None if this isn't a git install.
  
 diff --git a/hermes_cli/cli_config_load.py b/hermes_cli/cli_config_load.py
-index dd1976c5fc..7f6046c6d1 100644
+index dd1976c5fcdad1b403cf57a887c77b365b8b5721..7f6046c6d1bf20b95eb6aed04751814a7bf1029c 100644
 --- a/hermes_cli/cli_config_load.py
 +++ b/hermes_cli/cli_config_load.py
 @@ -212,7 +212,7 @@ def _cli_config_defaults():
@@ -2355,7 +2358,7 @@ index dd1976c5fc..7f6046c6d1 100644
          "code_execution": {"timeout": 300, "max_tool_calls": 50},
          "auxiliary": {"vision": {"provider": "auto", "model": "", "base_url": "", "api_key": ""}},
 diff --git a/hermes_cli/config_defaults.py b/hermes_cli/config_defaults.py
-index db159a52e8..e5e5ef717b 100644
+index db159a52e8d1f7feb376bc0549705e6b3509a9b3..e5e5ef717b7424be71480c37fa2a4d72649803bd 100644
 --- a/hermes_cli/config_defaults.py
 +++ b/hermes_cli/config_defaults.py
 @@ -899,7 +899,7 @@ DEFAULT_CONFIG = {
@@ -2368,7 +2371,7 @@ index db159a52e8..e5e5ef717b 100644
          # responses/logs/tool outputs. en, zh, ja, de, es, fr, tr, uk; unknown → en.
          "language": "en",
 diff --git a/hermes_cli/gateway_setup_wizard.py b/hermes_cli/gateway_setup_wizard.py
-index 9f702a1cf9..e8541674a5 100644
+index 9f702a1cf9c578a9835844cfade299788c617a3c..e8541674a58ae768ac2b5d5c085a309a9785cf49 100644
 --- a/hermes_cli/gateway_setup_wizard.py
 +++ b/hermes_cli/gateway_setup_wizard.py
 @@ -50,7 +50,6 @@ _PLATFORMS = [
@@ -2424,7 +2427,7 @@ index 9f702a1cf9..e8541674a5 100644
  
  
 diff --git a/hermes_cli/main.py b/hermes_cli/main.py
-index b85bf11fe7..2393e78f48 100644
+index b85bf11fe713de57071c5668e21f2e0f92bf5e70..2393e78f48fec54130ccf524c63d10924e7839ff 100644
 --- a/hermes_cli/main.py
 +++ b/hermes_cli/main.py
 @@ -770,15 +770,11 @@ from hermes_cli.model_setup_flows import (
@@ -2492,7 +2495,7 @@ index b85bf11fe7..2393e78f48 100644
      # _old_updater.in_historical_update(); historical on-disk updaters do not
      # declare this local, so only they hand off through retired shims.
 diff --git a/hermes_cli/main_provider_setup.py b/hermes_cli/main_provider_setup.py
-index a1878344d6..381eff4ba7 100644
+index a1878344d6faa4febd9b440dcfd95af9af82cf8a..381eff4ba713567988d9cebd1f97b9a711615040 100644
 --- a/hermes_cli/main_provider_setup.py
 +++ b/hermes_cli/main_provider_setup.py
 @@ -22,10 +22,9 @@ def _is_profile_api_key_provider(provider_id: str) -> bool:
@@ -2527,7 +2530,7 @@ index a1878344d6..381eff4ba7 100644
      active_group = provider_group_for_slug(active) if active else ""
  
 diff --git a/hermes_cli/models_catalog_static.py b/hermes_cli/models_catalog_static.py
-index c0684ee2aa..456ba005fa 100644
+index c0684ee2aad68d98e55a133698d4905c58482f97..456ba005fabc0b22eb921e95c496d378bec9a209 100644
 --- a/hermes_cli/models_catalog_static.py
 +++ b/hermes_cli/models_catalog_static.py
 @@ -302,6 +302,17 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
@@ -2582,40 +2585,49 @@ index c0684ee2aa..456ba005fa 100644
      "copilot":  ("GitHub Copilot",  "GitHub token API or copilot --acp process",       ["copilot", "copilot-acp"]),
      "tencent":  ("Tencent Hy",      "Hy4 / Hy3 via TokenHub & TokenPlan", ["tencent-tokenhub", "tencent-tokenplan"]),
 diff --git a/hermes_cli/plugin_catalog.py b/hermes_cli/plugin_catalog.py
-index 09057524df..29ff0882fb 100644
+index 09057524df4e49946234b875f1259cf549d2252b..7a71a1b5bddfcd44d4f0a2ea326d5deda2100b6d 100644
 --- a/hermes_cli/plugin_catalog.py
 +++ b/hermes_cli/plugin_catalog.py
-@@ -199,6 +199,19 @@ def _removed_from_list(raw_list: Any) -> List[RemovedEntry]:
+@@ -196,6 +196,18 @@ def _removed_from_list(raw_list: Any) -> List[RemovedEntry]:
+ 
+ # ── In-tree catalog ──────────────────────────────────────────────────────────
+ 
++_EXCLUDED_CATALOG_NAMES = frozenset({
++    "wechat-social-assistant", "volcengine-voice",
++    "dashscope-image", "dashscope-video", "minimax-image", "minimax-video",
++    "kimi-code-delegate", "deepseek-whale", "hermes-zh", "cjk_sanitizer", "desensitize",
++})
++
++
++def _catalog_entry_allowed(entry: PluginCatalogEntry) -> bool:
++    """Apply the Flexpair entry-identity policy to every catalog source."""
++    return entry.name not in _EXCLUDED_CATALOG_NAMES
++
++
  def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]:
      """Every valid ``*.yaml`` entry in the catalog dir (``removed.yaml`` excluded), sorted by file name.
      Malformed entries are skipped with a warning — never raises."""
-+    # Local removal: China-market catalog entries.
-+    # wechat-social-assistant (WeChat), volcengine-voice (ByteDance Doubao),
-+    # dashscope-image/-video (Alibaba), minimax-image/-video (MiniMax),
-+    # kimi-code-delegate (Moonshot Kimi), deepseek-whale (DeepSeek),
-+    # hermes-zh (Simplified-Chinese UI pack), cjk_sanitizer (CJK filter),
-+    # desensitize (Chinese-context PII, siliconflow.cn fallback).
-+    _REMOVED_CN_CATALOG_FILES = frozenset({
-+        "wechat-social-assistant.yaml", "volcengine-voice.yaml",
-+        "dashscope-image.yaml", "dashscope-video.yaml",
-+        "minimax-image.yaml", "minimax-video.yaml",
-+        "kimi-code-delegate.yaml", "deepseek-whale.yaml",
-+        "hermes-zh.yaml", "cjk_sanitizer.yaml", "desensitize.yaml",
-+    })
-     root = catalog_dir or get_catalog_dir()
-     if not root.is_dir():
-         return []
-@@ -206,6 +219,8 @@ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]
-     for path in sorted(root.glob("*.yaml")):
-         if path.name == "removed.yaml":
+@@ -208,7 +220,7 @@ def load_catalog(catalog_dir: Optional[Path] = None) -> List[PluginCatalogEntry]
              continue
-+        if path.name in _REMOVED_CN_CATALOG_FILES:
-+            continue
          data = _read_yaml(path)
          entry = entry_from_mapping(data, str(path)) if data is not None else None
-         if entry is not None:
+-        if entry is not None:
++        if entry is not None and _catalog_entry_allowed(entry):
+             entries.append(entry)
+     return entries
+ 
+@@ -450,7 +462,8 @@ def load_catalog_live() -> List[PluginCatalogEntry]:
+     if data is None:
+         return load_catalog()
+     entries = [e for i, raw in enumerate(data["entries"])
+-               if (e := entry_from_mapping(raw, f"{LIVE_CATALOG_URL}#{i}")) is not None]
++               if (e := entry_from_mapping(raw, f"{LIVE_CATALOG_URL}#{i}")) is not None
++               and _catalog_entry_allowed(e)]
+     if not entries:
+         return load_catalog()
+     in_tree = {e.name: e for e in load_catalog()}
 diff --git a/hermes_cli/plugins_discovery.py b/hermes_cli/plugins_discovery.py
-index edd684af8d..49d9d1abae 100644
+index edd684af8d298e2bbe966c9027addf6ecb562826..49d9d1abaee483391b66827089c8c270d5048d3d 100644
 --- a/hermes_cli/plugins_discovery.py
 +++ b/hermes_cli/plugins_discovery.py
 @@ -273,6 +273,17 @@ def gate_manifest(
@@ -2637,7 +2649,7 @@ index edd684af8d..49d9d1abae 100644
          return _placeholder("disabled via config", logging.DEBUG, "Skipping disabled plugin '%s'")
      # Exclusive plugins (memory providers) have their own activation path; record only.
 diff --git a/hermes_cli/skin_cmd.py b/hermes_cli/skin_cmd.py
-index 6f098a66e2..ef96840807 100644
+index 6f098a66e2bbeca080af26499274f934cd27d692..ef96840807c15a33581a713f270ba33b1a0f974b 100644
 --- a/hermes_cli/skin_cmd.py
 +++ b/hermes_cli/skin_cmd.py
 @@ -24,7 +24,8 @@ def _skins_dir() -> Path:
@@ -2651,7 +2663,7 @@ index 6f098a66e2..ef96840807 100644
  
  def _use(name: str) -> None:
 diff --git a/hermes_cli/skin_engine.py b/hermes_cli/skin_engine.py
-index b859fcc828..1daffd27b1 100644
+index b859fcc828508dd7d6e1f7ca19e1d3b49e561718..1daffd27b1eb1c320c6b1918a8aa1f232b10f14a 100644
 --- a/hermes_cli/skin_engine.py
 +++ b/hermes_cli/skin_engine.py
 @@ -339,10 +339,53 @@ _BUILTIN_SKINS: Dict[str, Dict[str, Any]] = {
@@ -2730,10 +2742,10 @@ index b859fcc828..1daffd27b1 100644
  
  def _active_branding(key: str, fallback: str) -> str:
 diff --git a/hermes_cli/source_check.py b/hermes_cli/source_check.py
-index 1c6e08d33f..70b96a8b80 100644
+index 1c6e08d33fc75f4e46421ffd5bc507a55306152a..2ccc326dd4c21a6ad0f89cebc7174c71ceb9f2aa 100644
 --- a/hermes_cli/source_check.py
 +++ b/hermes_cli/source_check.py
-@@ -380,6 +380,16 @@ def check_for_updates(*, install_root: Path | None = None, home: Path | None = N
+@@ -380,6 +380,23 @@ def check_for_updates(*, install_root: Path | None = None, home: Path | None = N
      Only the default (running installation) may use HERMES_REVISION. An explicit
      target must never inherit the host process's embedded revision or stamp.
      """
@@ -2747,11 +2759,18 @@ index 1c6e08d33f..70b96a8b80 100644
 +        "updateAvailable": False,
 +    }
 +
++
++def _check_for_updates(*, install_root: Path | None = None, home: Path | None = None,
++                       branch: str | None = None, channel: str | None = None,
++                       cache_path: Path | None = None, branch_config_path: Path | None = None,
++                       force: bool = False,
++                       passive: bool = False, git: str = "git") -> dict:
++    """Retained upstream source-check implementation; not a public update surface."""
      from hermes_cli.config import get_project_root, require_readable_config_before_write
      from hermes_cli.steward import read_install_stamp
      from hermes_cli.update_channel import install_id, resolve_update_channel
 diff --git a/hermes_cli/tools_config.py b/hermes_cli/tools_config.py
-index 7c42c29c9c..066cd421b8 100644
+index 7c42c29c9cacacdeff548ea6a4a23d7e1312fa42..066cd421b8d594e872bd14c7acc26e039ce2fa4a 100644
 --- a/hermes_cli/tools_config.py
 +++ b/hermes_cli/tools_config.py
 @@ -91,7 +91,6 @@ CONFIGURABLE_TOOLSETS = [
@@ -2781,7 +2800,7 @@ index 7c42c29c9c..066cd421b8 100644
      from toolsets import resolve_toolset, TOOLSETS
  
 diff --git a/hermes_cli/update_cmd.py b/hermes_cli/update_cmd.py
-index 20a665821e..6691cf1f3d 100644
+index 20a665821efeaffcc88d4d3aa49b73e9dddc01f4..6691cf1f3def8689c1761b4c281e203574202a77 100644
 --- a/hermes_cli/update_cmd.py
 +++ b/hermes_cli/update_cmd.py
 @@ -687,6 +687,14 @@ def _is_shallow_checkout(git_cmd) -> bool:
@@ -2811,7 +2830,7 @@ index 20a665821e..6691cf1f3d 100644
          commit_count = counted if counted is not None else -1
  
 diff --git a/hermes_cli/update_cmd_git.py b/hermes_cli/update_cmd_git.py
-index eddb579c7c..83e5d1967e 100644
+index eddb579c7cd2c2b38e51a61386d404ac85d4f60c..83e5d1967e89252b3513d0e554f2d6fb55135686 100644
 --- a/hermes_cli/update_cmd_git.py
 +++ b/hermes_cli/update_cmd_git.py
 @@ -229,11 +229,15 @@ def _print_parked_branch_kept_notice(current_branch: str, target_branch: str, un
@@ -2851,7 +2870,7 @@ index eddb579c7c..83e5d1967e 100644
  
  def _has_upstream_remote(git_cmd: list[str], cwd: Path) -> bool:
 diff --git a/hermes_cli/update_contract.py b/hermes_cli/update_contract.py
-index 18c64ade20..96f2313901 100644
+index 18c64ade20f100d5cca95c4057112453fc4b435e..96f2313901a72de7b17b31779bd0fb59b90cf3a0 100644
 --- a/hermes_cli/update_contract.py
 +++ b/hermes_cli/update_contract.py
 @@ -31,7 +31,7 @@ def is_commit_build(project_root: Path) -> bool:
@@ -2886,7 +2905,7 @@ index 18c64ade20..96f2313901 100644
      try:
          from hermes_cli.image_provenance import read_image_provenance
 diff --git a/hermes_cli/web_routers/actions.py b/hermes_cli/web_routers/actions.py
-index 966662c569..690793b275 100644
+index 966662c56935527d1c0d61e11ef08340279a5b96..690793b275d30396e1654a2fe05ac3ea716ffa58 100644
 --- a/hermes_cli/web_routers/actions.py
 +++ b/hermes_cli/web_routers/actions.py
 @@ -220,8 +220,12 @@ def _update_refused(error: str, message: str, update_command: str) -> Dict[str,
@@ -2925,7 +2944,7 @@ index 966662c569..690793b275 100644
  
      if _dashboard_local_update_managed_externally():
 diff --git a/hermes_cli/web_server_config.py b/hermes_cli/web_server_config.py
-index f570d31d42..18b770043b 100644
+index f570d31d426c85b875f143268490c17033ea5c40..18b770043b9c270b21452bb6eb7896bb96b84139 100644
 --- a/hermes_cli/web_server_config.py
 +++ b/hermes_cli/web_server_config.py
 @@ -134,7 +134,7 @@ _SCHEMA_OVERRIDES: Dict[str, Dict[str, Any]] = {
@@ -2938,7 +2957,7 @@ index f570d31d42..18b770043b 100644
          "Web dashboard visual theme", "default", "midnight", "ember", "mono", "cyberpunk", "rose"
      ),
 diff --git a/hermes_cli/web_server_messaging.py b/hermes_cli/web_server_messaging.py
-index 487771ffd5..4ede1139c1 100644
+index 487771ffd5188e2a07569c278d4cb7dd7cacaa32..4ede1139c19768906c5c358e48d55ddb3690720e 100644
 --- a/hermes_cli/web_server_messaging.py
 +++ b/hermes_cli/web_server_messaging.py
 @@ -253,7 +253,16 @@ def _messaging_platform_catalog() -> tuple[dict[str, Any], ...]:
@@ -2959,7 +2978,7 @@ index 487771ffd5..4ede1139c1 100644
              continue
          seen.add(pid)
 diff --git a/providers/__init__.py b/providers/__init__.py
-index 9787b61a55..92d9095e41 100644
+index 9787b61a55b63cf86859d86c4afdc95ac659d73a..92d9095e41bd08975eb15dcd04c1583f2febd4af 100644
 --- a/providers/__init__.py
 +++ b/providers/__init__.py
 @@ -94,6 +94,18 @@ _BUNDLED_PLUGINS_DIR = (
@@ -2993,7 +3012,7 @@ index 9787b61a55..92d9095e41 100644
      # 2. Legacy single-file profiles at providers/<name>.py. Kept for
 diff --git a/scripts/ci/scan_supply_chain.py b/scripts/ci/scan_supply_chain.py
 new file mode 100755
-index 0000000000..6b86262cb9
+index 0000000000000000000000000000000000000000..6b86262cb9fc8077b3f4490a4fbd9ee8522aa881
 --- /dev/null
 +++ b/scripts/ci/scan_supply_chain.py
 @@ -0,0 +1,143 @@
@@ -3141,7 +3160,7 @@ index 0000000000..6b86262cb9
 +if __name__ == "__main__":
 +    raise SystemExit(main())
 diff --git a/scripts/desktop-update/posix.sh b/scripts/desktop-update/posix.sh
-index b1c86d26ed..8bce17a7ad 100755
+index b1c86d26ed70fb72bb971ee25c14b5328ec76940..8bce17a7ad9bcea2632b50933cdcf3dfcf451888 100755
 --- a/scripts/desktop-update/posix.sh
 +++ b/scripts/desktop-update/posix.sh
 @@ -1,4 +1,6 @@
@@ -3152,7 +3171,7 @@ index b1c86d26ed..8bce17a7ad 100755
  #
  # The whole job: wait for the Desktop to exit, run `hermes update`, tell the
 diff --git a/scripts/desktop-update/windows.ps1 b/scripts/desktop-update/windows.ps1
-index bb1f0a93a2..3eb36ba0f2 100644
+index bb1f0a93a2a278e5deb33cb5db0fa4e8d708ade5..3eb36ba0f291f3096d60ec9026014901b2a0eb4b 100644
 --- a/scripts/desktop-update/windows.ps1
 +++ b/scripts/desktop-update/windows.ps1
 @@ -57,6 +57,9 @@ param(
@@ -3166,7 +3185,7 @@ index bb1f0a93a2..3eb36ba0f2 100644
      throw "-Branch and -Channel are mutually exclusive"
  }
 diff --git a/scripts/install.ps1 b/scripts/install.ps1
-index dce40f5f2a..fe467c102e 100644
+index dce40f5f2a19e0197acf90643f279226a837dc5f..fe467c102e25ec572e2c1e10791b79eddfe4e99a 100644
 --- a/scripts/install.ps1
 +++ b/scripts/install.ps1
 @@ -71,7 +71,7 @@ $script:BoundParams = $PSBoundParameters
@@ -3192,7 +3211,7 @@ index dce40f5f2a..fe467c102e 100644
  # directory or user profile the installer runs under (mirrors install.sh).
  $env:UV_NO_CONFIG = "1"
 diff --git a/scripts/install.sh b/scripts/install.sh
-index 502c882fda..8e892372c7 100755
+index 502c882fda8350ad49b13cad87569bfb932e9dec..8e892372c7303438b486fc0598ac63f9cecc1aa4 100755
 --- a/scripts/install.sh
 +++ b/scripts/install.sh
 @@ -14,13 +14,22 @@
@@ -3230,7 +3249,7 @@ index 502c882fda..8e892372c7 100755
      # initial commit, where stash/checkout abort ("You do not have the
      # initial commit yet", #40998). Move it aside -- never delete it, it may
 diff --git a/scripts/sandbox/generate-e2e-matrix.mjs b/scripts/sandbox/generate-e2e-matrix.mjs
-index f9e09c78fe..c139a9523d 100644
+index f9e09c78fea5bd671d53f3a0319b8354801abf92..c139a9523d820280f8ebe17b121cdb273ad9a525 100644
 --- a/scripts/sandbox/generate-e2e-matrix.mjs
 +++ b/scripts/sandbox/generate-e2e-matrix.mjs
 @@ -531,7 +531,9 @@ async function main() {
@@ -3245,7 +3264,7 @@ index f9e09c78fe..c139a9523d 100644
      const artifactById = new Map();
      if (values.artifacts) {
 diff --git a/setup-hermes.sh b/setup-hermes.sh
-index b169bedc09..3b62efe1f7 100755
+index b169bedc091ef31e46fe6a8bdc63893420dd698a..3b62efe1f795f4ddf7c7720ab87d982ce15cdae5 100755
 --- a/setup-hermes.sh
 +++ b/setup-hermes.sh
 @@ -15,6 +15,13 @@
@@ -3276,7 +3295,7 @@ index b169bedc09..3b62efe1f7 100755
  export UV_NO_CONFIG=1
 diff --git a/tests-js/install-e2e-ci.test.mjs b/tests-js/install-e2e-ci.test.mjs
 new file mode 100644
-index 0000000000..a9049419c1
+index 0000000000000000000000000000000000000000..a9049419c163c2049fc2153c55b11734aea1ae27
 --- /dev/null
 +++ b/tests-js/install-e2e-ci.test.mjs
 @@ -0,0 +1,34 @@
@@ -3316,7 +3335,7 @@ index 0000000000..a9049419c1
 +});
 diff --git a/tests/ci/test_fork_ci_policy.py b/tests/ci/test_fork_ci_policy.py
 new file mode 100644
-index 0000000000..1c62cbd2cb
+index 0000000000000000000000000000000000000000..1c62cbd2cb2ff7c4f3a6074792635c17adbd4d77
 --- /dev/null
 +++ b/tests/ci/test_fork_ci_policy.py
 @@ -0,0 +1,126 @@
@@ -3448,7 +3467,7 @@ index 0000000000..1c62cbd2cb
 +    assert job["env"]["HERMES_TEST_SLICE"] == "${{ matrix.slice }}/4"
 diff --git a/tests/ci/test_supply_chain_scanner.py b/tests/ci/test_supply_chain_scanner.py
 new file mode 100644
-index 0000000000..d340079923
+index 0000000000000000000000000000000000000000..d340079923d58eb17a03a7f5972b939b0db92144
 --- /dev/null
 +++ b/tests/ci/test_supply_chain_scanner.py
 @@ -0,0 +1,176 @@
@@ -3629,7 +3648,7 @@ index 0000000000..d340079923
 +    assert "found=true" in result.stdout
 +    assert "base64 decode + exec/eval combo" in findings.read_text(encoding="utf-8")
 diff --git a/tests/hermes_cli/test_cli_skin_integration.py b/tests/hermes_cli/test_cli_skin_integration.py
-index 7fb564fa0c..ad7977046a 100644
+index 7fb564fa0ccda8f4fd1b455e60f0ed4c56d9479e..ad7977046a5f61bb11a8203f84a46946a8b70665 100644
 --- a/tests/hermes_cli/test_cli_skin_integration.py
 +++ b/tests/hermes_cli/test_cli_skin_integration.py
 @@ -31,6 +31,21 @@ def _make_cli_stub():
@@ -3655,7 +3674,7 @@ index 7fb564fa0c..ad7977046a 100644
      def test_secret_prompt_fragments_preserve_secret_state(self):
          cli = _make_cli_stub()
 diff --git a/tests/hermes_cli/test_config_display_language.py b/tests/hermes_cli/test_config_display_language.py
-index 4446996f02..b3bedcf9a8 100644
+index 4446996f02e16573ee442966a3ac652ecb75b85a..b3bedcf9a8b4ee75e8e1c913329add86530be8a8 100644
 --- a/tests/hermes_cli/test_config_display_language.py
 +++ b/tests/hermes_cli/test_config_display_language.py
 @@ -37,9 +37,12 @@ def _saved_language(home) -> str:
@@ -3675,7 +3694,7 @@ index 4446996f02..b3bedcf9a8 100644
  
  def test_unknown_language_is_refused_with_the_available_list(home, capsys):
 diff --git a/tests/hermes_cli/test_configured_builtin_models.py b/tests/hermes_cli/test_configured_builtin_models.py
-index c96dc66a22..636fe4599e 100644
+index c96dc66a22db9869b887119fe0796a1eb6367338..636fe4599e10734b21f75122eaccce91b9a3051e 100644
 --- a/tests/hermes_cli/test_configured_builtin_models.py
 +++ b/tests/hermes_cli/test_configured_builtin_models.py
 @@ -19,6 +19,8 @@ def _provider_row(configured_models, *, max_models=None):
@@ -3689,7 +3708,7 @@ index c96dc66a22..636fe4599e 100644
      ):
 diff --git a/tests/hermes_cli/test_flexpair_fixed_install.py b/tests/hermes_cli/test_flexpair_fixed_install.py
 new file mode 100644
-index 0000000000..49508de2db
+index 0000000000000000000000000000000000000000..49508de2dbd0089d0813b6efbe5393bd21c50b6c
 --- /dev/null
 +++ b/tests/hermes_cli/test_flexpair_fixed_install.py
 @@ -0,0 +1,127 @@
@@ -3822,7 +3841,7 @@ index 0000000000..49508de2db
 +    assert "pm/lock.json not found" in result.stderr
 diff --git a/tests/hermes_cli/test_fork_provider_picker.py b/tests/hermes_cli/test_fork_provider_picker.py
 new file mode 100644
-index 0000000000..eb151b63b5
+index 0000000000000000000000000000000000000000..eb151b63b5f566a31698aa45019d138edcfff85c
 --- /dev/null
 +++ b/tests/hermes_cli/test_fork_provider_picker.py
 @@ -0,0 +1,45 @@
@@ -3872,7 +3891,7 @@ index 0000000000..eb151b63b5
 +    main.select_provider_and_model()
 +    assert "no longer available" in capsys.readouterr().out
 diff --git a/tests/hermes_cli/test_minimax_model_validation.py b/tests/hermes_cli/test_minimax_model_validation.py
-index 67dc6c4acd..12950de3e2 100644
+index 67dc6c4acd9bb94c52b8de1d44b1739f4be82eab..12950de3e23bd3b656c9276339930e1e8869c357 100644
 --- a/tests/hermes_cli/test_minimax_model_validation.py
 +++ b/tests/hermes_cli/test_minimax_model_validation.py
 @@ -27,7 +27,10 @@ class TestMiniMaxModelValidation:
@@ -3888,7 +3907,7 @@ index 67dc6c4acd..12950de3e2 100644
  
      # -------------------------------------------------------------------------
 diff --git a/tests/hermes_cli/test_passive_update_opt_out.py b/tests/hermes_cli/test_passive_update_opt_out.py
-index 9444956589..26cfcd12da 100644
+index 9444956589b81da5e59724191f92d084ff2cdaf2..26cfcd12da07ff5fddda139b74d415ee2e2f314c 100644
 --- a/tests/hermes_cli/test_passive_update_opt_out.py
 +++ b/tests/hermes_cli/test_passive_update_opt_out.py
 @@ -1,9 +1,53 @@
@@ -3959,8 +3978,42 @@ index 9444956589..26cfcd12da 100644
 -    assert "1 commit" in output
 +    assert "Updates are disabled" in output
 +    assert "Fetching from origin" not in output
+diff --git a/tests/hermes_cli/test_plugin_catalog.py b/tests/hermes_cli/test_plugin_catalog.py
+index de8edcbe6230afd570d5b0664e29393459088198..5770886ca1297b3c85100d07e08ee4c4fa2a7341 100644
+--- a/tests/hermes_cli/test_plugin_catalog.py
++++ b/tests/hermes_cli/test_plugin_catalog.py
+@@ -27,12 +27,28 @@ def test_shipped_catalog_entries_are_all_valid_and_pinned():
+     shipping regression the admission CI only catches on changed files."""
+     root = pc.get_catalog_dir()
+     files = [p for p in root.glob("*.yaml") if p.name != "removed.yaml"]
++    parsed = [pc.entry_from_mapping(pc._read_yaml(path), str(path)) for path in files]
++    assert parsed and all(entry is not None for entry in parsed)
+     entries = pc.load_catalog()
+-    assert len(entries) == len(files) >= 1
++    assert {entry.name for entry in entries} == {
++        entry.name for entry in parsed if entry is not None and pc._catalog_entry_allowed(entry)
++    }
+     assert all(pc._SHA_RE.match(e.sha) and e.repo.startswith("https://") for e in entries)
+     assert all(e.install_identifier.startswith(e.repo) for e in entries)
+ 
+ 
++@pytest.mark.parametrize("name", sorted(pc._EXCLUDED_CATALOG_NAMES))
++def test_flexpair_catalog_policy_filters_local_and_live_identity(tmp_path, monkeypatch, name):
++    (tmp_path / "renamed.yaml").write_text(yaml.safe_dump(_entry(name)))
++    (tmp_path / "good.yaml").write_text(yaml.safe_dump(_entry()))
++    monkeypatch.setattr(pc, "get_catalog_dir", lambda: tmp_path)
++    monkeypatch.setattr(pc, "fetch_live_catalog", lambda: {
++        "entries": [_entry(name), _entry()], "removed": [],
++    })
++    assert [entry.name for entry in pc.load_catalog()] == ["good-plugin"]
++    assert [entry.name for entry in pc.load_catalog_live()] == ["good-plugin"]
++
++
+ def test_category_defaults_to_other_and_unknown_category_is_rejected(tmp_path):
+     """``category`` is the browse shelf: absent → ``desktop``; a value outside CATALOG_CATEGORIES is an
+     invalid entry (skipped with a warning) so a typo cannot create a phantom shelf on the site."""
 diff --git a/tests/hermes_cli/test_skin_cmd.py b/tests/hermes_cli/test_skin_cmd.py
-index 0a4f6ee84c..025a93f1ee 100644
+index 0a4f6ee84c77b465d1f7d97acb3338436b182477..025a93f1eea34ff2f7189530cb8fa762afbe9a8a 100644
 --- a/tests/hermes_cli/test_skin_cmd.py
 +++ b/tests/hermes_cli/test_skin_cmd.py
 @@ -23,6 +23,14 @@ def _activate(name: str) -> None:
@@ -3979,7 +4032,7 @@ index 0a4f6ee84c..025a93f1ee 100644
      (_skins() / "oasis.yaml").write_text(
          'name: oasis\ncolors:\n  background: "#08201f"\n  banner_title: "#f2dfb3"\n', encoding="utf-8"
 diff --git a/tests/hermes_cli/test_skin_engine.py b/tests/hermes_cli/test_skin_engine.py
-index 9dba5bf01e..fdaad6b363 100644
+index 9dba5bf01e0c39a60258c56c4dbfbdc6ba4a046d..fdaad6b3632a5e360bf85ed1f47f43b422a7f918 100644
 --- a/tests/hermes_cli/test_skin_engine.py
 +++ b/tests/hermes_cli/test_skin_engine.py
 @@ -14,6 +14,30 @@ def reset_skin_state():
@@ -4014,7 +4067,7 @@ index 9dba5bf01e..fdaad6b363 100644
  
  
 diff --git a/tests/hermes_cli/test_skin_palettes.py b/tests/hermes_cli/test_skin_palettes.py
-index f69846ed4d..c82c8edf68 100644
+index f69846ed4d462abac1235b39ef3a0a26c203dfc4..c82c8edf689755b7b9c81a8e5d1ec3bf62657d97 100644
 --- a/tests/hermes_cli/test_skin_palettes.py
 +++ b/tests/hermes_cli/test_skin_palettes.py
 @@ -123,7 +123,7 @@ def contrast(a: str, b: str) -> float:
@@ -4026,8 +4079,23 @@ index f69846ed4d..c82c8edf68 100644
  
  
  # A `light_colors`/`dark_colors` block is an OVERLAY on `colors`, not a full
+diff --git a/tests/hermes_cli/test_source_check.py b/tests/hermes_cli/test_source_check.py
+index b1f9589424cdf4109c118a92b23180f589aa8966..b71a0132353ebf038eff5628700bc9ba5111f515 100644
+--- a/tests/hermes_cli/test_source_check.py
++++ b/tests/hermes_cli/test_source_check.py
+@@ -29,6 +29,10 @@ class Installation(tuple):
+ 
+ @pytest.fixture
+ def installation(tmp_path, monkeypatch):
++    # These tests exercise the retained upstream implementation, not admission.
++    # The public fixed-build refusal is tested below and in test_flexpair_fixed_install.
++    from hermes_cli import source_check
++    monkeypatch.setattr(source_check, "check_for_updates", source_check._check_for_updates)
+     from hermes_cli import source_releases
+ 
+     root = tmp_path / "checkout"
 diff --git a/tests/hermes_cli/test_tools_config.py b/tests/hermes_cli/test_tools_config.py
-index 93813f26e4..180cffe0cd 100644
+index 93813f26e4b1480853fe486a04a38c7d834f9204..180cffe0cdbcb8a2d523c0cc13ba147428507ca3 100644
 --- a/tests/hermes_cli/test_tools_config.py
 +++ b/tests/hermes_cli/test_tools_config.py
 @@ -318,8 +318,12 @@ class TestPlatformToolsetConsistency:
@@ -4059,7 +4127,7 @@ index 93813f26e4..180cffe0cd 100644
                  f"Platform {platform!r} toolset {ts_name!r} missing from "
                  f"hermes-gateway includes"
 diff --git a/tests/hermes_cli/test_update_apply_shallow_count.py b/tests/hermes_cli/test_update_apply_shallow_count.py
-index 4dc19589ac..e5321beec8 100644
+index 4dc19589ac1e5b518c0595eb560e6be05b619d3e..e5321beec805f044c5fa769bd8e8ccda12e2acfd 100644
 --- a/tests/hermes_cli/test_update_apply_shallow_count.py
 +++ b/tests/hermes_cli/test_update_apply_shallow_count.py
 @@ -13,6 +13,9 @@ API — the network boundary — is faked.
@@ -4180,7 +4248,7 @@ index 4dc19589ac..e5321beec8 100644
 +    assert got == 0
 +    compare.assert_not_called()
 diff --git a/tests/hermes_cli/test_update_behind_count_recovery.py b/tests/hermes_cli/test_update_behind_count_recovery.py
-index dbfbc440ba..dfa358f984 100644
+index dbfbc440ba444a61ab20b1d845e42f56da2cd35e..dfa358f984558c15907b7b197f8baaafdba83078 100644
 --- a/tests/hermes_cli/test_update_behind_count_recovery.py
 +++ b/tests/hermes_cli/test_update_behind_count_recovery.py
 @@ -13,7 +13,7 @@ indicator said 1). The fix has two halves:
@@ -4212,7 +4280,7 @@ index dbfbc440ba..dfa358f984 100644
  
 diff --git a/tests/hermes_cli/test_update_check.py b/tests/hermes_cli/test_update_check.py
 new file mode 100644
-index 0000000000..47ea436bca
+index 0000000000000000000000000000000000000000..47ea436bcab6f30a7c03f28dc91f1201ce8caadd
 --- /dev/null
 +++ b/tests/hermes_cli/test_update_check.py
 @@ -0,0 +1,227 @@
@@ -4444,7 +4512,7 @@ index 0000000000..47ea436bca
 +    assert kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
 +    assert kwargs["env"]["GCM_INTERACTIVE"] == "Never"
 diff --git a/tests/hermes_cli/test_update_contract.py b/tests/hermes_cli/test_update_contract.py
-index b24bf2fd3c..c731ac574a 100644
+index b24bf2fd3cf942d287d332372c3d91944aad9273..c731ac574a25509634bdb68520ef04a05edac36d 100644
 --- a/tests/hermes_cli/test_update_contract.py
 +++ b/tests/hermes_cli/test_update_contract.py
 @@ -98,8 +98,8 @@ def test_admission_marker_refuses_even_on_git_checkout(tmp_path, monkeypatch):
@@ -4525,7 +4593,7 @@ index b24bf2fd3c..c731ac574a 100644
      """The apt-termux remediation command is read from the config module's
      ``_UPDATE_COMMAND_BY_METHOD`` table (the same one every install method
 diff --git a/tests/hermes_cli/test_update_missing_configured_deps.py b/tests/hermes_cli/test_update_missing_configured_deps.py
-index 45c3480f2f..0a61a81688 100644
+index 45c3480f2f3e88c110e613cbf964048ea68b2aba..0a61a81688f40932d054fe4656325605f95656f9 100644
 --- a/tests/hermes_cli/test_update_missing_configured_deps.py
 +++ b/tests/hermes_cli/test_update_missing_configured_deps.py
 @@ -31,8 +31,8 @@ def configured_update(source_launch, tmp_path, monkeypatch):
@@ -4575,8 +4643,22 @@ index 45c3480f2f..0a61a81688 100644
          (site / f"{name}.py").write_text("# Passive dependency-probe fixture.\n", encoding="utf-8")
      build()
      assert "fail to load them on restart" not in capfd.readouterr().out
+diff --git a/tests/hermes_cli/test_update_products.py b/tests/hermes_cli/test_update_products.py
+index 3c0d14d421182805f3b91246bd6533f702a6360d..51e8a65deaa97562fb0171374c9e8fe9e3f09513 100644
+--- a/tests/hermes_cli/test_update_products.py
++++ b/tests/hermes_cli/test_update_products.py
+@@ -23,6 +23,9 @@ from hermes_cli import main, update_cmd
+ def test_command_reports_outcome_and_releases_real_lock(tmp_path, monkeypatch, failure, exception, code, reexec):
+     from hermes_cli import update_lock, update_receipt
+ 
++    # Exercise retained transaction cleanup explicitly; real admission stays covered
++    # by test_flexpair_fixed_install and must refuse before entering this path.
++    monkeypatch.setattr("hermes_cli.update_contract.evaluate_update_admission", lambda _: None)
+     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+     monkeypatch.setenv("HERMES_UPDATE_REEXEC", "1" if reexec else "")
+     monkeypatch.setattr("os._exit", lambda *_: pytest.fail("normal cleanup bypassed"))
 diff --git a/tests/hermes_cli/test_web_server.py b/tests/hermes_cli/test_web_server.py
-index 913455c2e9..1b085ce83b 100644
+index 913455c2e9cabb13d2fb74a0e6925f0ce9040287..1b085ce83b445b9ca7a69dfaf52bbdd08f5723bd 100644
 --- a/tests/hermes_cli/test_web_server.py
 +++ b/tests/hermes_cli/test_web_server.py
 @@ -2629,6 +2629,15 @@ CONFIG_SCHEMA = ProviderConfigSchema(
@@ -4596,7 +4678,7 @@ index 913455c2e9..1b085ce83b 100644
      def test_timezone_field_is_searchable_select(self):
          """timezone must ship as a searchable, clearable select of IANA ids.
 diff --git a/tests/scripts/install/test_install_diverged_rescue_ref.py b/tests/scripts/install/test_install_diverged_rescue_ref.py
-index b6da914a40..6824dc268e 100644
+index b6da914a40a8f3eefd993f0afa8bb1e30c7067b1..6824dc268e8c71f86a9670b8e6731184b02420ae 100644
 --- a/tests/scripts/install/test_install_diverged_rescue_ref.py
 +++ b/tests/scripts/install/test_install_diverged_rescue_ref.py
 @@ -53,24 +53,12 @@ def _diverged_managed_checkout(tmp_path: Path) -> tuple[Path, str]:
@@ -4658,7 +4740,7 @@ index b6da914a40..6824dc268e 100644
 +    assert _git(managed, "rev-parse", "HEAD") == local_sha
 +    assert not _git(managed, "for-each-ref", "--format=%(refname)", "refs/hermes-update-backups/")
 diff --git a/tests/scripts/install/test_install_sh_existing_destination.py b/tests/scripts/install/test_install_sh_existing_destination.py
-index 6958f00fbb..35d01bad56 100644
+index 6958f00fbb4b29ec02288edb9b19b8d266198ccb..35d01bad56b14b52c03735f2f0525d44c0ae9371 100644
 --- a/tests/scripts/install/test_install_sh_existing_destination.py
 +++ b/tests/scripts/install/test_install_sh_existing_destination.py
 @@ -40,17 +40,18 @@ def test_unrelated_destination_is_refused_untouched(tmp_path, shape):
@@ -4686,7 +4768,7 @@ index 6958f00fbb..35d01bad56 100644
      assert not (dest / "tree").exists()
 diff --git a/tests/scripts/install/test_install_sh_repository_defaults.py b/tests/scripts/install/test_install_sh_repository_defaults.py
 new file mode 100644
-index 0000000000..b9559d035f
+index 0000000000000000000000000000000000000000..b9559d035f850547f36c4e4ff21e41635c5981e3
 --- /dev/null
 +++ b/tests/scripts/install/test_install_sh_repository_defaults.py
 @@ -0,0 +1,41 @@
@@ -4732,7 +4814,7 @@ index 0000000000..b9559d035f
 +    assert result.returncode == 0, result.stderr
 +    assert tuple(result.stdout.splitlines()) == EXPECTED_URLS
 diff --git a/tests/scripts/install/test_install_sh_repository_stage.py b/tests/scripts/install/test_install_sh_repository_stage.py
-index 4d0da0c4ec..3c9be12be2 100644
+index 4d0da0c4ec5474f20c980dd9e97158e71d72bac7..3c9be12be2176d3b4a6826040f48579565d169d3 100644
 --- a/tests/scripts/install/test_install_sh_repository_stage.py
 +++ b/tests/scripts/install/test_install_sh_repository_stage.py
 @@ -56,19 +56,20 @@ def test_piped_one_liner_runs_the_installer():
@@ -4863,7 +4945,7 @@ index 4d0da0c4ec..3c9be12be2 100644
 +    assert (install / "README").read_text() == "one"
 +    assert not any(p.with_suffix(".promisor").exists() for p in packs)
 diff --git a/tests/scripts/install/test_install_sh_termux_refusal.py b/tests/scripts/install/test_install_sh_termux_refusal.py
-index d42c4646b2..c1bbaa3bac 100644
+index d42c4646b273437666d3656ab89226baf5bdefab..c1bbaa3bac838ac885a881c6692b858d073c0b79 100644
 --- a/tests/scripts/install/test_install_sh_termux_refusal.py
 +++ b/tests/scripts/install/test_install_sh_termux_refusal.py
 @@ -1,4 +1,4 @@
@@ -4890,7 +4972,7 @@ index d42c4646b2..c1bbaa3bac 100644
  
  
 diff --git a/tests/tui_gateway/test_protocol.py b/tests/tui_gateway/test_protocol.py
-index 0c88de8478..e57df6c2b7 100644
+index 0c88de847818b10b9d5325f06cde1ba9a0d0ce8f..e57df6c2b7f40cec714f61b9ae4526425c441db9 100644
 --- a/tests/tui_gateway/test_protocol.py
 +++ b/tests/tui_gateway/test_protocol.py
 @@ -1762,6 +1762,35 @@ def test_skin_live_switch_end_to_end(server, tmp_path, monkeypatch):
@@ -4930,7 +5012,7 @@ index 0c88de8478..e57df6c2b7 100644
      """A skin the agent changes mid-turn goes live once per real move: a name
      switch (incl. switch-then-revert) OR an in-place color edit to the active skin
 diff --git a/tools/send_message_tool.py b/tools/send_message_tool.py
-index a8d5ba667a..cfce395f9f 100644
+index a8d5ba667a29889807e139a4a46e29861647dbe6..cfce395f9f44475de39e6341e98ab3d0d0ed8400 100644
 --- a/tools/send_message_tool.py
 +++ b/tools/send_message_tool.py
 @@ -16,7 +16,7 @@ from tools.send_message_senders import (
@@ -4992,7 +5074,7 @@ index a8d5ba667a..cfce395f9f 100644
      if platform == Platform.TELEGRAM:
          return await _send_telegram(
 diff --git a/toolsets.py b/toolsets.py
-index 0918c4696b..812468e5bd 100644
+index 0918c4696b12dd8201adbc7830bad6ce8ae24431..812468e5bd3d617ad03a4db4c5a4c693443b8d66 100644
 --- a/toolsets.py
 +++ b/toolsets.py
 @@ -43,11 +43,6 @@ _HERMES_CORE_TOOLS = [
@@ -5049,7 +5131,7 @@ index 0918c4696b..812468e5bd 100644
      ),
  }
 diff --git a/tui_gateway/change_watcher.py b/tui_gateway/change_watcher.py
-index 0e4e8067ce..d9021b32c3 100644
+index 0e4e8067ce12e95fb823cd735b9dabc4d834e241..d9021b32c3a2e2e7178401ed2de4a6e3a8cfb54d 100644
 --- a/tui_gateway/change_watcher.py
 +++ b/tui_gateway/change_watcher.py
 @@ -60,7 +60,7 @@ def _newest_mtime_ns(paths) -> int | None:
@@ -5062,7 +5144,7 @@ index 0e4e8067ce..d9021b32c3 100644
          return name, (_watcher_home() / "skins" / f"{name}.yaml").stat().st_mtime
      except OSError:
 diff --git a/tui_gateway/methods_config.py b/tui_gateway/methods_config.py
-index fe68cc9f22..3a628a40f4 100644
+index fe68cc9f22a97c55bf27793aab18a3fa9a64b2a1..3a628a40f4f0eca14ac64b889a80f60b988dee31 100644
 --- a/tui_gateway/methods_config.py
 +++ b/tui_gateway/methods_config.py
 @@ -177,6 +177,10 @@ def _display_word(key: str, default: str, allowed) -> str:
@@ -5086,7 +5168,7 @@ index fe68cc9f22..3a628a40f4 100644
      "indicator": lambda params: {
          "value": _display_word("tui_status_indicator", DEFAULT_INDICATOR_STYLE, INDICATOR_STYLES)},
 diff --git a/website/docs/user-guide/configuration.md b/website/docs/user-guide/configuration.md
-index a71c321f11..cb0c42cba8 100644
+index a71c321f1196e2aca4daad8186202ca9e5748523..cb0c42cba879d05ff424be64c1a52024ad929c40 100644
 --- a/website/docs/user-guide/configuration.md
 +++ b/website/docs/user-guide/configuration.md
 @@ -2182,7 +2182,7 @@ display:
@@ -5099,7 +5181,7 @@ index a71c321f11..cb0c42cba8 100644
    compact: false          # Compact output mode (less whitespace)
    cli_multiline_shortcuts: true  # CLI: Ctrl+J, \ + Enter, and supported Shift+Enter insert newlines (false = legacy c-j submit fallback)
 diff --git a/website/docs/user-guide/features/skins.md b/website/docs/user-guide/features/skins.md
-index 5fb780757b..0f052b4162 100644
+index 5fb780757b413d5ab815d78778453b97d72265ac..0f052b4162ada65f6ac1e2b6749415bf5cf4e7db 100644
 --- a/website/docs/user-guide/features/skins.md
 +++ b/website/docs/user-guide/features/skins.md
 @@ -25,9 +25,11 @@ Or set the default skin in `~/.hermes/config.yaml`:
