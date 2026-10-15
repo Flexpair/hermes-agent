@@ -358,10 +358,10 @@ index 0000000000000000000000000000000000000000..007274f50a97a44f9a694bfd7098b8d1
 \ No newline at end of file
 diff --git a/.github/workflows/flexpair-patch-replay.yml b/.github/workflows/flexpair-patch-replay.yml
 new file mode 100644
-index 0000000000000000000000000000000000000000..b055f3c0e18f38871326a0071e2e5b1fdce754f5
+index 0000000000000000000000000000000000000000..6d072e8497c913abc39e8ea77b402e0008f628e6
 --- /dev/null
 +++ b/.github/workflows/flexpair-patch-replay.yml
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,63 @@
 +name: Flexpair patch replay
 +
 +on:
@@ -388,7 +388,7 @@ index 0000000000000000000000000000000000000000..b055f3c0e18f38871326a0071e2e5b1f
 +          node-version: 26
 +          cache: npm
 +      - run: npm ci --ignore-scripts
-+      - run: npm exec --workspace apps/desktop -- vitest run --project electron electron/update-handoff-marker.test.ts
++      - run: npm exec --workspace apps/desktop -- vitest run --project electron electron/update-handoff-marker.test.ts electron/update-policy.test.ts
 +
 +  replay:
 +    name: Patch reproduces branch tree
@@ -403,12 +403,10 @@ index 0000000000000000000000000000000000000000..b055f3c0e18f38871326a0071e2e5b1f
 +        run: |
 +          set -euo pipefail
 +          test -f flexpair.patch
-+          # Fork main carries the patch across upstream merges. Follow its
-+          # first-parent history to the latest upstream merge, then replay
-+          # against that merge's upstream (second) parent, not fork history.
-+          upstream_merge=$(git rev-list --first-parent --merges -1 HEAD)
-+          test -n "$upstream_merge"
-+          base=$(git rev-parse "${upstream_merge}^2")
++          # This patch targets the verified upstream code base, not the
++          # second parent of a later feature-branch merge.
++          base=8cd3d8149ead2b86aad825a539b1efabf7781963
++          git merge-base --is-ancestor "$base" HEAD
 +          index=$(mktemp "${RUNNER_TEMP}/flexpair-index.XXXXXX")
 +          trap 'rm -f "$index"' EXIT
 +          rm -f "$index"
@@ -1164,10 +1162,18 @@ index 0000000000000000000000000000000000000000..c25551a6f48d59c3631d806817d02242
 +  })
 +}
 diff --git a/apps/desktop/electron/main.ts b/apps/desktop/electron/main.ts
-index c7b96649160cd1a60c58c6677d0adf7f70eb4271..630c8eb5172b9c0085f34fc05043b0db5c7dcf09 100644
+index c7b96649160cd1a60c58c6677d0adf7f70eb4271..6bcb403cb83d96a0edcc8080439b2112dbac3580 100644
 --- a/apps/desktop/electron/main.ts
 +++ b/apps/desktop/electron/main.ts
-@@ -16258,7 +16258,14 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
+@@ -350,6 +350,7 @@ import {
+   waitForManagedUpdateOperations
+ } from './managed-ssh-update'
+ import { registerMcpOauthCallbackIpc } from './mcp-oauth-callback-ipc'
++import { updateAllRefusal } from './update-policy'
+ import { isMediaCapturePermission } from './media-capture-permission'
+ import { createMediaProtocolHandler, MEDIA_PROTOCOL } from './media-protocol'
+ import { fetchLocalMedia } from './media-range'
+@@ -16258,7 +16259,14 @@ ipcMain.handle('hermes:gateway:ws-url-for', async (_event, payload) => {
  // fleet fan-out below, this path owns the remote serve lifecycle: it gates new
  // dials, drains only exact Desktop-owned processes, runs the launcher outside
  // those serves, proves the correlated receipt, and restores every prior scope.
@@ -1182,16 +1188,17 @@ index c7b96649160cd1a60c58c6677d0adf7f70eb4271..630c8eb5172b9c0085f34fc05043b0db
    const connectionId = String(rawId || '').trim()
    const existing = managedConnectionUpdates.get(connectionId)
  
-@@ -16310,6 +16317,9 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
- // app's own update pipeline; Desktop-managed SSH uses the transactional
- // drain/update/restore lifecycle; URL remotes POST their backend updater.
- ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
-+  if (updatesAreDisabled()) {
-+    return { ok: false, error: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
-+  }
-   const registry = readDesktopConnectionsRegistry()
+@@ -16321,6 +16329,10 @@ ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
+     Array.isArray((payload as any)?.excludeIds) ? (payload as any).excludeIds.map((id: unknown) => String(id)) : []
+   )
  
-   // Optional renderer-side exclusions: the everything-update flow dispatches
++  if (updatesAreDisabled()) {
++    return updateAllRefusal(registry.connections, [...excludeIds])
++  }
++
+   const results = await Promise.all(
+     registry.connections
+       .filter(connection => !excludeIds.has(connection.id))
 diff --git a/apps/desktop/electron/update-handoff-marker.test.ts b/apps/desktop/electron/update-handoff-marker.test.ts
 index 9756de43d21489e07ea8ed3b1c72070ddcd4500b..1fd55f87ec412dccc62613b1044299b845c9f5e0 100644
 --- a/apps/desktop/electron/update-handoff-marker.test.ts
@@ -1277,6 +1284,70 @@ index 9756de43d21489e07ea8ed3b1c72070ddcd4500b..1fd55f87ec412dccc62613b1044299b8
 -  assertScriptHandoff(runPosix)
 +  assert.equal(fs.existsSync(home), false, 'the self-test sandbox must not leak into the OS temp directory')
  })
+diff --git a/apps/desktop/electron/update-policy.test.ts b/apps/desktop/electron/update-policy.test.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..65bdac23af50ae882efa7f3a1ba31e38d36d1c0d
+--- /dev/null
++++ b/apps/desktop/electron/update-policy.test.ts
+@@ -0,0 +1,29 @@
++import assert from 'node:assert/strict'
++
++import { test } from 'vitest'
++
++import { updateAllRefusal, updatesDisabledMessage } from './update-policy'
++
++test('fixed-build update-all returns refused rows without dispatching updates', () => {
++  const connections = [
++    { id: 'local', label: 'Local', kind: 'local' },
++    { id: 'ssh', label: 'Server', kind: 'ssh' },
++    { id: 'remote', label: 'Remote', kind: 'remote' },
++    { id: 'cloud', label: 'Cloud', kind: 'cloud' }
++  ]
++
++  const result = updateAllRefusal(connections, ['ssh'])
++
++  assert.equal(result.ok, false)
++  assert.deepEqual(result.results.map(row => row.connectionId), ['local', 'remote', 'cloud'])
++
++  for (const row of result.results) {
++    assert.equal(row.ok, false)
++    assert.equal(row.skipped, true)
++    assert.equal(row.reason, 'updates-disabled')
++    assert.equal(row.detail, updatesDisabledMessage)
++  }
++
++  assert.deepEqual(updateAllRefusal([], []).results, [])
++  assert.deepEqual(updateAllRefusal(connections, connections.map(row => row.id)).results, [])
++})
+diff --git a/apps/desktop/electron/update-policy.ts b/apps/desktop/electron/update-policy.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..b045bcca6e8a2f9fb138e1452e9604413b4b43c6
+--- /dev/null
++++ b/apps/desktop/electron/update-policy.ts
+@@ -0,0 +1,23 @@
++export const updatesDisabledMessage = 'Updates are disabled in this Flexpair build.'
++
++export function updateAllRefusal<Kind extends string>(
++  connections: { id: string; label: string; kind: Kind }[],
++  excludeIds: string[] = []
++) {
++  const excluded = new Set(excludeIds)
++
++  return {
++    ok: false,
++    results: connections
++      .filter(connection => !excluded.has(connection.id))
++      .map(connection => ({
++        connectionId: connection.id,
++        label: connection.label,
++        kind: connection.kind,
++        ok: false,
++        skipped: true,
++        reason: 'updates-disabled',
++        detail: updatesDisabledMessage
++      }))
++  }
++}
 diff --git a/apps/desktop/electron/zoom.test.ts b/apps/desktop/electron/zoom.test.ts
 index 20bd5d70fb254f0dcbe461ff038eeed84863c88c..3680c7967040b6389d679022df23b48cc9f423e4 100644
 --- a/apps/desktop/electron/zoom.test.ts
@@ -1395,10 +1466,10 @@ index cabfe7e089d296d65d0ee8f7c022760a2213af53..98f560d3976591477d8017c6c6aba9f4
  export function setZoomPercent(percent: number): void {
    window.hermesDesktop?.zoom?.setPercent(percent)
 diff --git a/apps/desktop/src/styles.css b/apps/desktop/src/styles.css
-index 9c9a3a89b730bb410aaaafcf1b012fefe4db424e..537a2ed8902febe0295dc5c43b2eb210eac04ace 100644
+index 9c9a3a89b730bb410aaaafcf1b012fefe4db424e..c88dc3d0e928425d0b56d02434221227551b2005 100644
 --- a/apps/desktop/src/styles.css
 +++ b/apps/desktop/src/styles.css
-@@ -3782,3 +3782,49 @@ html[data-hud-window] [data-slot='popover-content'] {
+@@ -3782,3 +3782,50 @@ html[data-hud-window] [data-slot='popover-content'] {
  [data-hud-shell] [data-slot='composer-bounds'] *::-webkit-scrollbar {
    display: none;
  }
@@ -1437,6 +1508,7 @@ index 9c9a3a89b730bb410aaaafcf1b012fefe4db424e..537a2ed8902febe0295dc5c43b2eb210
 +  --ui-success: #157878 !important;
 +  --ui-green: #157878;
 +  --ui-cyan: #157878;
++  --ui-purple: #157878;
 +  --ui-yellow: #157878;
 +}
 +
@@ -1806,6 +1878,19 @@ index 35ddac34f6126085a350f08d3358f734dc4c3c7c..3c949682d5fd8a4ca21981b346cbe339
  export { compactNumber } from './format'
  export { type FuzzyMatch, fuzzyRank, fuzzyScore, fuzzyScoreMulti, type RankedItem } from './fuzzy'
  export * from './gateway-events'
+diff --git a/cli-config.yaml.example b/cli-config.yaml.example
+index 8fefa9aa667ff2520576fd6f96b2033f5b50ce32..becc1a9a0700058eaa49ba038e30540029378e19 100644
+--- a/cli-config.yaml.example
++++ b/cli-config.yaml.example
+@@ -2016,7 +2016,7 @@ display:
+   #     prompt_symbol: "⚔"                  # Prompt symbol (bare token; renderers add trailing space)
+   #   tool_prefix: "╎"                       # Tool output line prefix (default: ┊)
+   #
+-  skin: default
++  skin: flexpair-dark
+ 
+ # =============================================================================
+ # Model Aliases — short names for /model command
 diff --git a/contributors/emails/Kame696@users.noreply.github.com b/contributors/emails/Kame696@users.noreply.github.com
 new file mode 100644
 index 0000000000000000000000000000000000000000..71658c9bf358cdeb1607d9b94e305a44df6f1025
@@ -2550,7 +2635,7 @@ index a1878344d6faa4febd9b440dcfd95af9af82cf8a..381eff4ba713567988d9cebd1f97b9a7
      active_group = provider_group_for_slug(active) if active else ""
  
 diff --git a/hermes_cli/models_catalog_static.py b/hermes_cli/models_catalog_static.py
-index c0684ee2aad68d98e55a133698d4905c58482f97..456ba005fabc0b22eb921e95c496d378bec9a209 100644
+index c0684ee2aad68d98e55a133698d4905c58482f97..c6f3fa89893f6a463bbd4977faad2d7d2893e6bf 100644
 --- a/hermes_cli/models_catalog_static.py
 +++ b/hermes_cli/models_catalog_static.py
 @@ -302,6 +302,17 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
@@ -2563,7 +2648,7 @@ index c0684ee2aad68d98e55a133698d4905c58482f97..456ba005fabc0b22eb921e95c496d378
 +    "alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn",
 +    "alibaba-token-plan", "alibaba-token-plan-cn", "deepseek", "kimi-coding",
 +    "kimi-coding-cn", "minimax", "minimax-cn", "minimax-oauth", "qwen-oauth",
-+    "stepfun", "xiaomi", "zai",
++    "stepfun", "tencent-tokenhub", "tencent-tokenplan", "xiaomi", "zai",
 +})
 +for _disabled_slug in _DISABLED_BUILTIN_SLUGS:
 +    _PROVIDER_MODELS.pop(_disabled_slug, None)
@@ -3670,10 +3755,10 @@ index 0000000000000000000000000000000000000000..d340079923d58eb17a03a7f5972b939b
 +    assert "found=true" in result.stdout
 +    assert "base64 decode + exec/eval combo" in findings.read_text(encoding="utf-8")
 diff --git a/tests/hermes_cli/test_cli_skin_integration.py b/tests/hermes_cli/test_cli_skin_integration.py
-index 7fb564fa0ccda8f4fd1b455e60f0ed4c56d9479e..ad7977046a5f61bb11a8203f84a46946a8b70665 100644
+index 7fb564fa0ccda8f4fd1b455e60f0ed4c56d9479e..e395b9b0066e1d8f9fedbfd14cceff2c43814889 100644
 --- a/tests/hermes_cli/test_cli_skin_integration.py
 +++ b/tests/hermes_cli/test_cli_skin_integration.py
-@@ -31,6 +31,21 @@ def _make_cli_stub():
+@@ -31,6 +31,35 @@ def _make_cli_stub():
  
  class TestCliSkinPromptIntegration:
  
@@ -3686,6 +3771,20 @@ index 7fb564fa0ccda8f4fd1b455e60f0ed4c56d9479e..ad7977046a5f61bb11a8203f84a46946
 +        init_skin_from_config(config)
 +        assert get_active_skin().name == "flexpair-dark"
 +
++    def test_install_seed_uses_fork_default_without_changing_classic_alias(self):
++        from pathlib import Path
++        from ruamel.yaml import YAML
++        from hermes_cli.cli_config_load import _cli_config_defaults
++        from hermes_cli.skin_engine import init_skin_from_config, load_skin
++
++        seed = Path(__file__).resolve().parents[2] / "cli-config.yaml.example"
++        config = YAML(typ="safe").load(seed.read_text())
++        assert config["display"]["skin"] == _cli_config_defaults()["display"]["skin"]
++        init_skin_from_config(config)
++        assert get_active_skin().name == config["display"]["skin"]
++        init_skin_from_config({"display": {"skin": "default"}})
++        assert get_active_skin() == load_skin("default")
++
 +
 +    def test_ares_prompt_fragments_use_skin_symbol(self):
 +        cli = _make_cli_stub()
@@ -3695,6 +3794,31 @@ index 7fb564fa0ccda8f4fd1b455e60f0ed4c56d9479e..ad7977046a5f61bb11a8203f84a46946
  
      def test_secret_prompt_fragments_preserve_secret_state(self):
          cli = _make_cli_stub()
+diff --git a/tests/hermes_cli/test_commit_build_updates.py b/tests/hermes_cli/test_commit_build_updates.py
+index 3a4d455a22caa9cd0ee2350fe3067d946db4f50e..5b95cc16de234f30233792c454a42403018302fb 100644
+--- a/tests/hermes_cli/test_commit_build_updates.py
++++ b/tests/hermes_cli/test_commit_build_updates.py
+@@ -7,7 +7,7 @@ import pytest
+ 
+ from hermes_cli.update_contract import evaluate_update_admission
+ 
+-MESSAGE = "This build doesn't get updates. Ask the developer who gave it to you for a new build."
++MESSAGE = "Updates are disabled in this Flexpair build; the installed version is fixed."
+ 
+ 
+ @pytest.fixture
+@@ -35,9 +35,9 @@ def test_commit_build_refuses_without_gui_advice(commit_build, git_present):
+         (commit_build / ".git").mkdir()
+     refusal = evaluate_update_admission(commit_build)
+     assert refusal is not None
+-    assert refusal.code == "commit-build"
++    assert refusal.code == "updates-disabled"
+     assert refusal.message == MESSAGE
+-    assert refusal.update_command == ""
++    assert refusal.update_command == "disabled"
+ 
+ 
+ @pytest.mark.parametrize("passive", [False, True])
 diff --git a/tests/hermes_cli/test_config_display_language.py b/tests/hermes_cli/test_config_display_language.py
 index 4446996f02e16573ee442966a3ac652ecb75b85a..b3bedcf9a8b4ee75e8e1c913329add86530be8a8 100644
 --- a/tests/hermes_cli/test_config_display_language.py
@@ -4034,6 +4158,36 @@ index de8edcbe6230afd570d5b0664e29393459088198..5770886ca1297b3c85100d07e08ee4c4
  def test_category_defaults_to_other_and_unknown_category_is_rejected(tmp_path):
      """``category`` is the browse shelf: absent → ``desktop``; a value outside CATALOG_CATEGORIES is an
      invalid entry (skipped with a warning) so a typo cannot create a phantom shelf on the site."""
+diff --git a/tests/hermes_cli/test_provider_catalog.py b/tests/hermes_cli/test_provider_catalog.py
+index ea688936a8dd3ebe8dd594ed738334bcfef6280f..9e142175b8c3880ff66d1438854211891704407e 100644
+--- a/tests/hermes_cli/test_provider_catalog.py
++++ b/tests/hermes_cli/test_provider_catalog.py
+@@ -11,15 +11,23 @@ from hermes_cli.provider_catalog import (
+     provider_catalog_by_slug,
+ )
+ 
++def test_disabled_providers_do_not_leak_into_public_catalogs():
++    from hermes_cli.models import list_available_providers
++    from hermes_cli.models_catalog_static import _DISABLED_BUILTIN_SLUGS, _PROVIDER_MODELS
++
++    assert not (_DISABLED_BUILTIN_SLUGS & {row["id"] for row in list_available_providers()})
++    assert not (_DISABLED_BUILTIN_SLUGS & set(provider_catalog_by_slug()))
++    assert not (_DISABLED_BUILTIN_SLUGS & set(_PROVIDER_MODELS))
++
+ def test_profileless_providers_still_present():
+     """Providers without a ProviderProfile must still resolve via fallbacks.
+ 
+-    lmstudio / openai-api / tencent-tokenhub / xai-oauth have no profile on
++    lmstudio / openai-api / xai-oauth have no profile on
+     main; they exist only as registry + canonical entries. The catalog must
+     not require a profile to include a provider.
+     """
+     by = provider_catalog_by_slug()
+-    for slug in ("lmstudio", "openai-api", "tencent-tokenhub", "xai-oauth"):
++    for slug in ("lmstudio", "openai-api", "xai-oauth"):
+         assert slug in by, f"{slug} dropped from catalog (profile-less provider)"
+         assert by[slug].label, f"{slug} has empty label despite canonical fallback"
+         assert by[slug].description, f"{slug} has empty description despite fallback"
 diff --git a/tests/hermes_cli/test_skin_cmd.py b/tests/hermes_cli/test_skin_cmd.py
 index 0a4f6ee84c77b465d1f7d97acb3338436b182477..025a93f1eea34ff2f7189530cb8fa762afbe9a8a 100644
 --- a/tests/hermes_cli/test_skin_cmd.py

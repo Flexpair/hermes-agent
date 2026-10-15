@@ -7,7 +7,7 @@ import pytest
 
 from hermes_cli.update_contract import evaluate_update_admission
 
-MESSAGE = "This build doesn't get updates. Ask the developer who gave it to you for a new build."
+MESSAGE = "Updates are disabled in this Flexpair build; the installed version is fixed."
 
 
 @pytest.fixture
@@ -35,9 +35,9 @@ def test_commit_build_refuses_without_gui_advice(commit_build, git_present):
         (commit_build / ".git").mkdir()
     refusal = evaluate_update_admission(commit_build)
     assert refusal is not None
-    assert refusal.code == "commit-build"
+    assert refusal.code == "updates-disabled"
     assert refusal.message == MESSAGE
-    assert refusal.update_command == ""
+    assert refusal.update_command == "disabled"
 
 
 @pytest.mark.parametrize("passive", [False, True])

@@ -350,6 +350,7 @@ import {
   waitForManagedUpdateOperations
 } from './managed-ssh-update'
 import { registerMcpOauthCallbackIpc } from './mcp-oauth-callback-ipc'
+import { updateAllRefusal } from './update-policy'
 import { isMediaCapturePermission } from './media-capture-permission'
 import { createMediaProtocolHandler, MEDIA_PROTOCOL } from './media-protocol'
 import { fetchLocalMedia } from './media-range'
@@ -16317,9 +16318,6 @@ ipcMain.handle('hermes:connections:update-managed', async (_event, rawId) => req
 // app's own update pipeline; Desktop-managed SSH uses the transactional
 // drain/update/restore lifecycle; URL remotes POST their backend updater.
 ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
-  if (updatesAreDisabled()) {
-    return { ok: false, error: 'updates-disabled', message: 'Updates are disabled in this Flexpair build.' }
-  }
   const registry = readDesktopConnectionsRegistry()
 
   // Optional renderer-side exclusions: the everything-update flow dispatches
@@ -16330,6 +16328,10 @@ ipcMain.handle('hermes:connections:update-all', async (_event, payload) => {
   const excludeIds = new Set<string>(
     Array.isArray((payload as any)?.excludeIds) ? (payload as any).excludeIds.map((id: unknown) => String(id)) : []
   )
+
+  if (updatesAreDisabled()) {
+    return updateAllRefusal(registry.connections, [...excludeIds])
+  }
 
   const results = await Promise.all(
     registry.connections

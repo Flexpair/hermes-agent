@@ -308,7 +308,7 @@ _DISABLED_BUILTIN_SLUGS = frozenset({
     "alibaba", "alibaba-cn", "alibaba-coding-plan", "alibaba-coding-plan-cn",
     "alibaba-token-plan", "alibaba-token-plan-cn", "deepseek", "kimi-coding",
     "kimi-coding-cn", "minimax", "minimax-cn", "minimax-oauth", "qwen-oauth",
-    "stepfun", "xiaomi", "zai",
+    "stepfun", "tencent-tokenhub", "tencent-tokenplan", "xiaomi", "zai",
 })
 for _disabled_slug in _DISABLED_BUILTIN_SLUGS:
     _PROVIDER_MODELS.pop(_disabled_slug, None)

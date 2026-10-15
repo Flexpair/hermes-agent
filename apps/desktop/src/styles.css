@@ -3817,6 +3817,7 @@ html[data-hud-window] [data-slot='popover-content'] {
   --ui-success: #157878 !important;
   --ui-green: #157878;
   --ui-cyan: #157878;
+  --ui-purple: #157878;
   --ui-yellow: #157878;
 }
 
