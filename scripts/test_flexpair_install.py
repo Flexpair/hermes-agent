@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class FlexpairInstallTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR"))
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
         self.bin = self.home / "bin"
@@ -20,12 +20,12 @@ class FlexpairInstallTests(unittest.TestCase):
 
     def executable(self, name, text):
         path = self.bin / name
-        path.write_text("#!/usr/bin/env bash\nset -eu\n" + text)
+        path.write_text("#!/usr/bin/env bash\nset -eu\n" + text, encoding="utf-8")
         path.chmod(0o755)
 
     def bootstrap(self, *args):
         return subprocess.run(["bash", str(ROOT / "scripts/flexpair-install.sh"), *args],
-                              env=self.env, capture_output=True, text=True)
+                              env=self.env, capture_output=True, text=True, encoding="utf-8")
 
     def test_latest_dated_branch_and_forwarded_arguments(self):
         self.executable("git", 'printf "abc\\trefs/heads/2026-09-01-patched\\ndef\\trefs/heads/2026-10-16-patched\\nghi\\trefs/heads/not-patched\\n"\n')
@@ -87,7 +87,7 @@ class FlexpairInstallTests(unittest.TestCase):
         for failure in (0, 19):
             hermes = self.home / ".hermes/bin/hermes"
             hermes.parent.mkdir(parents=True, exist_ok=True)
-            hermes.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*"\nexit {failure}\n')
+            hermes.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*"\nexit {failure}\n', encoding="utf-8")
             hermes.chmod(0o755)
             body = f'''source "{installer}" --manifest
 INSTALL_DIR="{self.home}"
@@ -95,7 +95,7 @@ bootstrap_python() {{ boot_py=true; }}
 wire_shell_path() {{ :; }}
 run_stage products
 '''
-            result = subprocess.run(["bash", "-c", body], env=self.env, capture_output=True, text=True)
+            result = subprocess.run(["bash", "-c", body], env=self.env, capture_output=True, text=True, encoding="utf-8")
             if failure:
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("palette installation failed", result.stderr)
