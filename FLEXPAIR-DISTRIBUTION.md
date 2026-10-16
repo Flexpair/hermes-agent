@@ -24,7 +24,7 @@ This change does not replace or deploy any existing dated branch. Old branches s
 ## Verification
 
 ```sh
-python -m unittest discover -s scripts -p test_flexpair_install.py -v
+scripts/run_tests.sh tests/scripts/install/test_flexpair_install.py
 bash -n scripts/flexpair-install.sh scripts/install.sh
 git apply --check flexpair.patch
 ```

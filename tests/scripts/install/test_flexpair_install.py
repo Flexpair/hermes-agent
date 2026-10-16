@@ -1,11 +1,11 @@
-"""Fork-only bootstrap checks; run with python -m unittest discover -s scripts -p test_flexpair_install.py."""
+"""Fork bootstrap checks; run with scripts/run_tests.sh tests/scripts/install/test_flexpair_install.py."""
 import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 class FlexpairInstallTests(unittest.TestCase):
