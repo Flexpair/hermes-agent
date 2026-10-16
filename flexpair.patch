@@ -16,7 +16,7 @@ index 502c882fda8350ad49b13cad87569bfb932e9dec..54f22d5e117a609869228e7a1f2a8e49
 +    run_logged "Installing Flexpair color palette" \
 +        "$INSTALL_DIR/.hermes/bin/hermes" plugins install \
 +        https://github.com/Flexpair/hermes-plugins/tree/main/flexpair-color-palette \
-+        --ref bbff250954d28f992668e227cdb59301befe8717 --enable \
++        --ref bbff250954d28f992668e227cdb59301befe8717 --enable --force \
 +        || fail "Flexpair color palette installation failed"
 +    run_logged "Enabling Flexpair color palette" \
 +        "$INSTALL_DIR/.hermes/bin/hermes" plugins enable flexpair-color-palette \

@@ -4,6 +4,7 @@
 
 - Default repository: `Flexpair/hermes-agent` (the upstream override remains supported).
 - Install and enable `flexpair-color-palette` at immutable commit `bbff250954d28f992668e227cdb59301befe8717` after the Hermes command is published.
+- On reruns, replace this managed plugin with the pinned version, then enable it. Local edits to this plugin are replaced; other plugins are untouched.
 - Stop with an error if plugin installation or activation fails.
 
 No provider, language, platform, update, desktop CSS, theme or core zoom restrictions are included.

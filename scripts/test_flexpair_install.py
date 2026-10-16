@@ -87,12 +87,22 @@ class FlexpairInstallTests(unittest.TestCase):
         for failure in (0, 19):
             hermes = self.home / ".hermes/bin/hermes"
             hermes.parent.mkdir(parents=True, exist_ok=True)
-            hermes.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*"\nexit {failure}\n', encoding="utf-8")
+            hermes.write_text(f'''#!/usr/bin/env bash
+printf "%s\\n" "$*"
+if [[ "$*" == "plugins install "* ]]; then
+    if [[ -f "$0.installed" && " $* " != *" --force "* ]]; then
+        exit 23
+    fi
+    touch "$0.installed"
+fi
+exit {failure}
+''', encoding="utf-8")
             hermes.chmod(0o755)
             body = f'''source "{installer}" --manifest
 INSTALL_DIR="{self.home}"
 bootstrap_python() {{ boot_py=true; }}
 wire_shell_path() {{ :; }}
+run_stage products
 run_stage products
 '''
             result = subprocess.run(["bash", "-c", body], env=self.env, capture_output=True, text=True, encoding="utf-8")
@@ -103,6 +113,7 @@ run_stage products
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--ref bbff250954d28f992668e227cdb59301befe8717 --enable", result.stdout)
                 self.assertIn("plugins enable flexpair-color-palette", result.stdout)
+                self.assertEqual(result.stdout.count("plugins enable flexpair-color-palette"), 2)
 
 
 if __name__ == "__main__":
