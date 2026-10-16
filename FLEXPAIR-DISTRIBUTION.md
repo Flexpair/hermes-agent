@@ -1,13 +1,14 @@
 # Minimal Flexpair distribution
 
-`main` stays upstream-shaped. `flexpair.patch` now changes only `scripts/install.sh`:
+`main` stays upstream-shaped. `flexpair.patch` changes `scripts/install.sh` and one narrow desktop activation rule with regression tests:
 
 - Default repository: `Flexpair/hermes-agent` (the upstream override remains supported).
 - Install and enable `flexpair-color-palette` at immutable commit `bbff250954d28f992668e227cdb59301befe8717` after the Hermes command is published.
 - On reruns, replace this managed plugin with the pinned version, then enable it. Local edits to this plugin are replaced; other plugins are untouched.
 - Stop with an error if plugin installation or activation fails.
+- Activate the desktop half automatically only when both its package and plugin ID are `flexpair-color-palette`. Explicit desktop disable decisions still win; other unified packages remain opt-in.
 
-No provider, language, platform, update, desktop CSS, theme or core zoom restrictions are included.
+No provider, language, platform, update, desktop CSS, theme or core zoom restrictions are included. Accent colors and 150% zoom are implemented by the pinned plugin, not by desktop Core.
 
 ## Bootstrap
 
@@ -30,3 +31,5 @@ git apply --check flexpair.patch
 ```
 
 Tests execute branch discovery and downloaded-script dispatch with fake network commands and run the real patched installer product stage with isolated command doubles. These do not prove a full fresh Linux/macOS installation or Electron behavior.
+
+The patched desktop loader was also exercised in an isolated real Electron desktop on macOS: no stored desktop plugin decision, automatic 150% zoom, and the dark Flexpair accent `#00FFFF`. The loader regression suite and desktop build passed. This is a local runtime proof, not publication of a dated release or deployment to a cloud desktop.

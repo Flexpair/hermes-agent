@@ -82,6 +82,11 @@ class FlexpairInstallTests(unittest.TestCase):
         installer = scripts / "install.sh"
         installer.write_bytes((ROOT / "scripts/install.sh").read_bytes())
         installer.chmod(0o755)
+        for relative in ("apps/desktop/src/contrib/runtime-loader.ts",
+                         "apps/desktop/src/contrib/runtime-loader.test.ts"):
+            target = self.home / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((ROOT / relative).read_bytes())
         subprocess.run(["git", "apply", str(ROOT / "flexpair.patch")],
                        cwd=self.home, check=True)
         for failure in (0, 19):

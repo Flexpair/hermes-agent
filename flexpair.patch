@@ -4,7 +4,7 @@ index 502c882fda8350ad49b13cad87569bfb932e9dec..54f22d5e117a609869228e7a1f2a8e49
 +++ b/scripts/install.sh
 @@ -21,5 +21,5 @@ set -u
  export UV_NO_CONFIG=1
- 
+
 -REPO_URL="${HERMES_REPO_URL:-https://github.com/NousResearch/hermes-agent.git}"
 +REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
  BRANCH="main"
@@ -23,3 +23,196 @@ index 502c882fda8350ad49b13cad87569bfb932e9dec..54f22d5e117a609869228e7a1f2a8e49
 +        || fail "Flexpair color palette activation failed"
      log_success "app products and hermes command ready"
  }
+diff --git a/apps/desktop/src/contrib/runtime-loader.test.ts b/apps/desktop/src/contrib/runtime-loader.test.ts
+index cd3a62f3..ba995f65 100644
+--- a/apps/desktop/src/contrib/runtime-loader.test.ts
++++ b/apps/desktop/src/contrib/runtime-loader.test.ts
+@@ -6,3 +6,3 @@ import type * as HermesModule from '@/hermes'
+ import { emitGatewayEvent } from './events'
+-import { $pluginRecords, publishPlugin, setPluginEnabled } from './plugins-store'
++import { $pluginDecisions, $pluginRecords, publishPlugin, setPluginEnabled } from './plugins-store'
+ import {
+@@ -34,2 +34,3 @@ const onPreviewFileChanged = vi.fn()
+ beforeEach(() => {
++  $pluginDecisions.set({})
+   desktopPluginsRoot.mockReset()
+@@ -133,82 +134,97 @@ describe('scanDiskPlugins (#66899)', () => {
+
+-  it('loads a unified desktop half (app-root copy + package marker) OPT-IN and tags it with its package', async () => {
+-    desktopPluginsRoot.mockResolvedValue('/local/.hermes/desktop-plugins')
+-    let desktopEntryPresent = true
+-    const root = '/local/.hermes/desktop-plugins'
+-
+-    readDir.mockImplementation(async dir => {
+-      if (dir === root) {
+-        return { entries: desktopEntryPresent ? [{ isDirectory: true, name: 'uni', path: `${root}/uni` }] : [] }
+-      }
+-
+-      if (dir === `${root}/uni`) {
+-        return {
+-          entries: [
+-            { isDirectory: false, name: '.hermes-package.json', path: `${root}/uni/.hermes-package.json` },
+-            { isDirectory: false, name: 'plugin.js', path: `${root}/uni/plugin.js` }
+-          ]
++  it.each([
++    ['uni-pkg', 'uni', false, undefined],
++    ['flexpair-color-palette', 'flexpair-color-palette', true, undefined],
++    ['flexpair-color-palette', 'flexpair-color-palette', false, false],
++    ['flexpair-color-palette', 'uni', false, undefined]
++  ])(
++    'loads unified package %s plugin %s with activation %s and choice %s',
++    async (packageName, pluginId, enabled, choice) => {
++      desktopPluginsRoot.mockResolvedValue('/local/.hermes/desktop-plugins')
++      let desktopEntryPresent = true
++      const root = '/local/.hermes/desktop-plugins'
++
++      readDir.mockImplementation(async dir => {
++        if (dir === root) {
++          return { entries: desktopEntryPresent ? [{ isDirectory: true, name: 'uni', path: `${root}/uni` }] : [] }
+         }
+-      }
+
+-      return { entries: [] }
+-    })
++        if (dir === `${root}/uni`) {
++          return {
++            entries: [
++              { isDirectory: false, name: '.hermes-package.json', path: `${root}/uni/.hermes-package.json` },
++              { isDirectory: false, name: 'plugin.js', path: `${root}/uni/plugin.js` }
++            ]
++          }
++        }
+
+-    const register = vi.fn()
++        return { entries: [] }
++      })
+
+-    ;(globalThis as unknown as { __uniRegister: unknown }).__uniRegister = register
+-    readFileText.mockImplementation(async file =>
+-      file.endsWith('.hermes-package.json')
+-        ? { text: JSON.stringify({ package: 'uni-pkg', source: '/x/plugins/uni-pkg/desktop', sourceMtimeMs: 1 }) }
+-        : { text: 'export default { id: "uni", register: globalThis.__uniRegister }' }
+-    )
+-    watchPreviewFile.mockResolvedValue({ id: 'w-uni' })
++      const register = vi.fn()
+
+-    // The loader evaluates plugins via blob-URL import(), which vite's module
+-    // runner can't resolve in tests — reroute to a data: URL, which node's
+-    // native ESM loader handles.
+-    const createObjectURL = vi
+-      .spyOn(URL, 'createObjectURL')
+-      .mockImplementation(
+-        blob =>
+-          `data:text/javascript;base64,${Buffer.from((blob as unknown as { parts: string[] }).parts.join('')).toString('base64')}`
++      ;(globalThis as unknown as { __uniRegister: unknown }).__uniRegister = register
++      readFileText.mockImplementation(async file =>
++        file.endsWith('.hermes-package.json')
++          ? { text: JSON.stringify({ package: packageName, source: '/x/plugins/uni-pkg/desktop', sourceMtimeMs: 1 }) }
++          : {
++              text: `// ${packageName} ${choice}\nexport default { id: "${pluginId}", defaultEnabled: false, register: globalThis.__uniRegister }`
++            }
++      )
++      watchPreviewFile.mockResolvedValue({ id: 'w-uni' })
++
++      // The loader evaluates plugins via blob-URL import(), which vite's module
++      // runner can't resolve in tests — reroute to a data: URL, which node's
++      // native ESM loader handles.
++      const createObjectURL = vi
++        .spyOn(URL, 'createObjectURL')
++        .mockImplementation(
++          blob =>
++            `data:text/javascript;base64,${Buffer.from((blob as unknown as { parts: string[] }).parts.join('')).toString('base64')}`
++        )
++
++      const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
++      const RealBlob = globalThis.Blob
++      vi.stubGlobal(
++        'Blob',
++        class {
++          parts: string[]
++          constructor(parts: string[]) {
++            this.parts = parts
++          }
++        }
+       )
+
+-    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+-    const RealBlob = globalThis.Blob
+-    vi.stubGlobal(
+-      'Blob',
+-      class {
+-        parts: string[]
+-        constructor(parts: string[]) {
+-          this.parts = parts
++      try {
++        if (choice !== undefined) {
++          $pluginDecisions.set({ [pluginId]: choice })
+         }
++        await discoverRuntimePlugins()
++
++        expect($pluginRecords.get()[pluginId]).toMatchObject({
++          kind: 'disk',
++          status: enabled ? 'loaded' : 'disabled',
++          packageName
++        })
++        expect(register).toHaveBeenCalledTimes(enabled ? 1 : 0)
++
++        // The user's explicit enable still activates it.
++        await setPluginEnabled(pluginId, true)
++        expect(register).toHaveBeenCalledTimes(enabled ? 2 : 1)
++        expect($pluginRecords.get()[pluginId].status).toBe('loaded')
++
++        // Electron removing the copy (package uninstalled) unloads the previous
++        // Desktop registration instead of leaving a live ghost behind.
++        desktopEntryPresent = false
++        await discoverRuntimePlugins()
++        expect($pluginRecords.get()[pluginId]).toBeUndefined()
++        expect(stopPreviewFileWatch).toHaveBeenCalledWith('w-uni')
++      } finally {
++        createObjectURL.mockRestore()
++        revokeObjectURL.mockRestore()
++        vi.stubGlobal('Blob', RealBlob)
++        delete (globalThis as unknown as { __uniRegister?: unknown }).__uniRegister
+       }
+-    )
+-
+-    try {
+-      await discoverRuntimePlugins()
+-
+-      // Inventoried for Capabilities → Plugins with its package identity, but
+-      // the unified posture wins: installed-but-inert until the user toggles.
+-      expect($pluginRecords.get().uni).toMatchObject({ kind: 'disk', status: 'disabled', packageName: 'uni-pkg' })
+-      expect(register).not.toHaveBeenCalled()
+-
+-      // The user's explicit enable still activates it.
+-      await setPluginEnabled('uni', true)
+-      expect(register).toHaveBeenCalledTimes(1)
+-      expect($pluginRecords.get().uni.status).toBe('loaded')
+-
+-      // Electron removing the copy (package uninstalled) unloads the previous
+-      // Desktop registration instead of leaving a live ghost behind.
+-      desktopEntryPresent = false
+-      await discoverRuntimePlugins()
+-      expect($pluginRecords.get().uni).toBeUndefined()
+-      expect(stopPreviewFileWatch).toHaveBeenCalledWith('w-uni')
+-    } finally {
+-      createObjectURL.mockRestore()
+-      revokeObjectURL.mockRestore()
+-      vi.stubGlobal('Blob', RealBlob)
+-      delete (globalThis as unknown as { __uniRegister?: unknown }).__uniRegister
+     }
+-  })
++  )
+ })
+diff --git a/apps/desktop/src/contrib/runtime-loader.ts b/apps/desktop/src/contrib/runtime-loader.ts
+index a72c12d6..0b93da52 100644
+--- a/apps/desktop/src/contrib/runtime-loader.ts
++++ b/apps/desktop/src/contrib/runtime-loader.ts
+@@ -521,3 +521,6 @@ export async function loadRuntimePlugin(
+     // enable still wins, a plugin can't self-enable past its root's posture.
+-    if (pluginActive(plugin.id, (plugin.defaultEnabled ?? true) && (options.defaultEnabled ?? true))) {
++    const managedPalette = options.packageName === 'flexpair-color-palette' && plugin.id === 'flexpair-color-palette'
++    if (
++      pluginActive(plugin.id, managedPalette || ((plugin.defaultEnabled ?? true) && (options.defaultEnabled ?? true)))
++    ) {
+       activate()
