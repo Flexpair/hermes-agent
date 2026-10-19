@@ -60,7 +60,7 @@ def main():
     if os.environ.get("GITHUB_REPOSITORY") != "Flexpair/hermes-agent" or os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
         return
     subprocess.run(["git", "merge-base", "--is-ancestor", ANCHOR, "HEAD"], check=True)
-    allowed = json.loads(Path("scripts/ci/fork_scope_paths.json").read_text())
+    allowed = json.loads(Path("scripts/ci/fork_scope_paths.json").read_text(encoding="utf-8-sig"))
     paths = git("diff", "--name-only", "-z", ANCHOR, "HEAD").decode().split("\0")
     admit_paths(filter(None, paths), allowed)
     run = api(f"/actions/runs/{RUN}")
@@ -73,7 +73,7 @@ def main():
             break
         page += 1
     verify_proof(run, jobs)
-    with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
         output.writelines(f"{lane}=false\n" for lane in REUSED_LANES)
         output.write("fork_delta=true\n")
     report = (f"## Upstream proof reused\n{run['html_url']} (`{ANCHOR}`)\n"
@@ -81,7 +81,7 @@ def main():
               + "\n\n## Executed on fork\nFocused installer patch, skill, catalog synchronization, bundled plugins and Radio integration; Desktop typecheck/build/lint; documentation freshness/build; catalogue supply-chain, attribution and review gates remain active.\n\n"
               "No skipped/failed upstream E2E or advisory checks are claimed as passing.\n")
     print(report)
-    with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+    with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
         summary.write(report)
 
 
