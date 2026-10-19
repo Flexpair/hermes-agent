@@ -2,13 +2,31 @@
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 
 import pytest
 
 pytestmark = pytest.mark.platforms("posix")
-SCRIPT = Path(__file__).resolve().parents[3] / "scripts/install.sh"
-BRANCH = "main"
+ROOT = Path(__file__).resolve().parents[3]
+BRANCH = "2026-10-18"
+
+
+@pytest.fixture(autouse=True)
+def patched_installer(tmp_path):
+    """Setup keeps the patch unapplied; exercise only a disposable deployment artifact."""
+    repo = tmp_path / "installer-artifact"
+    scripts = repo / "scripts"
+    scripts.mkdir(parents=True)
+    # Match Git's canonical LF blobs even when checkout attributes give PowerShell CRLF.
+    for name in ("install.sh", "install.ps1"):
+        target = scripts / name
+        shutil.copy2(ROOT / "scripts" / name, target)
+        target.write_bytes(target.read_bytes().replace(b"\r\n", b"\n"))
+    git(repo, "init", "-q", "-b", "main")
+    patch = str(ROOT / "flexpair.patch")
+    git(repo, "apply", "--check", patch)
+    git(repo, "apply", patch)
 
 
 def git(repo, *args):
@@ -27,7 +45,8 @@ def origin(tmp_path):
 
 def stage(tmp_path, repo, prelude=""):
     env = dict(os.environ, HOME=str(tmp_path), HERMES_HOME=str(tmp_path / "home"), HERMES_INSTALL_DIR=str(tmp_path / "install"), HERMES_REPO_URL=str(repo))
-    body = f"source {shlex.quote(str(SCRIPT))} --manifest\n{prelude}\nstage_repository"
+    script = tmp_path / "installer-artifact/scripts/install.sh"
+    body = f"source {shlex.quote(str(script))} --manifest\n{prelude}\nstage_repository"
     return subprocess.run(["bash", "-c", body], env=env, capture_output=True, text=True, check=False, timeout=30)
 
 
