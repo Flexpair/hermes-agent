@@ -26,7 +26,7 @@ jobs:
         with:
           command: npm ci
       - name: Fork admission, aggregate gate, installer patch, distribution skill and catalog synchronization
-        run: python -m pytest -q tests/ci/test_fork_scope.py tests/ci/test_required_results.py tests/scripts/install/test_flexpair_distribution.py tests/skills/test_flexpair_hermes_distribution_skill.py tests/ci/test_plugin_catalog_upstream_sync.py
+        run: scripts/run_tests.sh tests/ci/test_fork_scope.py tests/ci/test_required_results.py tests/scripts/install/test_flexpair_distribution.py tests/skills/test_flexpair_hermes_distribution_skill.py tests/ci/test_plugin_catalog_upstream_sync.py -q
       - name: Bundled plugin discovery, lifecycle and Radio integration
         working-directory: apps/desktop
         run: npx vitest run --project ui src/contrib/flexpair-bundled-lifecycle.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/provider-card-filter.test.ts src/contrib/radio-plugin.test.ts

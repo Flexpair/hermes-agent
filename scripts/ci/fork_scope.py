@@ -28,7 +28,7 @@ REUSED_LANES = ("python", "python_prod", "desktop_updater", "bootstrap", "rust",
 
 
 def git(*args):
-    return subprocess.check_output(["git", *args])
+    return subprocess.check_output(["git", *args], timeout=30)
 
 
 def admit_paths(paths, allowed):
@@ -59,7 +59,7 @@ def main():
     # Push, release and dispatch retain the upstream full-suite policy.
     if os.environ.get("GITHUB_REPOSITORY") != "Flexpair/hermes-agent" or os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
         return
-    subprocess.run(["git", "merge-base", "--is-ancestor", ANCHOR, "HEAD"], check=True)
+    subprocess.run(["git", "merge-base", "--is-ancestor", ANCHOR, "HEAD"], check=True, timeout=30)
     allowed = json.loads(Path("scripts/ci/fork_scope_paths.json").read_text(encoding="utf-8-sig"))
     paths = git("diff", "--name-only", "-z", ANCHOR, "HEAD").decode().split("\0")
     admit_paths(filter(None, paths), allowed)
