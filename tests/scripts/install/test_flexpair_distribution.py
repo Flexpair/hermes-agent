@@ -8,7 +8,7 @@ import pytest
 
 pytestmark = pytest.mark.platforms("posix")
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts/install.sh"
-BRANCH = "2026-10-18"
+BRANCH = "main"
 
 
 def git(repo, *args):
