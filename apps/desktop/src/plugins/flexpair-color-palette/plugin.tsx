@@ -19,7 +19,9 @@ const plugin: HermesPlugin = {
     const zoom = desktopWindow.hermesDesktop?.zoom
     const setZoom = (percent: number) => {
       try {
-        if (typeof zoom?.setPercent === 'function') zoom.setPercent(percent)
+        if (typeof zoom?.setPercent === 'function') {
+          zoom.setPercent(percent)
+        }
       } catch {
         // An incompatible host must not prevent accent initialization or cleanup.
       }
@@ -32,7 +34,9 @@ const plugin: HermesPlugin = {
     // Watch it for the plugin's lifetime; no UI contribution is needed.
     const applyInitialAccent = () => {
       const mode = root.dataset.hermesMode
-      if ((mode !== 'dark' && mode !== 'light') || mode === lastMode) return
+      if ((mode !== 'dark' && mode !== 'light') || mode === lastMode) {
+        return
+      }
       lastMode = mode
       setAccentOverride(mode === 'dark' ? '#00FFFF' : '#157878')
     }
