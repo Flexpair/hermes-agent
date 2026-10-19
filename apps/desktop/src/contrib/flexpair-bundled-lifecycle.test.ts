@@ -1,10 +1,11 @@
-import { expect, it, vi } from 'vitest'
+import { beforeAll, expect, it, vi } from 'vitest'
+
+const setPercent = vi.fn()
 
 // Only the native bridge is substituted; SDK, context, store and glob loader are real.
-it('discovers fresh defaults and preserves live disablement through restart and update reloads', async () => {
+beforeAll(async () => {
   localStorage.clear()
   vi.resetModules()
-  const setPercent = vi.fn()
   Object.defineProperty(window, 'hermesDesktop', {
     configurable: true,
     value: {
@@ -17,6 +18,13 @@ it('discovers fresh defaults and preserves live disablement through restart and 
   })
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => window.setTimeout(() => callback(0), 0))
   vi.stubGlobal('cancelAnimationFrame', (id: number) => window.clearTimeout(id))
+  // The eager bundled glob imports the whole UI/SDK graph. Pay its cold transform
+  // cost in setup (the canonical 30s hook budget), not the 15s lifecycle budget.
+  // Importing does not discover/register plugins; fresh defaults are still tested below.
+  await import('./plugins')
+})
+
+it('discovers fresh defaults and preserves live disablement through restart and update reloads', async () => {
   document.documentElement.dataset.hermesMode = 'dark'
   // Static trusted HTML fixture, never user content.
   document.body.innerHTML = '<section class="mb-5 grid gap-2"><div data-slot="row-button"><span class="font-semibold">MiniMax</span></div></section>'
