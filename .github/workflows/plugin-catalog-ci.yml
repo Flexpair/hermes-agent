@@ -79,7 +79,18 @@ jobs:
           # failure still fails the step instead of looking like "no changes".
           CHANGED=$(printf '%s' "$CHANGED" | grep -v '/removed\.yaml$' || true)
 
-          if [ -n "$CHANGED" ]; then
+          # This immutable source commit was verified on NousResearch/hermes-agent
+          # main when preparing the fork sync. Trust its catalog tree, not a PR
+          # label, author, branch name, or a PR-supplied upstream ref. Full-history
+          # checkout supplies the object; a missing object fails closed below.
+          UPSTREAM_CATALOG=20acba0376944d11ee970d6e734afd54bfd8045c
+          INHERITED_CATALOG=0
+          if git merge-base --is-ancestor "$UPSTREAM_CATALOG" 'HEAD^2' && \
+             git diff --quiet "$UPSTREAM_CATALOG" HEAD -- plugin-catalog/; then
+            INHERITED_CATALOG=1
+          fi
+
+          if [ -n "$CHANGED" ] && [ "$INHERITED_CATALOG" -ne 1 ]; then
             # Admission PRs must be data-only: the gate's own enforcement code
             # (this workflow, the validator, the composite actions, the built
             # hermes) resolves from the PR checkout, so an entry PR that also
