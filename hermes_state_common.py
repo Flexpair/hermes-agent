@@ -421,8 +421,15 @@ def emit_session_deleted(db, deleted_ids, *, reason, primary=None, sessions_dir=
             from pathlib import Path
             from gateway.run import _profile_runtime_scope
 
-            # Bind credentials and terminal policy even when the home already matches.
-            scope = _profile_runtime_scope(Path(home))
+            from hermes_constants import get_routing_process_hermes_home, hermes_home_key
+            from tui_gateway.launch_profile_policy import launch_profile_runtime_scope
+
+            # Rebind even at the same ambient home: its credentials/policy may be stale.
+            # Only the process's own profile may inherit its trusted launch-env policy.
+            if hermes_home_key(home) == hermes_home_key(get_routing_process_hermes_home()):
+                scope = launch_profile_runtime_scope(Path(home))
+            else:
+                scope = _profile_runtime_scope(Path(home))
         with scope:
             invoke_hook("on_session_delete", **payload)
     except Exception:
