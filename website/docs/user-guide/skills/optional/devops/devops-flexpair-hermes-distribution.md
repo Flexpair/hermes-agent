@@ -1,14 +1,14 @@
 ---
-title: "Flexpair Hermes Distribution — Use when preparing the Flexpair Hermes fork"
+title: "Flexpair Hermes Distribution — Prepare and verify the Flexpair Hermes fork"
 sidebar_label: "Flexpair Hermes Distribution"
-description: "Use when preparing the Flexpair Hermes fork"
+description: "Prepare and verify the Flexpair Hermes fork"
 ---
 
 {/* This page is auto-generated from the skill's SKILL.md by website/scripts/generate-skill-docs.py. Edit the source SKILL.md, not this page. */}
 
 # Flexpair Hermes Distribution
 
-Use when preparing the Flexpair Hermes fork. Verify gates.
+Prepare and verify the Flexpair Hermes fork.
 
 ## Skill metadata
 

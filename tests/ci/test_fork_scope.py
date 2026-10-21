@@ -46,6 +46,16 @@ class ForkScopeTests(unittest.TestCase):
         allowed = json.loads((ROOT / "scripts/ci/fork_scope_paths.json").read_text())
         scope.admit_paths(["apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx", "apps/desktop/src/contrib/radio-plugin.test.ts", "tests/scripts/install/test_flexpair_distribution.py"], allowed)
 
+    def test_reviewed_deletion_scope_fix_has_focused_coverage(self):
+        allowed = json.loads((ROOT / "scripts/ci/fork_scope_paths.json").read_text())
+        tests = ["tests/hermes_state/test_session_delete_profile_scope.py", "tests/hermes_state/test_session_delete_hook.py"]
+        scope.admit_paths(["hermes_state_common.py", *tests], allowed)
+        workflow = (ROOT / ".github/workflows/fork-delta.yml").read_text()
+        for path in tests:
+            self.assertIn(path, workflow)
+        with self.assertRaises(ValueError):
+            scope.admit_paths(["hermes_state_worker_compression.py"], allowed)
+
     def test_non_pr_and_non_fork_keep_full_routing(self):
         from unittest.mock import patch
         for repository, event in (("NousResearch/hermes-agent", "pull_request"), ("Flexpair/hermes-agent", "push"), ("Flexpair/hermes-agent", "workflow_dispatch")):

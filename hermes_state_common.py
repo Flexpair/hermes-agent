@@ -407,9 +407,7 @@ def emit_session_deleted(db, deleted_ids, *, reason, primary=None, sessions_dir=
         return
     try:
         from hermes_cli.lifecycle import invoke_hook
-        from hermes_constants import (
-            get_hermes_home, profile_name_for_home, reset_hermes_home_override, set_hermes_home_override,
-        )
+        from hermes_constants import profile_name_for_home
 
         home = os.path.dirname(os.path.abspath(os.fspath(db.db_path)))
         profile = profile_name_for_home(home)
@@ -418,13 +416,15 @@ def emit_session_deleted(db, deleted_ids, *, reason, primary=None, sessions_dir=
             payload["deleted_ids"] = ids
         if sessions_dir is not None:
             payload["sessions_dir"] = str(sessions_dir)
-        rebind = profile is not None and os.path.realpath(home) != os.path.realpath(get_hermes_home())
-        token = set_hermes_home_override(home) if rebind else None
-        try:
+        scope = contextlib.nullcontext()
+        if profile is not None:
+            from pathlib import Path
+            from gateway.run import _profile_runtime_scope
+
+            # Bind credentials and terminal policy even when the home already matches.
+            scope = _profile_runtime_scope(Path(home))
+        with scope:
             invoke_hook("on_session_delete", **payload)
-        finally:
-            if token is not None:
-                reset_hermes_home_override(token)
     except Exception:
         logger.warning("on_session_delete dispatch failed", exc_info=True)
 

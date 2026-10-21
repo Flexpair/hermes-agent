@@ -19,6 +19,7 @@ def test_skill_frontmatter_and_sections():
     assert fields["name"] == SKILL.name
     assert len(fields["description"]) <= 60
     assert fields["description"].endswith(".")
+    assert len(re.findall(r"[.!?](?:\s|$)", fields["description"])) == 1
     assert fields["author"].startswith("Jens Fielenbach")
     assert fields["platforms"] == ["linux", "macos"]
     headings = re.findall(r"^## (.+)$", body, re.MULTILINE)

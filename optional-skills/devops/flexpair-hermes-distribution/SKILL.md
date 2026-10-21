@@ -1,6 +1,6 @@
 ---
 name: flexpair-hermes-distribution
-description: Use when preparing the Flexpair Hermes fork. Verify gates.
+description: Prepare and verify the Flexpair Hermes fork.
 version: 0.2.0
 author: Jens Fielenbach, Hermes Agent
 license: MIT
