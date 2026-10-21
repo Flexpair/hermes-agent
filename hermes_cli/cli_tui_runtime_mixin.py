@@ -487,6 +487,13 @@ class CLITuiRuntimeMixin:
     def _tui_shutdown(self):
         """Teardown after the app exits: interrupt agent, stop voice/pet, persist + close session, cleanup, exit summary."""
         from cli import _DIM, _RST, _cprint, _invoke_interrupted_session_end, _run_cleanup, set_approval_callback, set_secret_capture_callback, set_sudo_password_callback
+        import cli as _cli_mod
+        from hermes_cli.cli_shutdown import _gateway_owns_session_end
+        # Preserve ownership before teardown can clear agent/viewer state. The explicit-info
+        # atexit callback must not consume a cached Archive/Discard answer after detach.
+        if (_cli_mod._active_worktree and (getattr(self, "_gateway_session_open", False)
+                or _gateway_owns_session_end(self.agent))):
+            _cli_mod._active_worktree["gateway_owned"] = "true"
         self._should_exit = True
         self._pet_stop_anim()
         # Without this line the terminal sits silent through the whole cleanup window.
@@ -544,7 +551,11 @@ class CLITuiRuntimeMixin:
         # Ask AND apply before _run_cleanup arms the exit watchdog, so a large archive is never cut
         # short; a signal-driven exit never asks.
         import cli as _cli_mod
-        if not _cli_mod._signal_watchdog_armed and _cli_mod._active_worktree:
+        # Detaching a gateway viewer does not release its checkout, even when idle.
+        # Never probe with session.resume: it reattaches and cancels owner shutdown.
+        if (not _cli_mod._signal_watchdog_armed and _cli_mod._active_worktree
+                and not getattr(self, "_gateway_session_open", False)
+                and not _gateway_owns_session_end(self.agent)):
             from hermes_cli.worktree_exit import apply_exit_choice, ask_exit_choice
             with suppress(Exception, KeyboardInterrupt):
                 ask_exit_choice(_cli_mod._active_worktree)

@@ -279,9 +279,15 @@ def worker_archive(db, conn, sid, payload):
         raise RuntimeStoreError('invalid_params')
     if type(payload['tail_count']) is not int or payload['tail_count'] < 0:
         raise RuntimeStoreError('invalid_params')
-    value = archive_on_connection(db, conn, sid, payload['messages'], model_config_patch=patch,
-        watermark=payload['watermark'], lock_holder=payload['lock_holder'], tail_count=payload['tail_count'],
-        carried_messages=carried, covered_ids=covered, unresolved_held=unresolved, held_for_cas=cas)
+    from hermes_state_errors import HeldRowRewrittenError
+    try:
+        value = archive_on_connection(db, conn, sid, payload['messages'], model_config_patch=patch,
+            watermark=payload['watermark'], lock_holder=payload['lock_holder'], tail_count=payload['tail_count'],
+            carried_messages=carried, covered_ids=covered, unresolved_held=unresolved, held_for_cas=cas)
+    except HeldRowRewrittenError:
+        # The fence runs before any row moves. Receipt this no-op so its sequence is consumed
+        # and exact retries cannot publish stale rows or wedge the worker's pending journal.
+        return {'value': None, 'annotations': [], 'stale_held_rows': True}
     from hermes_state_runtime import row_annotations
     return {'value': value, 'annotations': row_annotations(payload['messages'])}
 

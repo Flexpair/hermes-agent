@@ -78,7 +78,7 @@ def main():
         output.write("fork_delta=true\n")
     report = (f"## Upstream proof reused\n{run['html_url']} (`{ANCHOR}`)\n"
               + "\n".join(f"- {job}" for job in sorted(PROOF_JOBS))
-              + "\n\n## Executed on fork\nFocused installer patch, skill, catalog synchronization, deletion-hook profile scope, bundled plugins and Radio integration; Desktop typecheck/build/lint; documentation freshness/build; catalogue supply-chain, attribution and review gates remain active.\n\n"
+              + "\n\n## Executed on fork\nFocused installer patch, skill, catalog synchronization, deletion-hook profile scope, worker CAS receipt recovery, owner-safe worktree cleanup, MCP cost cache invalidation, bundled plugins and Radio integration; Desktop typecheck/build/lint; documentation freshness/build; catalogue supply-chain, attribution and review gates remain active.\n\n"
               "No skipped/failed upstream E2E or advisory checks are claimed as passing.\n")
     print(report)
     with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:

@@ -54,7 +54,24 @@ class ForkScopeTests(unittest.TestCase):
         for path in tests:
             self.assertIn(path, workflow)
         with self.assertRaises(ValueError):
-            scope.admit_paths(["hermes_state_worker_compression.py"], allowed)
+            scope.admit_paths(["hermes_state_worker_operations.py"], allowed)
+
+    def test_reviewed_core_repairs_have_focused_coverage(self):
+        allowed = json.loads((ROOT / "scripts/ci/fork_scope_paths.json").read_text())
+        tests = ["tests/hermes_state/test_runtime_worker_archive_staleness.py",
+                 "tests/hermes_cli/test_worktree_exit_owner_work.py",
+                 "tests/gateway/test_tui_session_reads.py"]
+        scope.admit_paths(["agent/runtime_session_compression.py",
+                           "cli.py",
+                           "hermes_state_worker_compression.py",
+                           "hermes_cli/cli_tui_runtime_mixin.py",
+                           "hermes_cli/main_tui_launch.py",
+                           "gateway/session_tui_reads.py", *tests], allowed)
+        workflow = (ROOT / ".github/workflows/fork-delta.yml").read_text()
+        for path in tests:
+            self.assertIn(path, workflow)
+        with self.assertRaises(ValueError):
+            scope.admit_paths(["agent/micro_compaction.py"], allowed)
 
     def test_non_pr_and_non_fork_keep_full_routing(self):
         from unittest.mock import patch

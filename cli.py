@@ -545,6 +545,7 @@ from hermes_cli.worktree_ops import (
 # ============================================================================= Git Worktree Isolation
 # (#652) =============================================================================
 _active_worktree: Optional[dict[str, str]] = None
+_worktree_cli_ref = None  # retained through shutdown, including viewers without an agent
 
 
 def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
@@ -552,6 +553,17 @@ def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
     global _active_worktree
     info = info or _active_worktree
     if not info:
+        return
+
+    # atexit also receives explicit info for earlier trees; skipping the TUI menu is not enough.
+    # Keep the viewer identity from before initialization so error/signal exits are covered too.
+    from hermes_cli.cli_shutdown import _gateway_owns_session_end
+    viewer = _worktree_cli_ref
+    if (info.get("gateway_owned")
+            or getattr(viewer, "_gateway_session_open", False)
+            or _gateway_owns_session_end(getattr(viewer, "agent", None))
+            or _gateway_owns_session_end(_active_agent_ref)):
+        info["gateway_owned"] = "true"
         return
 
     wt_path, branch, repo_root = info["path"], info["branch"], info["repo_root"]
@@ -901,6 +913,8 @@ class HermesCLI(CLIInitMixin, CLITuiRuntimeMixin, CLIProcessNotificationsMixin, 
         ignore_rules: bool = False,
     ):
         """CLI args win over config; ``reasoning`` is per-run only; ``resume`` restores history from SQLite."""
+        global _worktree_cli_ref
+        _worktree_cli_ref = self
         self._init_display_options(verbose, compact)
         self._init_model_routing(model, toolsets, provider, reasoning, api_key, base_url, max_turns, run_budget,
                                  checkpoints, pass_session_id, ignore_rules)

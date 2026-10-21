@@ -544,12 +544,9 @@ def _launch_tui(
         attached_session = _read_tui_active_session_file(active_session_file) or resume_session_id
         with contextlib.suppress(OSError):
             os.unlink(active_session_file)
-        if wt_info and code in {0, 130}:
-            from hermes_cli.worktree_exit import ask_exit_choice
-            ask_exit_choice(wt_info)
-        from hermes_cli.worktree_exit import apply_exit_choice
-        if wt_info and apply_exit_choice(wt_info, print):
-            wt_info = None  # archived or discarded at the user's request
+        # The canonical TUI is always a gateway viewer. Even an idle owner can
+        # resume work after a snapshot; a missing session receipt is not permission
+        # to delete its checkout. Keep unconditionally, without session.resume.
         if wt_info:
             # Quitting detaches a viewer; the gateway may still be executing in
             # this checkout and future resumes retain its frozen cwd.
