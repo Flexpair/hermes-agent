@@ -7,7 +7,7 @@ index 951b062e3c..e51444539f 100644
  [CmdletBinding(PositionalBinding=$false)]
  param(
 -    [string]$Branch = "main",
-+    [string]$Branch = "2026-10-18",
++    [string]$Branch = "2026-10-22",
      [string]$Commit = "",
      [string]$Channel = $(if ($env:HERMES_INSTALL_CHANNEL) { $env:HERMES_INSTALL_CHANNEL } else { "" }),
      [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
@@ -24,7 +24,7 @@ index 951b062e3c..e51444539f 100644
  }
  
  function Stage-Repository {
-+    if ($Branch -ceq '2026-10-18') {
++    if ($Branch -ceq '2026-10-22') {
 +        if ($Commit -or $Channel) { Fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch }
 +        if (Test-Path (Join-Path $InstallDir '.git')) {
 +            if (-not (Ensure-Git)) { Fail "Git unavailable" unsupported_platform }
@@ -59,7 +59,7 @@ index 395208bdf3..cccfa1431a 100755
 -REPO_URL="${HERMES_REPO_URL:-https://github.com/NousResearch/hermes-agent.git}"
 -BRANCH="main"
 +REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
-+BRANCH="2026-10-18"
++BRANCH="2026-10-22"
  INSTALL_COMMIT=""
  # The update channel to install: stable (the latest published release, the default for the
  # official repository's main line) or main (every commit). An explicit choice is persisted.
@@ -68,7 +68,7 @@ index 395208bdf3..cccfa1431a 100755
  
  stage_repository() {
 +    # The distribution follows the explicitly selected deploy branch, never a release pin.
-+    if [ "$BRANCH" = 2026-10-18 ]; then
++    if [ "$BRANCH" = 2026-10-22 ]; then
 +        [ -z "$INSTALL_COMMIT$CHANNEL" ] || fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
 +        if [ -e "$INSTALL_DIR/.git" ]; then
 +            local source dirty

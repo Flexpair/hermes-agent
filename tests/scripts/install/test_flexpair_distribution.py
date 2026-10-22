@@ -9,7 +9,7 @@ import pytest
 
 pytestmark = pytest.mark.platforms("posix")
 ROOT = Path(__file__).resolve().parents[3]
-BRANCH = "2026-10-18"
+BRANCH = "2026-10-22"
 
 
 @pytest.fixture(autouse=True)
@@ -25,6 +25,12 @@ def patched_installer(tmp_path):
         target.write_bytes(target.read_bytes().replace(b"\r\n", b"\n"))
     git(repo, "init", "-q", "-b", "main")
     patch = str(ROOT / "flexpair.patch")
+    applied = subprocess.run(
+        ["git", "-C", str(repo), "apply", "--reverse", "--check", patch],
+        capture_output=True, check=False, timeout=30,
+    )
+    if applied.returncode == 0:
+        git(repo, "apply", "--reverse", patch)
     git(repo, "apply", "--check", patch)
     git(repo, "apply", patch)
 
