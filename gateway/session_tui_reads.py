@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from collections import Counter
 
 # The TUI surfaces whose /status, /context and /cron read as main's TUI sidecar did.
@@ -163,8 +164,28 @@ async def context_breakdown(connection, ref, params) -> dict:
         from agent.context_breakdown import compute_session_context_breakdown
         from agent.context_file_sources import context_file_sources_for_agent
         with owner_scope(authority), _session_workspace(authority.runner, live.source):
+            # A revision probe is two indexed reads; the rebuild walks the whole transcript and the
+            # system prompt. Reuse the payload while neither the transcript nor the agent moved.
+            key = (id(agent), _agent_context_marks(agent),
+                   authority.db.conversation_revision(stored, include_ancestors=True))
+            cached = live.context_breakdown
+            if cached is not None and cached[0] == key:
+                return dict(cached[1])
             conversation = authority.db.get_messages_as_conversation(stored, include_ancestors=True)
             payload = compute_session_context_breakdown(agent, conversation)
             payload['context_files'] = context_file_sources_for_agent(agent)
-            return payload
+            live.context_breakdown = (key, payload)
+            return dict(payload)
     return await asyncio.to_thread(build)
+
+
+def _agent_context_marks(agent) -> tuple:
+    """What the breakdown reads off the agent besides the transcript: model, tool schemas, window,
+    measured prompt tokens, compressions and the usage anchors."""
+    comp = getattr(agent, 'context_compressor', None)
+    # Match the cost estimator's JSON input, including nested in-place schema edits.
+    # This is only a read-cache mark; never refresh the resident toolset or prompt.
+    tools = json.dumps(list(getattr(agent, 'tools', None) or []), ensure_ascii=False)
+    return (getattr(agent, 'model', None), getattr(agent, 'provider', None), tools,
+            *(getattr(comp, name, None) for name in ('context_length', 'last_prompt_tokens', 'compression_count')),
+            repr(getattr(agent, '_turn_base_usage_anchor', None)), repr(getattr(agent, '_usage_anchor', None)))

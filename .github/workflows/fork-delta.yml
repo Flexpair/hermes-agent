@@ -1,0 +1,37 @@
+name: Flexpair delta
+on:
+  workflow_call:
+    inputs:
+      commit:
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-pm
+        with:
+          toolchain: all
+          extras: '[]'
+          test-environment: 'true'
+      - uses: ./.github/actions/retry
+        with:
+          command: npm ci
+      - name: Fork admission, aggregate gate, installer patch, distribution skill and catalog synchronization
+        run: scripts/run_tests.sh tests/ci/test_fork_scope.py tests/ci/test_required_results.py tests/scripts/install/test_flexpair_distribution.py tests/skills/test_flexpair_hermes_distribution_skill.py tests/ci/test_plugin_catalog_upstream_sync.py tests/hermes_state/test_session_delete_profile_scope.py tests/hermes_state/test_session_delete_hook.py -q
+      - name: Reviewed worker CAS, owner-safe worktree cleanup and MCP cost cache regressions
+        run: scripts/run_tests.sh tests/hermes_state/test_runtime_worker_archive_staleness.py tests/hermes_cli/test_worktree_exit_owner_work.py tests/gateway/test_tui_session_reads.py -q
+      - name: Bundled plugin discovery, lifecycle and Radio integration
+        working-directory: apps/desktop
+        run: npx vitest run --project ui src/contrib/flexpair-bundled-lifecycle.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/provider-card-filter.test.ts src/contrib/radio-plugin.test.ts
+      - name: Affected Desktop typecheck, lint and build
+        working-directory: apps/desktop
+        run: npm run typecheck && npm run lint && npm run build

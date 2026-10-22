@@ -23,7 +23,7 @@ from typing import Any
 
 # Jobs that can never run on a release (push/tag) event, plus the deferred
 # Desktop E2E. These are the only skips a strict run tolerates.
-PR_ONLY_JOBS = ("history-check", "lockfile-diff", "prompt-surface-diff", "supply-chain")
+PR_ONLY_JOBS = ("history-check", "lockfile-diff", "prompt-surface-diff", "supply-chain", "fork-delta")
 DEFERRED_JOBS = ("e2e-desktop",)
 EXCLUDED_JOBS = frozenset((*PR_ONLY_JOBS, *DEFERRED_JOBS))
 
@@ -34,6 +34,7 @@ NEEDS_JSON_OUTPUT = "needs-json"
 # toJSON(needs); a selected consumer cannot skip merely because this is a PR
 # rather than a release.
 _UPDATE_CONSUMER_LANES = {
+    "fork-delta": ("fork_delta",),
     "tests": ("python", "e2e", "e2e_upgrade"),
     "tests-os": ("python", "desktop_updater", "e2e", "e2e_upgrade"),
     "e2e-desktop-update": ("e2e_desktop_update",),

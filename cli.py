@@ -545,6 +545,7 @@ from hermes_cli.worktree_ops import (
 # ============================================================================= Git Worktree Isolation
 # (#652) =============================================================================
 _active_worktree: Optional[dict[str, str]] = None
+_worktree_cli_ref = None  # retained through shutdown, including viewers without an agent
 
 
 def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
@@ -554,10 +555,24 @@ def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
     if not info:
         return
 
+    # atexit also receives explicit info for earlier trees; skipping the TUI menu is not enough.
+    # Keep the viewer identity from before initialization so error/signal exits are covered too.
+    from hermes_cli.cli_shutdown import _gateway_owns_session_end
+    viewer = _worktree_cli_ref
+    if (info.get("gateway_owned")
+            or getattr(viewer, "_gateway_session_open", False)
+            or _gateway_owns_session_end(getattr(viewer, "agent", None))
+            or _gateway_owns_session_end(_active_agent_ref)):
+        info["gateway_owned"] = "true"
+        return
+
     wt_path, branch, repo_root = info["path"], info["branch"], info["repo_root"]
     if not Path(wt_path).exists():
         return
     _active_worktree = None
+    from hermes_cli.worktree_exit import apply_exit_choice
+    if apply_exit_choice(info, _cprint):  # an exit-question answer not applied yet (normally none)
+        return
 
     if _worktree_is_dirty(wt_path, repo_root, timeout=10):
         # Uncommitted work: say so, and don't hint at `remove --force`, which would destroy it.
@@ -572,6 +587,12 @@ def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
         else:
             _cprint(f"\n\033[33m{_t('cli.worktree.unpushed_keeping', path=wt_path)}\033[0m")
             print(f"  {_t('cli.worktree.clean_up_manually', path=wt_path)}")
+        return
+
+    from hermes_cli.worktree_ops import removal_blocked
+    blocked = removal_blocked(wt_path)  # an embedded repo or private ref dies with it
+    if blocked:
+        _cprint(f"\n\033[33m{_t('cli.worktree.kept_reason', path=wt_path, reason=blocked[1])}\033[0m")
         return
 
     # Release the tree's language servers while the path still exists, then unlock so `remove`
@@ -892,6 +913,8 @@ class HermesCLI(CLIInitMixin, CLITuiRuntimeMixin, CLIProcessNotificationsMixin, 
         ignore_rules: bool = False,
     ):
         """CLI args win over config; ``reasoning`` is per-run only; ``resume`` restores history from SQLite."""
+        global _worktree_cli_ref
+        _worktree_cli_ref = self
         self._init_display_options(verbose, compact)
         self._init_model_routing(model, toolsets, provider, reasoning, api_key, base_url, max_turns, run_budget,
                                  checkpoints, pass_session_id, ignore_rules)
@@ -1272,12 +1295,16 @@ class HermesCLI(CLIInitMixin, CLITuiRuntimeMixin, CLIProcessNotificationsMixin, 
         answered = gateway_plugin_commands.run(self, base_cmd.lstrip("/"), user_args)
         if answered:
             return answered  # ran beside the plugin's hooks, tools and MCP servers in the gateway, or GONE
+        from hermes_cli.plugin_command_dispatch import invoke_plugin_command
         from hermes_cli.plugins import get_plugin_command_handler, resolve_plugin_command_result
         plugin_handler = get_plugin_command_handler(base_cmd.lstrip("/"))
         if not plugin_handler:
             return
+        session_id = getattr(self, "session_id", None) or ""
         try:
-            result = resolve_plugin_command_result(plugin_handler(user_args))
+            result = resolve_plugin_command_result(invoke_plugin_command(
+                plugin_handler, user_args, source=None, session_id=session_id, session_key=session_id,
+                platform="cli"))
             if result:
                 _cprint(str(result))
         except Exception as e:

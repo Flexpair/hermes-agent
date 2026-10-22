@@ -70,7 +70,7 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────
   detect:
     name: Detect affected areas
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
       python: ${{ steps.gate-lanes.outputs.python }}
@@ -92,19 +92,23 @@ jobs:
       e2e_desktop_core: ${{ steps.gate-lanes.outputs.e2e_desktop_core }}
       e2e_desktop_update: ${{ steps.gate-lanes.outputs.e2e_desktop_update }}
       event_name: ${{ github.event_name }}
+      fork_delta: ${{ steps.fork-scope.outputs.fork_delta }}
     steps:
-      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a  # v1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.commit }}
-          sparse-checkout: |
-            .github/actions/detect-changes
-            scripts/ci/classify_changes.py
-          sparse-checkout-cone-mode: false
+          fetch-depth: 0
+          persist-credentials: false
       - name: Detect affected areas
         id: classify
         uses: ./.github/actions/detect-changes
         with:
           github-token: ${{ github.token }}
+      - name: Admit reviewed fork delta against live upstream proof
+        id: fork-scope
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/fork_scope.py
       - name: Force all lanes on release; E2E only on release or dispatch
         # Overwrite the classifier outputs with 'true' when inputs.release. The E2E
         # lanes are forced off unless this is a release run or a manual dispatch
@@ -115,10 +119,12 @@ jobs:
           RELEASE: ${{ inputs.release }}
           EVENT_NAME: ${{ github.event_name }}
           CLASSIFIED: ${{ toJSON(steps.classify.outputs) }}
+          FORK_SCOPE: ${{ toJSON(steps.fork-scope.outputs) }}
         run: |
           python3 - <<'PY'
           import json, os
           values = json.loads(os.environ['CLASSIFIED'])
+          values.update(json.loads(os.environ['FORK_SCOPE']))
           release = os.environ['RELEASE'] == 'true'
           e2e_allowed = release or os.environ['EVENT_NAME'] == 'workflow_dispatch'
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
@@ -141,6 +147,14 @@ jobs:
   # or a manual dispatch; the detect gate forces their lanes off for pull
   # requests and pushes to main.
   # ─────────────────────────────────────────────────────────────────────
+  fork-delta:
+    name: Flexpair delta and integration
+    needs: detect
+    if: needs.detect.outputs.fork_delta == 'true'
+    uses: ./.github/workflows/fork-delta.yml
+    with:
+      commit: ${{ inputs.commit }}
+
   tests:
     name: Python tests
     needs: detect
@@ -179,12 +193,12 @@ jobs:
     name: Python lints
     needs: detect
     # frontend too: the code-health ratchet in lint.yml also covers TypeScript.
-    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.frontend == 'true'
+    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.frontend == 'true' || needs.detect.outputs.fork_delta == 'true'
     uses: ./.github/workflows/lint.yml
     with:
       commit: ${{ inputs.commit }}
       event_name: ${{ needs.detect.outputs.event_name }}
-      python: ${{ needs.detect.outputs.python == 'true' }}
+      python: ${{ needs.detect.outputs.python == 'true' || needs.detect.outputs.fork_delta == 'true' }}
 
   js-tests:
     name: JS & TS checks
@@ -302,7 +316,7 @@ jobs:
   contributor-check:
     name: Check contributors
     needs: detect
-    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.catalog == 'true'
+    if: needs.detect.outputs.python == 'true' || needs.detect.outputs.catalog == 'true' || needs.detect.outputs.fork_delta == 'true'
     uses: ./.github/workflows/contributor-check.yml
     with:
       commit: ${{ inputs.commit }}
@@ -428,6 +442,7 @@ jobs:
     name: All required checks pass (v2)
     needs:
       - detect
+      - fork-delta
       - tests
       - tests-os
       - lint
@@ -462,12 +477,12 @@ jobs:
       # to block a merge. A separate run also stops it from holding this
       # run open. That is what blocked ``gh run rerun``.
     if: always()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       needs-json: ${{ steps.evaluate.outputs.needs-json }}
     steps:
-      - uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a  # v1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.commit || github.sha }}
       - name: Evaluate job results
@@ -497,11 +512,11 @@ jobs:
     name: CI timing report
     needs: [all-checks-pass]
     if: always()
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: useblacksmith/checkout@25227e61ff9dafe400e22fa487b673eac4e4409a  # v1
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ inputs.commit }}
 

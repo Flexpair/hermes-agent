@@ -544,6 +544,9 @@ def _launch_tui(
         attached_session = _read_tui_active_session_file(active_session_file) or resume_session_id
         with contextlib.suppress(OSError):
             os.unlink(active_session_file)
+        # The canonical TUI is always a gateway viewer. Even an idle owner can
+        # resume work after a snapshot; a missing session receipt is not permission
+        # to delete its checkout. Keep unconditionally, without session.resume.
         if wt_info:
             # Quitting detaches a viewer; the gateway may still be executing in
             # this checkout and future resumes retain its frozen cwd.
