@@ -20,13 +20,16 @@ it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-trans
     $gatewayState.set('open')
     $activeGatewayProfile.set('work')
     const key = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+
     let receive: (message: unknown) => void = () => {}
     const send = vi.fn()
     const stop = vi.fn()
     Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
       windowRelay: {
         send,
-        onMessage: (callback: typeof receive) => { receive = callback; return stop }
+        onMessage: (callback: typeof receive) => { receive = callback;
+
+ return stop }
       }
     } })
     modePref.assign('work', 'light')
@@ -36,31 +39,41 @@ it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-trans
     disposers.splice(0)
     window.sessionStorage.clear()
     $activeGatewayProfile.set('research')
+
     if (behavior === 'no-transport') {
       Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
     }
+
     plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
     const probe = send.mock.calls.at(-1)![0]
     const reply = { ...probe, kind: 'reply', owner: dead }
     receive(null)
     receive({ ...reply, owner: 123 })
+
     if (behavior === 'reply') { receive(reply) }
+
     if (behavior === 'foreign-scope') { receive({ ...reply, scope: 'other-plugin' }) }
+
     if (behavior === 'wrong-request') { receive({ ...reply, request: 'unrelated' }) }
+
     if (behavior === 'dispose') { disposers.splice(0).forEach(dispose => dispose()) }
     expect(modePref.resolve('work')).toBe('dark')
     vi.advanceTimersByTime(1999)
     expect(modePref.resolve('work')).toBe('dark')
     vi.advanceTimersByTime(1)
+
     if (behavior === 'late') { receive(reply) }
     const retained = ['reply', 'dispose', 'no-transport'].includes(behavior)
     expect(modePref.resolve('work')).toBe(retained ? 'dark' : 'light')
+
     if (behavior === 'dispose') { expect(stop).toHaveBeenCalledTimes(1) }
+
     if (behavior !== 'no-transport' && behavior !== 'dispose') {
       send.mockClear()
       receive({ scope: probe.scope, kind: 'probe', request: 'peer-request' })
       expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'reply', request: 'peer-request' }))
     }
+
     disposers.splice(0).forEach(dispose => dispose())
     expect(modePref.resolve('research')).toBe('light')
     vi.useRealTimers()
@@ -80,11 +93,13 @@ it.each(['fresh-session', 'profile-changed'] as const)('recovers an abandoned ow
   plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
   // The dead renderer cannot deliver unload or disposal callbacks.
   disposers.splice(0)
+
   if (lifecycle === 'fresh-session') {
     window.sessionStorage.clear()
   } else {
     $activeGatewayProfile.set('research')
   }
+
   plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
   vi.advanceTimersByTime(2000)
   disposers.splice(0).forEach(dispose => dispose())
@@ -92,6 +107,170 @@ it.each(['fresh-session', 'profile-changed'] as const)('recovers an abandoned ow
   expect(modePref.resolve('research')).toBe('light')
   expect(modePref.resolve('default')).toBe('light')
   vi.useRealTimers()
+})
+
+it('keeps the reloaded owner dark when a peer discovery expires', () => {
+  vi.useFakeTimers()
+  const firstWindow = window
+  const frame = document.createElement('iframe')
+  document.body.append(frame)
+  const secondWindow = frame.contentWindow!
+  Object.defineProperty(secondWindow, 'localStorage', { configurable: true, value: firstWindow.localStorage })
+  const secondSession = new Map<string, string>()
+  Object.defineProperty(secondWindow, 'sessionStorage', { configurable: true, value: {
+    getItem: (key: string) => secondSession.get(key) ?? null,
+    setItem: (key: string, value: string) => secondSession.set(key, value)
+  } })
+  type Listener = (message: unknown) => void
+  const listeners = new Map<Window, Set<Listener>>()
+  const probes: Array<{ from: Window, request: string }> = []
+
+  for (const renderer of [firstWindow, secondWindow]) {
+    Object.defineProperty(renderer, 'hermesDesktop', { configurable: true, value: { windowRelay: {
+      send: (message: { kind: string, request: string }) => {
+        if (message.kind === 'probe') { probes.push({ from: renderer, request: message.request }) }
+
+        for (const [peer, callbacks] of listeners) {
+          if (peer !== renderer) { callbacks.forEach(callback => callback(message)) }
+        }
+      },
+      onMessage: (callback: Listener) => {
+        const callbacks = listeners.get(renderer) ?? new Set<Listener>()
+        callbacks.add(callback)
+        listeners.set(renderer, callbacks)
+
+        return () => callbacks.delete(callback)
+      }
+    } } })
+  }
+
+  const firstDisposers: (() => void)[] = []
+  const secondDisposers: (() => void)[] = []
+
+  const register = (renderer: Window, profile: string, owned: (() => void)[]) => {
+    vi.stubGlobal('window', renderer)
+    $activeGatewayProfile.set(profile)
+    plugin.register(createPluginContext(plugin.id, dispose => owned.push(dispose)))
+  }
+
+  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+  const sessionKey = 'hermes-desktop-plugin-flexpair-color-palette-window-v1'
+
+  try {
+    firstWindow.localStorage.clear()
+    firstWindow.sessionStorage.clear()
+    firstWindow.sessionStorage.setItem(sessionKey, 'stable-window-id')
+    secondSession.set(sessionKey, 'peer-window-id')
+    modePref.assign('work', 'light')
+    modePref.assign('research', 'light')
+    modePref.assign('default', 'light')
+    $gatewayState.set('open')
+    register(firstWindow, 'work', firstDisposers)
+    const original = JSON.parse(firstWindow.localStorage.getItem(baselineKey)!)
+    // Crash drops the listener and timer without disposal; the session slot survives.
+    firstDisposers.splice(0)
+    listeners.get(firstWindow)?.clear()
+    vi.clearAllTimers()
+    register(secondWindow, 'research', secondDisposers)
+    const missedRequest = probes.at(-1)!.request
+    register(firstWindow, 'work', firstDisposers)
+    expect(probes.at(-1)!.request).not.toBe(missedRequest)
+    expect(firstWindow.sessionStorage.getItem(sessionKey)).toBe('stable-window-id')
+    vi.advanceTimersByTime(2000)
+    expect(modePref.resolve('work')).toBe('dark')
+    expect(modePref.resolve('research')).toBe('dark')
+    const recovered = JSON.parse(firstWindow.localStorage.getItem(baselineKey)!)
+    expect(recovered.owners['stable-window-id:work']).toBe('work')
+    expect(recovered.generations['stable-window-id:work']).not.toBe(original.generations['stable-window-id:work'])
+    firstDisposers.splice(0).forEach(dispose => dispose())
+    expect(modePref.resolve('work')).toBe('light')
+    expect(modePref.resolve('research')).toBe('dark')
+    secondDisposers.splice(0).forEach(dispose => dispose())
+    expect(modePref.resolve('research')).toBe('light')
+    expect(modePref.resolve('default')).toBe('light')
+    expect(firstWindow.localStorage.getItem(baselineKey)).toBeNull()
+  } finally {
+    vi.stubGlobal('window', firstWindow)
+    secondDisposers.splice(0).forEach(dispose => dispose())
+    firstDisposers.splice(0).forEach(dispose => dispose())
+    frame.remove()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  }
+})
+
+it.each(['work', 'research'])('serializes overlapping registrations and releases for %s peers', async (secondProfile) => {
+  const jobs: Array<() => void> = []
+
+  const request = vi.fn((_name: string, run: () => void) => new Promise<void>((resolve, reject) => {
+    jobs.push(() => { try { run(); resolve() } catch (error) { reject(error) } })
+  }))
+
+  Object.defineProperty(window.navigator, 'locks', { configurable: true, value: { request } })
+  const firstDisposers: (() => void)[] = []
+  const secondDisposers: (() => void)[] = []
+  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+
+  const register = (id: string, profile: string, owned: (() => void)[]) => {
+    window.sessionStorage.setItem('hermes-desktop-plugin-flexpair-color-palette-window-v1', id)
+    $activeGatewayProfile.set(profile)
+    plugin.register(createPluginContext(plugin.id, dispose => owned.push(dispose)))
+  }
+
+  const drain = async () => {
+    while (jobs.length) { jobs.shift()!() }
+    await Promise.resolve()
+  }
+
+  try {
+    window.localStorage.clear()
+    modePref.assign('work', 'light')
+    modePref.assign('research', 'system')
+    modePref.assign('default', 'light')
+    $gatewayState.set('open')
+    register('first-peer', 'work', firstDisposers)
+    register('second-peer', secondProfile, secondDisposers)
+    expect(jobs).toHaveLength(2)
+    await drain()
+    const baseline = JSON.parse(window.localStorage.getItem(baselineKey)!)
+    expect(Object.keys(baseline.owners)).toHaveLength(2)
+    expect(baseline.profiles.work).toBe('light')
+
+    if (secondProfile === 'research') { expect(baseline.profiles.research).toBe('system') }
+    expect(modePref.resolve('work')).toBe('dark')
+    expect(modePref.resolve(secondProfile)).toBe('dark')
+    firstDisposers.splice(0).forEach(dispose => dispose())
+    await drain()
+    expect(modePref.resolve(secondProfile)).toBe('dark')
+    secondDisposers.splice(0).forEach(dispose => dispose())
+    await drain()
+    expect(modePref.resolve('work')).toBe('light')
+    expect(modePref.resolve('research')).toBe('system')
+    expect(window.localStorage.getItem(baselineKey)).toBeNull()
+    // Both releases are queued before either gets the shared lock.
+    register('first-peer', 'work', firstDisposers)
+    register('second-peer', secondProfile, secondDisposers)
+    await drain()
+    firstDisposers.splice(0).forEach(dispose => dispose())
+    secondDisposers.splice(0).forEach(dispose => dispose())
+    expect(jobs).toHaveLength(2)
+    await drain()
+    expect(modePref.resolve('work')).toBe('light')
+    expect(modePref.resolve('research')).toBe('system')
+    expect(modePref.resolve('default')).toBe('light')
+    expect(window.localStorage.getItem(baselineKey)).toBeNull()
+    // Disposal before a pending registration acquires the lock cannot leave an owner.
+    register('cancelled-peer', 'work', firstDisposers)
+    firstDisposers.splice(0).forEach(dispose => dispose())
+    await drain()
+    expect(modePref.resolve('work')).toBe('light')
+    expect(window.localStorage.getItem(baselineKey)).toBeNull()
+  } finally {
+    firstDisposers.splice(0).forEach(dispose => dispose())
+    secondDisposers.splice(0).forEach(dispose => dispose())
+    await drain()
+    Reflect.deleteProperty(window.navigator, 'locks')
+  }
 })
 
 it('preserves legacy profile owners when migrating persisted ownership', () => {
@@ -226,11 +405,13 @@ it.each(['pagehide', 'beforeunload'])('releases only the closing window on %s wi
   // Model the native persistence boundary shared by both renderer bridges.
   let sharedZoomPercent = 100
   const setPercent = vi.fn((percent: number) => { sharedZoomPercent = percent })
+
   for (const renderer of [closing, otherWindow]) {
     Object.defineProperty(renderer, 'hermesDesktop', {
       configurable: true, value: { zoom: { setPercent } }
     })
   }
+
   $activeGatewayProfile.set('work')
   plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
   vi.stubGlobal('window', otherWindow)
@@ -285,11 +466,13 @@ it.each(['work', 'research'])('isolates independent registrations when disposing
   modePref.assign('work', 'light')
   modePref.assign('research', 'light')
   const owned: Record<string, (() => void)[]> = { work: [], research: [] }
+
   for (const profile of ['work', 'research']) {
     $activeGatewayProfile.set(profile)
     plugin.register(createPluginContext(plugin.id, dispose => owned[profile].push(dispose)))
     expect(modePref.resolve(profile)).toBe('dark')
   }
+
   const second = first === 'work' ? 'research' : 'work'
   owned[first].splice(0).forEach(dispose => dispose())
   expect(modePref.resolve(first)).toBe('light')
@@ -351,7 +534,11 @@ it('starts a pinned work window dark before delayed gateway routing without loca
     plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
   })
   let theme!: ReturnType<typeof useTheme>
-  function Probe() { theme = useTheme(); return null }
+
+  function Probe() { theme = useTheme();
+
+ return null }
+
   render(<ThemeProvider><Probe /></ThemeProvider>)
   await act(async () => { $activeGatewayProfile.set('work'); $gatewayState.set('open') })
   expect(theme.mode).toBe('dark')
@@ -387,10 +574,13 @@ it.each([
     $gatewayState.set('open')
   })
   let theme!: ReturnType<typeof useTheme>
+
   function Probe() {
     theme = useTheme()
+
     return null
   }
+
   render(<ThemeProvider><Probe /></ThemeProvider>)
   expect(theme.mode).toBe(previousMode)
   act(() => plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose))))
@@ -499,10 +689,13 @@ it('overrides a named profile light preference even when the global default is a
     $gatewayState.set('open')
   })
   let theme!: ReturnType<typeof useTheme>
+
   function Probe() {
     theme = useTheme()
+
     return null
   }
+
   render(<ThemeProvider><Probe /></ThemeProvider>)
   act(() => theme.setMode('light'))
   act(() => plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose))))
