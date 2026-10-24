@@ -2,6 +2,20 @@
 import type { HermesPlugin } from '@hermes/plugin-sdk'
 import { host, setAccentOverride } from '@hermes/plugin-sdk'
 
+interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: string[] }
+
+function readBaseline(baselineKey: string): Baseline | undefined {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(baselineKey) ?? 'null')
+    if (saved && (saved.global === null || typeof saved.global === 'string')
+      && saved.profiles && typeof saved.profiles === 'object' && !Array.isArray(saved.profiles)) {
+      return saved
+    }
+  } catch {
+    // A damaged plugin-owned record starts a fresh activation baseline.
+  }
+}
+
 const plugin: HermesPlugin = {
   id: 'flexpair-color-palette',
   name: 'Flexpair Color Palette',
@@ -69,17 +83,7 @@ const plugin: HermesPlugin = {
         ? liveProfile : bootProfile)?.trim() || 'default'
       const profiles = profile === 'default' ? [] : [profile]
       const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
-      interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: string[] }
-      let baseline: Baseline | undefined
-      try {
-        const saved = JSON.parse(window.localStorage.getItem(baselineKey) ?? 'null')
-        if (saved && (saved.global === null || typeof saved.global === 'string')
-          && saved.profiles && typeof saved.profiles === 'object' && !Array.isArray(saved.profiles)) {
-          baseline = saved
-        }
-      } catch {
-        // A damaged plugin-owned record starts a fresh activation baseline.
-      }
+      let baseline = readBaseline(baselineKey)
       const currentMode = window.localStorage.getItem(key)
       baseline ??= { global: currentMode, profiles: {} }
       // Dark is our outstanding assignment. A different value is a later
