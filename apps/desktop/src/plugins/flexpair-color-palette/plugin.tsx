@@ -2,7 +2,19 @@
 import type { HermesPlugin } from '@hermes/plugin-sdk'
 import { host, setAccentOverride } from '@hermes/plugin-sdk'
 
-interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: string[] }
+interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: Record<string, string> }
+const legacyOwnerPrefix = 'legacy:'
+
+function registrationOwner(profile: string): string {
+  const key = 'hermes-desktop-plugin-flexpair-color-palette-window-v1'
+  let windowId = window.sessionStorage.getItem(key)
+  if (!windowId) {
+    windowId = crypto.randomUUID()
+    window.sessionStorage.setItem(key, windowId)
+  }
+  // Session storage survives renderer reload/crash, but is separate per window.
+  return `${windowId}:${profile}`
+}
 
 function readBaseline(baselineKey: string): Baseline | undefined {
   try {
@@ -16,6 +28,53 @@ function readBaseline(baselineKey: string): Baseline | undefined {
   }
 }
 
+// One discovery per activation, not a recurring lease. Suspended peers may miss it.
+const presenceScope = 'flexpair-color-palette:presence:v1'
+const presenceTimeoutMs = 2000
+
+function discoverOwners(
+  renderer: Window,
+  owner: string,
+  candidates: string[],
+  expired: (owners: string[]) => void
+): () => void {
+  const relay = renderer.hermesDesktop?.windowRelay
+  if (!relay) {
+    // Without discovery, absence is not evidence that a peer has closed.
+    return () => {}
+  }
+  const request = crypto.randomUUID()
+  const replies = new Set<string>()
+  let pending = true
+  const stop = relay.onMessage(payload => {
+    if (!payload || typeof payload !== 'object') { return }
+    const message = payload as Record<string, unknown>
+    if (message.scope !== presenceScope || typeof message.request !== 'string') { return }
+    if (message.kind === 'probe') {
+      relay.send({ scope: presenceScope, kind: 'reply', request: message.request, owner })
+    } else if (pending && message.kind === 'reply' && message.request === request
+      && typeof message.owner === 'string' && candidates.includes(message.owner)) {
+      replies.add(message.owner)
+    }
+  })
+  const timer = setTimeout(() => {
+    pending = false
+    expired(candidates.filter(candidate => !replies.has(candidate)))
+  }, presenceTimeoutMs)
+  try {
+    relay.send({ scope: presenceScope, kind: 'probe', request })
+  } catch {
+    // A broken transport cannot establish absence either.
+    clearTimeout(timer)
+    pending = false
+  }
+  return () => {
+    pending = false
+    clearTimeout(timer)
+    stop()
+  }
+}
+
 const plugin: HermesPlugin = {
   id: 'flexpair-color-palette',
   name: 'Flexpair Color Palette',
@@ -23,6 +82,8 @@ const plugin: HermesPlugin = {
     'Start in dark mode with fixed Flexpair accents and 150% desktop zoom. No picker or color commands.',
   defaultEnabled: true,
   register(ctx) {
+    const window = globalThis.window
+    let stopPresence = () => {}
     // Use the existing Electron bridge, not private core imports or CSS scaling.
     // Zoom is not yet part of the plugin SDK; older hosts keep accent behavior.
     const desktopWindow = window as Window & {
@@ -79,7 +140,10 @@ const plugin: HermesPlugin = {
         || window.localStorage.getItem('hermes-desktop-active-profile-v1')
         || host.state.profile.get()
       const liveProfile = host.state.profile.get().trim()
-      const profile = (liveProfile !== 'default' || host.state.gateway.get() === 'open'
+      // The registry retains routing identity when reconnect clears the
+      // public descriptor; socket state and connectionId alone lose that fact.
+      const profile = (liveProfile !== 'default' || host.activeConnectionId() !== null
+        || host.state.gateway.get() === 'open'
         ? liveProfile : bootProfile)?.trim() || 'default'
       const profiles = profile === 'default' ? [] : [profile]
       const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
@@ -96,20 +160,28 @@ const plugin: HermesPlugin = {
           baseline.profiles[target] = modes[target] ?? null
         }
       }
-      // Profile ownership survives a restart, without retaining dead renderer tokens.
-      const owners = Array.isArray(baseline.owners)
-        ? baseline.owners.filter((owner): owner is string => typeof owner === 'string')
-        : Object.keys(baseline.profiles)
-      baseline.owners = [...new Set([...owners, profile])]
+      // A stable window slot replaces its crashed renderer, not a peer window.
+      const owner = registrationOwner(profile)
+      // Old versions stored profile names, not renderer identities. Preserve
+      // those owners indefinitely: a new UUID cannot prove the old window closed.
+      const owners: Record<string, string> = Array.isArray(baseline.owners)
+        ? Object.fromEntries(baseline.owners
+          .filter((legacyProfile): legacyProfile is string => typeof legacyProfile === 'string')
+          .map(legacyProfile => [`${legacyOwnerPrefix}${legacyProfile}`, legacyProfile]))
+        : baseline.owners ?? {}
+      baseline.owners = { ...owners, [owner]: profile }
       window.localStorage.setItem(baselineKey, JSON.stringify(baseline))
       // A registration owns only its selected profile, not the origin-wide history.
-      const previousModes = profiles.map(target => [target, baseline.profiles[target]] as const)
-      restoreMode = () => {
+      const releaseOwners = (released: string[]) => {
         try {
-          // Restore only our assignments; preserve edits to other profiles.
+          // Re-read shared ownership before restoring the selected profile.
+          const remaining = readBaseline(baselineKey) ?? baseline
+          for (const id of released) { delete remaining.owners?.[id] }
+          const activeProfiles = Object.values(remaining.owners ?? {})
+          const hasLegacyOwners = Object.keys(remaining.owners ?? {}).some(id => id.startsWith(legacyOwnerPrefix))
           const currentModes = readModes()
-          for (const [profile, previous] of previousModes) {
-            if (currentModes[profile] !== 'dark') {
+          for (const [profile, previous] of Object.entries(remaining.profiles)) {
+            if (hasLegacyOwners || activeProfiles.includes(profile) || currentModes[profile] !== 'dark') {
               continue
             }
             if (previous === null) {
@@ -119,20 +191,19 @@ const plugin: HermesPlugin = {
             }
           }
           window.localStorage.setItem(profilesKey, JSON.stringify(currentModes))
-          // Re-read shared ownership: another registration may have joined later.
-          const remaining: Baseline = JSON.parse(window.localStorage.getItem(baselineKey) ?? 'null') ?? baseline
-          remaining.owners = (remaining.owners ?? []).filter(owner => owner !== profile)
-          for (const target of profiles) {
-            delete remaining.profiles[target]
+          for (const target of Object.keys(remaining.profiles)) {
+            if (!hasLegacyOwners && !activeProfiles.includes(target)) {
+              delete remaining.profiles[target]
+            }
           }
-          if (!remaining.owners.length && window.localStorage.getItem(key) === 'dark') {
+          if (!activeProfiles.length && !hasLegacyOwners && window.localStorage.getItem(key) === 'dark') {
             if (remaining.global === null) {
               window.localStorage.removeItem(key)
             } else {
               window.localStorage.setItem(key, remaining.global)
             }
           }
-          if (remaining.owners.length) {
+          if (activeProfiles.length || hasLegacyOwners) {
             window.localStorage.setItem(baselineKey, JSON.stringify(remaining))
           } else {
             window.localStorage.removeItem(baselineKey)
@@ -150,6 +221,9 @@ const plugin: HermesPlugin = {
       // Repaint even when the global fallback was already dark: the current
       // profile or in-memory manual selection may still be light.
       window.dispatchEvent(new StorageEvent('storage', { key, newValue: 'dark' }))
+      restoreMode = () => releaseOwners([owner])
+      stopPresence = discoverOwners(window, owner,
+        Object.keys(owners).filter(id => id !== owner && !id.startsWith(legacyOwnerPrefix)), releaseOwners)
     } catch (error) {
       // Surface failed authoritative writes while preserving accent cleanup.
       console.error('[flexpair-color-palette] Could not initialize dark preferences', error)
@@ -180,6 +254,7 @@ const plugin: HermesPlugin = {
         return
       }
       disposed = true
+      stopPresence()
       lifecycleWindow.removeEventListener('pagehide', close)
       lifecycleWindow.removeEventListener('beforeunload', close)
       observer.disconnect()

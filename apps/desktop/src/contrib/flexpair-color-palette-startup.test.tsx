@@ -3,13 +3,214 @@ import { StrictMode } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import plugin from '../plugins/flexpair-color-palette/plugin'
+import { setPrimaryGateway, setPrimaryGatewayConnectionId } from '../store/gateway'
 import { $activeGatewayProfile } from '../store/profile'
-import { $gatewayState } from '../store/session'
+import { $connection, $gatewayState } from '../store/session'
 import { modePref, ThemeProvider, useTheme } from '../themes/context'
 
 import { createPluginContext } from './plugin'
 
 const disposers: (() => void)[] = []
+
+it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-transport'] as const)(
+  'bounds owner discovery with %s', behavior => {
+    vi.useFakeTimers()
+    window.localStorage.clear()
+    window.sessionStorage.clear()
+    $gatewayState.set('open')
+    $activeGatewayProfile.set('work')
+    const key = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+    let receive: (message: unknown) => void = () => {}
+    const send = vi.fn()
+    const stop = vi.fn()
+    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
+      windowRelay: {
+        send,
+        onMessage: (callback: typeof receive) => { receive = callback; return stop }
+      }
+    } })
+    modePref.assign('work', 'light')
+    modePref.assign('research', 'light')
+    plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+    const dead = Object.keys(JSON.parse(window.localStorage.getItem(key)!).owners)[0]
+    disposers.splice(0)
+    window.sessionStorage.clear()
+    $activeGatewayProfile.set('research')
+    if (behavior === 'no-transport') {
+      Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
+    }
+    plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+    const probe = send.mock.calls.at(-1)![0]
+    const reply = { ...probe, kind: 'reply', owner: dead }
+    receive(null)
+    receive({ ...reply, owner: 123 })
+    if (behavior === 'reply') { receive(reply) }
+    if (behavior === 'foreign-scope') { receive({ ...reply, scope: 'other-plugin' }) }
+    if (behavior === 'wrong-request') { receive({ ...reply, request: 'unrelated' }) }
+    if (behavior === 'dispose') { disposers.splice(0).forEach(dispose => dispose()) }
+    expect(modePref.resolve('work')).toBe('dark')
+    vi.advanceTimersByTime(1999)
+    expect(modePref.resolve('work')).toBe('dark')
+    vi.advanceTimersByTime(1)
+    if (behavior === 'late') { receive(reply) }
+    const retained = ['reply', 'dispose', 'no-transport'].includes(behavior)
+    expect(modePref.resolve('work')).toBe(retained ? 'dark' : 'light')
+    if (behavior === 'dispose') { expect(stop).toHaveBeenCalledTimes(1) }
+    if (behavior !== 'no-transport' && behavior !== 'dispose') {
+      send.mockClear()
+      receive({ scope: probe.scope, kind: 'probe', request: 'peer-request' })
+      expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'reply', request: 'peer-request' }))
+    }
+    disposers.splice(0).forEach(dispose => dispose())
+    expect(modePref.resolve('research')).toBe('light')
+    vi.useRealTimers()
+  }
+)
+
+it.each(['fresh-session', 'profile-changed'] as const)('recovers an abandoned owner after %s', lifecycle => {
+  vi.useFakeTimers()
+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
+    windowRelay: { send: vi.fn(), onMessage: () => () => {} }
+  } })
+  window.localStorage.clear()
+  $gatewayState.set('open')
+  modePref.assign('work', 'light')
+  modePref.assign('research', 'light')
+  $activeGatewayProfile.set('work')
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  // The dead renderer cannot deliver unload or disposal callbacks.
+  disposers.splice(0)
+  if (lifecycle === 'fresh-session') {
+    window.sessionStorage.clear()
+  } else {
+    $activeGatewayProfile.set('research')
+  }
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  vi.advanceTimersByTime(2000)
+  disposers.splice(0).forEach(dispose => dispose())
+  expect(modePref.resolve('work')).toBe('light')
+  expect(modePref.resolve('research')).toBe('light')
+  expect(modePref.resolve('default')).toBe('light')
+  vi.useRealTimers()
+})
+
+it('preserves legacy profile owners when migrating persisted ownership', () => {
+  vi.useFakeTimers()
+  window.localStorage.clear()
+  window.sessionStorage.clear()
+  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+  window.localStorage.setItem(baselineKey, JSON.stringify({
+    global: 'light', profiles: { work: 'light' }, owners: ['work']
+  }))
+  window.localStorage.setItem('hermes-desktop-mode-v1', 'dark')
+  window.localStorage.setItem('hermes-desktop-profile-modes-v1', JSON.stringify({ work: 'dark' }))
+  $activeGatewayProfile.set('work')
+  $gatewayState.set('open')
+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
+    windowRelay: { send: vi.fn(), onMessage: () => () => {} }
+  } })
+
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  const migrated = JSON.parse(window.localStorage.getItem(baselineKey)!)
+  expect(migrated.owners).toEqual(expect.objectContaining({ 'legacy:work': 'work' }))
+  vi.advanceTimersByTime(2000)
+  expect(modePref.resolve('work')).toBe('dark')
+  expect(JSON.parse(window.localStorage.getItem(baselineKey)!).owners)
+    .toEqual(expect.objectContaining({ 'legacy:work': 'work' }))
+  disposers.splice(0).forEach(dispose => dispose())
+
+  expect(modePref.resolve('work')).toBe('dark')
+  expect(JSON.parse(window.localStorage.getItem(baselineKey)!).owners)
+    .toEqual({ 'legacy:work': 'work' })
+  vi.useRealTimers()
+})
+
+it('retains every baseline while a legacy owner profile does not match saved profiles', () => {
+  vi.useFakeTimers()
+  window.localStorage.clear()
+  window.sessionStorage.clear()
+  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+  window.localStorage.setItem(baselineKey, JSON.stringify({
+    global: 'light', profiles: { work: 'light' }, owners: ['research']
+  }))
+  window.localStorage.setItem('hermes-desktop-mode-v1', 'dark')
+  window.localStorage.setItem('hermes-desktop-profile-modes-v1', JSON.stringify({ work: 'dark' }))
+  $activeGatewayProfile.set('work')
+  $gatewayState.set('open')
+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
+    windowRelay: { send: vi.fn(), onMessage: () => () => {} }
+  } })
+
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  vi.advanceTimersByTime(2000)
+  disposers.splice(0).forEach(dispose => dispose())
+
+  expect(modePref.resolve('work')).toBe('dark')
+  expect(JSON.parse(window.localStorage.getItem(baselineKey)!)).toMatchObject({
+    global: 'light', profiles: { work: 'light' }, owners: { 'legacy:research': 'research' }
+  })
+  vi.useRealTimers()
+})
+
+it.each(['connecting', 'closed', 'idle'] as const)('re-enables on established default routing while %s despite research boot hints', socketState => {
+  window.localStorage.clear()
+  window.history.replaceState(null, '', '/?profile=research')
+  Object.defineProperty(window, 'hermesDesktop', {
+    configurable: true, value: { localSkin: { profile: 'research' } }
+  })
+  modePref.assign('research', 'light')
+  modePref.assign('default', 'light')
+  $activeGatewayProfile.set('research')
+  $gatewayState.set('open')
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  disposers.splice(0).forEach(dispose => dispose())
+  // Routing lives in the registry; reconnect failure clears only the descriptor.
+  setPrimaryGateway(null, 'default')
+  setPrimaryGatewayConnectionId('local', 'local')
+  $connection.set(null)
+  $activeGatewayProfile.set('default')
+  $gatewayState.set(socketState)
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  expect(modePref.resolve('research')).toBe('light')
+  expect(modePref.resolve('default')).toBe('dark')
+  disposers.splice(0).forEach(dispose => dispose())
+  expect(modePref.resolve('default')).toBe('light')
+  $connection.set(null)
+})
+
+it.each(['default', 'work'])('keeps two enabled windows on the same %s profile dark until the last closes', profile => {
+  window.localStorage.clear()
+  $gatewayState.set('open')
+  modePref.assign(profile, 'light')
+  const firstWindow = window
+  const frame = document.createElement('iframe')
+  document.body.append(frame)
+  const secondWindow = frame.contentWindow!
+  Object.defineProperty(secondWindow, 'localStorage', { configurable: true, value: firstWindow.localStorage })
+  // Native top-level renderer windows have independent session storage.
+  const session = new Map<string, string>()
+  Object.defineProperty(secondWindow, 'sessionStorage', { configurable: true, value: {
+    getItem: (key: string) => session.get(key) ?? null,
+    setItem: (key: string, value: string) => session.set(key, value)
+  } })
+  $activeGatewayProfile.set(profile)
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  vi.stubGlobal('window', secondWindow)
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  vi.stubGlobal('window', firstWindow)
+  firstWindow.dispatchEvent(new Event('pagehide'))
+  expect(modePref.resolve(profile)).toBe('dark')
+  expect(modePref.resolve('default')).toBe('dark')
+  disposers.shift()!()
+  firstWindow.dispatchEvent(new Event('beforeunload'))
+  expect(modePref.resolve(profile)).toBe('dark')
+  vi.stubGlobal('window', secondWindow)
+  disposers.splice(0).forEach(dispose => dispose())
+  expect(modePref.resolve(profile)).toBe('light')
+  expect(modePref.resolve('default')).toBe('light')
+  vi.unstubAllGlobals()
+  frame.remove()
+})
 
 it.each(['pagehide', 'beforeunload'])('releases only the closing window on %s without context disposal', event => {
   window.localStorage.clear()
@@ -212,6 +413,9 @@ afterEach(() => {
   vi.unstubAllGlobals()
   act(() => {
     window.localStorage.clear()
+    setPrimaryGateway(null, 'default')
+    setPrimaryGatewayConnectionId(null)
+    $connection.set(null)
     $activeGatewayProfile.set('default')
     $gatewayState.set('idle')
     window.history.replaceState(null, '', '/')
