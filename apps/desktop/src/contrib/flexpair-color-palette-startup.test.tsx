@@ -21,20 +21,37 @@ it('still releases preferences and resets zoom when the release notification can
   const setPercent = vi.fn()
   Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent } } })
   plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
-  const original = Storage.prototype.setItem
+  const storage = window.localStorage
+  const original = storage.setItem.bind(storage)
   const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  let releaseNotificationWriteRejected = false
 
-  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
-    if (key.includes(':released:')) { throw new Error('quota exceeded') }
-    original.call(this, key, value)
+  const write = vi.fn((key: string, value: string) => {
+    if (key.includes(':released:')) {
+      releaseNotificationWriteRejected = true
+      throw new Error('quota exceeded')
+    }
+    original(key, value)
   })
+  const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')!
+  // Native Storage is an exotic object; use the same own-method shape as
+  // the Node fallback so interception is observable in either environment.
+  Object.defineProperty(window, 'localStorage', { configurable: true, value: {
+    get length() { return storage.length },
+    key: storage.key.bind(storage),
+    getItem: storage.getItem.bind(storage),
+    setItem: write,
+    removeItem: storage.removeItem.bind(storage),
+    clear: storage.clear.bind(storage)
+  } })
 
   try {
     expect(() => disposers.splice(0).forEach(dispose => dispose())).not.toThrow()
+    expect(releaseNotificationWriteRejected).toBe(true)
     expect(modePref.resolve('work')).toBe('light')
     expect(setPercent).toHaveBeenLastCalledWith(0)
   } finally {
-    write.mockRestore()
+    Object.defineProperty(window, 'localStorage', descriptor)
     error.mockRestore()
   }
 })
