@@ -12,6 +12,33 @@ import { createPluginContext } from './plugin'
 
 const disposers: (() => void)[] = []
 
+it('still releases preferences and resets zoom when the release notification cannot be saved', () => {
+  window.localStorage.clear()
+  window.sessionStorage.clear()
+  $gatewayState.set('open')
+  $activeGatewayProfile.set('work')
+  modePref.assign('work', 'light')
+  const setPercent = vi.fn()
+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent } } })
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  const original = Storage.prototype.setItem
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (key.includes(':released:')) { throw new Error('quota exceeded') }
+    original.call(this, key, value)
+  })
+
+  try {
+    expect(() => disposers.splice(0).forEach(dispose => dispose())).not.toThrow()
+    expect(modePref.resolve('work')).toBe('light')
+    expect(setPercent).toHaveBeenLastCalledWith(0)
+  } finally {
+    write.mockRestore()
+    error.mockRestore()
+  }
+})
+
 it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-transport'] as const)(
   'bounds owner discovery with %s', behavior => {
     vi.useFakeTimers()
@@ -270,6 +297,145 @@ it.each(['work', 'research'])('serializes overlapping registrations and releases
     secondDisposers.splice(0).forEach(dispose => dispose())
     await drain()
     Reflect.deleteProperty(window.navigator, 'locks')
+  }
+})
+
+it('restores shared appearance after a closing renderer loses its queued lock release', async () => {
+  const firstWindow = window
+  const frame = document.createElement('iframe')
+  document.body.append(frame)
+  const closingWindow = frame.contentWindow!
+  Object.defineProperty(closingWindow, 'localStorage', {
+    configurable: true, value: firstWindow.localStorage
+  })
+  const closingSession = new Map<string, string>()
+  Object.defineProperty(closingWindow, 'sessionStorage', { configurable: true, value: {
+    getItem: (key: string) => closingSession.get(key) ?? null,
+    setItem: (key: string, value: string) => closingSession.set(key, value)
+  } })
+
+  type LockJob = {
+    owner: Window
+    run: () => unknown
+    resolve: () => void
+    reject: (error: unknown) => void
+  }
+  const jobs: LockJob[] = []
+  const idleWaiters: (() => void)[] = []
+  let active = false
+
+  const signalIdle = () => {
+    if (active || jobs.length) { return }
+    idleWaiters.splice(0).forEach(resolve => resolve())
+  }
+
+  const runNext = () => {
+    if (active || !jobs.length) { signalIdle();
+
+ return }
+
+    const job = jobs.shift()!
+    active = true
+    let result: unknown
+
+    try { result = job.run() } catch (error) {
+      job.reject(error)
+      active = false
+      runNext()
+
+      return
+    }
+
+    Promise.resolve(result).then(job.resolve, job.reject).finally(() => {
+      active = false
+      runNext()
+    })
+  }
+
+  const whenIdle = () => active || jobs.length
+    ? new Promise<void>(resolve => idleWaiters.push(resolve))
+    : Promise.resolve()
+
+  const lockName = 'flexpair-color-palette:preferences:v1'
+
+  const locksFor = (owner: Window) => ({
+    request: (name: string, run: () => unknown) => new Promise<void>((resolve, reject) => {
+      if (name !== lockName) { reject(new Error(`Unexpected lock: ${name}`));
+
+ return }
+
+      jobs.push({ owner, run, resolve, reject })
+      runNext()
+    })
+  })
+
+  const originalLocks = Object.getOwnPropertyDescriptor(firstWindow.navigator, 'locks')
+  Object.defineProperty(firstWindow.navigator, 'locks', { configurable: true, value: locksFor(firstWindow) })
+  Object.defineProperty(closingWindow.navigator, 'locks', { configurable: true, value: locksFor(closingWindow) })
+
+  const closingDisposers: (() => void)[] = []
+  const survivingDisposers: (() => void)[] = []
+
+  const register = (renderer: Window, owned: (() => void)[]) => {
+    vi.stubGlobal('window', renderer)
+    $activeGatewayProfile.set('work')
+    plugin.register(createPluginContext(plugin.id, dispose => owned.push(dispose)))
+  }
+
+  let releaseHeldLock: (() => void) | undefined
+  let heldRequest: Promise<void> | undefined
+
+  try {
+    firstWindow.localStorage.clear()
+    firstWindow.sessionStorage.clear()
+    closingSession.set('hermes-desktop-plugin-flexpair-color-palette-window-v1', 'closing-window')
+    firstWindow.sessionStorage.setItem('hermes-desktop-plugin-flexpair-color-palette-window-v1', 'surviving-window')
+    modePref.assign('work', 'light')
+    modePref.assign('default', 'light')
+    $gatewayState.set('open')
+
+    register(closingWindow, closingDisposers)
+    await whenIdle()
+    register(firstWindow, survivingDisposers)
+    await whenIdle()
+
+    heldRequest = locksFor(firstWindow).request(lockName, () => new Promise<void>(resolve => {
+      releaseHeldLock = resolve
+    }))
+    expect(releaseHeldLock).toBeTypeOf('function')
+
+    closingWindow.dispatchEvent(new Event('pagehide'))
+    frame.remove()
+
+    // Simulate teardown dropping queued callbacks that belonged to the destroyed renderer.
+    for (const job of jobs.filter(job => job.owner === closingWindow)) {
+      jobs.splice(jobs.indexOf(job), 1)
+      job.resolve()
+    }
+
+    vi.stubGlobal('window', firstWindow)
+    survivingDisposers.splice(0).forEach(dispose => dispose())
+    releaseHeldLock?.()
+    releaseHeldLock = undefined
+    await heldRequest
+    await whenIdle()
+
+    expect(modePref.resolve('work')).toBe('light')
+    expect(modePref.resolve('default')).toBe('light')
+    expect(firstWindow.localStorage.getItem('hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1')).toBeNull()
+  } finally {
+    releaseHeldLock?.()
+    await heldRequest
+    closingDisposers.splice(0).forEach(dispose => dispose())
+    survivingDisposers.splice(0).forEach(dispose => dispose())
+    await whenIdle()
+    frame.remove()
+    vi.unstubAllGlobals()
+
+    if (originalLocks) { Object.defineProperty(firstWindow.navigator, 'locks', originalLocks) }
+    else { Reflect.deleteProperty(firstWindow.navigator, 'locks') }
+
+    Reflect.deleteProperty(closingWindow.navigator, 'locks')
   }
 })
 

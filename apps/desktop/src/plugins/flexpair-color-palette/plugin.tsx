@@ -98,6 +98,8 @@ const plugin: HermesPlugin = {
 
     let stopPresence = () => {}
 
+    let stopReleaseNotifications = () => {}
+
     // Serialize the complete shared baseline and mode transaction across renderers.
     // Hosts without Web Locks retain the synchronous single-window path.
     const withPaletteTransaction = (run: () => void) => {
@@ -189,6 +191,7 @@ const plugin: HermesPlugin = {
       // Capture the renderer slot and route before the pending lock can yield.
       const owner = registrationOwner(window, profile)
       const ownerGeneration = crypto.randomUUID()
+      const releasePrefix = `${baselineKey}:released:`
       withPaletteTransaction(() => {
       if (disposed) { return }
 
@@ -263,17 +266,47 @@ const plugin: HermesPlugin = {
 
           if (!remaining) { return }
           let removed = false
+          const releases = { ...expectedGenerations }
+          const notifiedOwners: string[] = []
+          const markers: string[] = []
 
-          for (const id of released) {
+          // A separate key per activation is safe to write synchronously during
+          // unload. Shared ownership is still changed only under the Web Lock.
+          for (let index = 0; index < window.localStorage.length; index++) {
+            const marker = window.localStorage.key(index)
+
+            if (!marker?.startsWith(releasePrefix)) { continue }
+
+            try {
+              const saved = JSON.parse(window.localStorage.getItem(marker) ?? 'null')
+
+              if (typeof saved?.owner === 'string' && typeof saved.generation === 'string'
+                && remaining.generations?.[saved.owner] === saved.generation) {
+                releases[saved.owner] = saved.generation
+                notifiedOwners.push(saved.owner)
+              }
+
+              markers.push(marker)
+            } catch {
+              // Ignore damaged notification records.
+            }
+          }
+
+          for (const id of new Set([...released, ...notifiedOwners])) {
             if (!Object.hasOwn(remaining.owners ?? {}, id)
-              || remaining.generations?.[id] !== expectedGenerations[id]) { continue }
+              || remaining.generations?.[id] !== releases[id]) { continue }
 
             delete remaining.owners?.[id]
             delete remaining.generations?.[id]
             removed = true
           }
 
-          if (!removed) { return }
+          if (!removed) {
+            markers.forEach(marker => window.localStorage.removeItem(marker))
+
+            return
+          }
+
           const activeProfiles = Object.values(remaining.owners ?? {})
           const hasLegacyOwners = Object.keys(remaining.owners ?? {}).some(id => id.startsWith(legacyOwnerPrefix))
           restoreProfiles(remaining, activeProfiles, hasLegacyOwners)
@@ -293,6 +326,7 @@ const plugin: HermesPlugin = {
           }
 
           window.dispatchEvent(new StorageEvent('storage', { key, newValue: window.localStorage.getItem(key) }))
+          markers.forEach(marker => window.localStorage.removeItem(marker))
         } catch (error) {
           console.error('[flexpair-color-palette] Could not restore appearance preferences', error)
         }
@@ -308,7 +342,26 @@ const plugin: HermesPlugin = {
       // Repaint even when the global fallback was already dark: the current
       // profile or in-memory manual selection may still be light.
       window.dispatchEvent(new StorageEvent('storage', { key, newValue: 'dark' }))
-      restoreMode = () => releaseOwners([owner], { [owner]: ownerGeneration })
+
+      restoreMode = () => {
+        try {
+          window.localStorage.setItem(`${releasePrefix}${ownerGeneration}`,
+            JSON.stringify({ owner, generation: ownerGeneration }))
+        } catch (error) {
+          console.error('[flexpair-color-palette] Could not persist appearance release', error)
+        }
+
+        releaseOwners([owner], { [owner]: ownerGeneration })
+      }
+
+      const onRelease = (event: StorageEvent) => {
+        if (event.key?.startsWith(releasePrefix) && event.newValue !== null) {
+          releaseOwners([], {})
+        }
+      }
+
+      window.addEventListener('storage', onRelease)
+      stopReleaseNotifications = () => window.removeEventListener('storage', onRelease)
       stopPresence = discoverOwners(window, owner,
         Object.keys(discoveryGenerations), expired => releaseOwners(expired, discoveryGenerations))
       } catch (error) {
@@ -351,6 +404,7 @@ const plugin: HermesPlugin = {
 
       disposed = true
       stopPresence()
+      stopReleaseNotifications()
       lifecycleWindow.removeEventListener('pagehide', close)
       lifecycleWindow.removeEventListener('beforeunload', close)
       observer.disconnect()
