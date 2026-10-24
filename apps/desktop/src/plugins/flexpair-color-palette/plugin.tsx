@@ -57,33 +57,80 @@ const plugin: HermesPlugin = {
           ? saved as Record<string, unknown> : {}
       }
       const modes = readModes()
-      const previousMode = window.localStorage.getItem(key)
-      // Before gateway connection the host paints the boot profile; afterwards
-      // it follows the live profile. Preserve assignments for unrelated profiles.
-      const bootProfile = desktopWindow.hermesDesktop?.localSkin?.profile
-        ?? window.localStorage.getItem('hermes-desktop-active-profile-v1')
-        ?? 'default'
-      const profiles = [...new Set([bootProfile, host.state.profile.get()].map(profile => profile?.trim() || 'default'))]
-        .filter(profile => profile !== 'default')
-      const previousModes = profiles.map(profile => [profile, modes[profile]] as const)
+      // The gateway atom is the SDK readiness seam: boot hints stop being
+      // authoritative once the live route is open.
+      const bootProfile = new URLSearchParams(window.location.search).get('profile')?.trim()
+        || desktopWindow.hermesDesktop?.localSkin?.profile
+        || window.localStorage.getItem('hermes-desktop-active-profile-v1')
+        || host.state.profile.get()
+      const profile = (host.state.gateway.get() === 'open' ? host.state.profile.get() : bootProfile)?.trim() || 'default'
+      const profiles = profile === 'default' ? [] : [profile]
+      const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+      interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: string[] }
+      let baseline: Baseline | undefined
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(baselineKey) ?? 'null')
+        if (saved && (saved.global === null || typeof saved.global === 'string')
+          && saved.profiles && typeof saved.profiles === 'object' && !Array.isArray(saved.profiles)) {
+          baseline = saved
+        }
+      } catch {
+        // A damaged plugin-owned record starts a fresh activation baseline.
+      }
+      const currentMode = window.localStorage.getItem(key)
+      baseline ??= { global: currentMode, profiles: {} }
+      // Dark is our outstanding assignment. A different value is a later
+      // manual edit and becomes the next activation's restoration baseline.
+      if (currentMode !== 'dark') {
+        baseline.global = currentMode
+      }
+      for (const target of profiles) {
+        if (!Object.hasOwn(baseline.profiles, target) || modes[target] !== 'dark') {
+          baseline.profiles[target] = modes[target] ?? null
+        }
+      }
+      // Profile ownership survives a restart, without retaining dead renderer tokens.
+      const owners = Array.isArray(baseline.owners)
+        ? baseline.owners.filter((owner): owner is string => typeof owner === 'string')
+        : Object.keys(baseline.profiles)
+      baseline.owners = [...new Set([...owners, profile])]
+      window.localStorage.setItem(baselineKey, JSON.stringify(baseline))
+      // A registration owns only its selected profile, not the origin-wide history.
+      const previousModes = profiles.map(target => [target, baseline.profiles[target]] as const)
       restoreMode = () => {
         try {
           // Restore only our assignments; preserve edits to other profiles.
           const currentModes = readModes()
           for (const [profile, previous] of previousModes) {
-            if (previous === undefined) {
+            if (currentModes[profile] !== 'dark') {
+              continue
+            }
+            if (previous === null) {
               delete currentModes[profile]
             } else {
               currentModes[profile] = previous
             }
           }
           window.localStorage.setItem(profilesKey, JSON.stringify(currentModes))
-          if (previousMode === null) {
-            window.localStorage.removeItem(key)
-          } else {
-            window.localStorage.setItem(key, previousMode)
+          // Re-read shared ownership: another registration may have joined later.
+          const remaining: Baseline = JSON.parse(window.localStorage.getItem(baselineKey) ?? 'null') ?? baseline
+          remaining.owners = (remaining.owners ?? []).filter(owner => owner !== profile)
+          for (const target of profiles) {
+            delete remaining.profiles[target]
           }
-          window.dispatchEvent(new StorageEvent('storage', { key, newValue: previousMode }))
+          if (!remaining.owners.length && window.localStorage.getItem(key) === 'dark') {
+            if (remaining.global === null) {
+              window.localStorage.removeItem(key)
+            } else {
+              window.localStorage.setItem(key, remaining.global)
+            }
+          }
+          if (remaining.owners.length) {
+            window.localStorage.setItem(baselineKey, JSON.stringify(remaining))
+          } else {
+            window.localStorage.removeItem(baselineKey)
+          }
+          window.dispatchEvent(new StorageEvent('storage', { key, newValue: window.localStorage.getItem(key) }))
         } catch (error) {
           console.error('[flexpair-color-palette] Could not restore appearance preferences', error)
         }
