@@ -257,6 +257,38 @@ const plugin: HermesPlugin = {
         }
       }
 
+      const collectReleaseMarkers = (
+        remaining: Baseline,
+        releases: Record<string, string | undefined>
+      ) => {
+        const notifiedOwners: string[] = []
+        const markers: string[] = []
+
+        // A separate key per activation is safe to write synchronously during
+        // unload. Shared ownership is still changed only under the Web Lock.
+        for (let index = 0; index < window.localStorage.length; index++) {
+          const marker = window.localStorage.key(index)
+
+          if (!marker?.startsWith(releasePrefix)) { continue }
+
+          try {
+            const saved = JSON.parse(window.localStorage.getItem(marker) ?? 'null')
+
+            if (typeof saved?.owner === 'string' && typeof saved.generation === 'string'
+              && remaining.generations?.[saved.owner] === saved.generation) {
+              releases[saved.owner] = saved.generation
+              notifiedOwners.push(saved.owner)
+            }
+
+            markers.push(marker)
+          } catch {
+            // Ignore damaged notification records.
+          }
+        }
+
+        return { notifiedOwners, markers }
+      }
+
       // A registration owns only its selected profile, not the origin-wide history.
       const releaseOwners = (released: string[], expectedGenerations: Record<string, string | undefined>) => {
         withPaletteTransaction(() => {
@@ -267,30 +299,7 @@ const plugin: HermesPlugin = {
           if (!remaining) { return }
           let removed = false
           const releases = { ...expectedGenerations }
-          const notifiedOwners: string[] = []
-          const markers: string[] = []
-
-          // A separate key per activation is safe to write synchronously during
-          // unload. Shared ownership is still changed only under the Web Lock.
-          for (let index = 0; index < window.localStorage.length; index++) {
-            const marker = window.localStorage.key(index)
-
-            if (!marker?.startsWith(releasePrefix)) { continue }
-
-            try {
-              const saved = JSON.parse(window.localStorage.getItem(marker) ?? 'null')
-
-              if (typeof saved?.owner === 'string' && typeof saved.generation === 'string'
-                && remaining.generations?.[saved.owner] === saved.generation) {
-                releases[saved.owner] = saved.generation
-                notifiedOwners.push(saved.owner)
-              }
-
-              markers.push(marker)
-            } catch {
-              // Ignore damaged notification records.
-            }
-          }
+          const { notifiedOwners, markers } = collectReleaseMarkers(remaining, releases)
 
           for (const id of new Set([...released, ...notifiedOwners])) {
             if (!Object.hasOwn(remaining.owners ?? {}, id)
