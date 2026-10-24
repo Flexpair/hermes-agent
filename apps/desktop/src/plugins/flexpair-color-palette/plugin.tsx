@@ -170,25 +170,29 @@ const plugin: HermesPlugin = {
     const observer = new MutationObserver(applyInitialAccent)
     observer.observe(root, { attributes: true, attributeFilter: ['data-hermes-mode'] })
     applyInitialAccent()
-    // Disabling or reloading restores the prior mode, theme accent and default zoom.
+    // Closing releases appearance ownership without changing shared native zoom.
+    // Explicit disable/reload also restores the host's default zoom.
     const lifecycleWindow = window
     let disposed = false
-    const dispose = () => {
+    const close = () => dispose(false)
+    const dispose = (resetZoom = true) => {
       if (disposed) {
         return
       }
       disposed = true
-      lifecycleWindow.removeEventListener('pagehide', dispose)
-      lifecycleWindow.removeEventListener('beforeunload', dispose)
+      lifecycleWindow.removeEventListener('pagehide', close)
+      lifecycleWindow.removeEventListener('beforeunload', close)
       observer.disconnect()
       setAccentOverride(null)
       restoreMode()
-      // Core percentToZoomLevel(0) returns DEFAULT_ZOOM_LEVEL, as Actual Size does.
-      // Delegate the default to Hermes rather than hard-coding a percentage.
-      setZoom(0)
+      if (resetZoom) {
+        // Core percentToZoomLevel(0) returns DEFAULT_ZOOM_LEVEL, as Actual Size does.
+        // Delegate the default to Hermes rather than hard-coding a percentage.
+        setZoom(0)
+      }
     }
-    lifecycleWindow.addEventListener('pagehide', dispose)
-    lifecycleWindow.addEventListener('beforeunload', dispose)
+    lifecycleWindow.addEventListener('pagehide', close)
+    lifecycleWindow.addEventListener('beforeunload', close)
     ctx.onDispose(dispose)
 
   }

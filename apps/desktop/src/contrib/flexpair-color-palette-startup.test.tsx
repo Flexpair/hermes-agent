@@ -22,19 +22,35 @@ it.each(['pagehide', 'beforeunload'])('releases only the closing window on %s wi
   const otherWindow = remaining.contentWindow!
   // Separate renderer lifecycles, shared origin-wide preferences.
   Object.defineProperty(otherWindow, 'localStorage', { configurable: true, value: closing.localStorage })
+  // Model the native persistence boundary shared by both renderer bridges.
+  let sharedZoomPercent = 100
+  const setPercent = vi.fn((percent: number) => { sharedZoomPercent = percent })
+  for (const renderer of [closing, otherWindow]) {
+    Object.defineProperty(renderer, 'hermesDesktop', {
+      configurable: true, value: { zoom: { setPercent } }
+    })
+  }
   $activeGatewayProfile.set('work')
   plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
   vi.stubGlobal('window', otherWindow)
   $activeGatewayProfile.set('default')
   plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
   vi.stubGlobal('window', closing)
+  setPercent(125)
   closing.dispatchEvent(new Event(event))
+  expect(sharedZoomPercent).toBe(125)
+  expect(setPercent.mock.calls).toEqual([[150], [150], [125]])
   expect(modePref.resolve('work')).toBe('light')
   expect(modePref.resolve('default')).toBe('dark')
   // Late host disposal of the closed renderer must not consume a new owner.
   disposers.shift()!()
+  closing.dispatchEvent(new Event(event === 'pagehide' ? 'beforeunload' : 'pagehide'))
+  expect(sharedZoomPercent).toBe(125)
+  expect(setPercent.mock.calls).toEqual([[150], [150], [125]])
   vi.stubGlobal('window', otherWindow)
-  disposers.splice(0).forEach(dispose => dispose())
+  disposers.splice(0).forEach(dispose => { dispose(); dispose() })
+  expect(sharedZoomPercent).toBe(0)
+  expect(setPercent.mock.calls).toEqual([[150], [150], [125], [0]])
   expect(modePref.resolve('default')).toBe('light')
   vi.unstubAllGlobals()
   remaining.remove()
