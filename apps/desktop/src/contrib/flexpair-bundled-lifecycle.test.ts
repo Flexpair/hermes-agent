@@ -70,7 +70,9 @@ it('discovers fresh defaults and preserves live disablement through restart and 
 
   for (const id of ids) {await app.store.setPluginEnabled(id, true)}
   expect(setPercent.mock.calls).toEqual([[150], [0], [150]])
-  expect(app.accent.$accentOverride.get()?.toUpperCase()).toBe('#157878')
+  // This loader fixture has no mounted ThemeProvider to publish the painted mode.
+  document.documentElement.dataset.hermesMode = 'dark'
+  await vi.waitFor(() => expect(app.accent.$accentOverride.get()?.toUpperCase()).toBe('#00FFFF'))
   expect(document.querySelector('[data-hermes-provider-filter="account"]')).not.toBeNull()
 
   for (const id of ids) {await app.store.setPluginEnabled(id, false)}

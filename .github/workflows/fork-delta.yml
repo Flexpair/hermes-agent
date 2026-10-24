@@ -31,7 +31,7 @@ jobs:
         run: scripts/run_tests.sh tests/hermes_state/test_runtime_worker_archive_staleness.py tests/hermes_cli/test_worktree_exit_owner_work.py tests/gateway/test_tui_session_reads.py -q
       - name: Bundled plugin discovery, lifecycle and Radio integration
         working-directory: apps/desktop
-        run: npx vitest run --project ui src/contrib/flexpair-bundled-lifecycle.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/provider-card-filter.test.ts src/contrib/radio-plugin.test.ts
+        run: npx vitest run --project ui src/contrib/flexpair-bundled-lifecycle.test.ts src/contrib/flexpair-color-palette-startup.test.tsx src/contrib/flexpair-color-palette.test.ts src/contrib/provider-card-filter.test.ts src/contrib/radio-plugin.test.ts
       - name: Affected Desktop typecheck, lint and build
         working-directory: apps/desktop
         run: npm run typecheck && npm run lint && npm run build
