@@ -57,13 +57,16 @@ const plugin: HermesPlugin = {
           ? saved as Record<string, unknown> : {}
       }
       const modes = readModes()
-      // The gateway atom is the SDK readiness seam: boot hints stop being
-      // authoritative once the live route is open.
+      // Socket liveness is not routing authority: a named live route remains
+      // known while disconnected, including when this plugin was disabled.
+      // Only the initial default placeholder needs a boot-profile hint.
       const bootProfile = new URLSearchParams(window.location.search).get('profile')?.trim()
         || desktopWindow.hermesDesktop?.localSkin?.profile
         || window.localStorage.getItem('hermes-desktop-active-profile-v1')
         || host.state.profile.get()
-      const profile = (host.state.gateway.get() === 'open' ? host.state.profile.get() : bootProfile)?.trim() || 'default'
+      const liveProfile = host.state.profile.get().trim()
+      const profile = (liveProfile !== 'default' || host.state.gateway.get() === 'open'
+        ? liveProfile : bootProfile)?.trim() || 'default'
       const profiles = profile === 'default' ? [] : [profile]
       const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
       interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: string[] }
@@ -164,14 +167,25 @@ const plugin: HermesPlugin = {
     observer.observe(root, { attributes: true, attributeFilter: ['data-hermes-mode'] })
     applyInitialAccent()
     // Disabling or reloading restores the prior mode, theme accent and default zoom.
-    ctx.onDispose(() => {
+    const lifecycleWindow = window
+    let disposed = false
+    const dispose = () => {
+      if (disposed) {
+        return
+      }
+      disposed = true
+      lifecycleWindow.removeEventListener('pagehide', dispose)
+      lifecycleWindow.removeEventListener('beforeunload', dispose)
       observer.disconnect()
       setAccentOverride(null)
       restoreMode()
       // Core percentToZoomLevel(0) returns DEFAULT_ZOOM_LEVEL, as Actual Size does.
       // Delegate the default to Hermes rather than hard-coding a percentage.
       setZoom(0)
-    })
+    }
+    lifecycleWindow.addEventListener('pagehide', dispose)
+    lifecycleWindow.addEventListener('beforeunload', dispose)
+    ctx.onDispose(dispose)
 
   }
 }

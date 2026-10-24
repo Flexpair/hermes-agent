@@ -15,7 +15,7 @@ The separately prepared `2026-10-18` branch applies this patch. Installers selec
 
 ## Fork CI proof reuse
 
-Fork pull requests admit only the enumerated Flexpair delta in `scripts/ci/fork_scope_paths.json`, relative to the immutable upstream anchor above. Unknown core, dependency, catalog-entry or runtime-installer changes fail admission; missing ancestry, unavailable API evidence or failed upstream consumers also fail closed. Adding a reviewed path requires code review, not a label override.
+Fork pull requests admit only the enumerated Flexpair delta in `scripts/ci/fork_scope_paths.json`, using a complete tree comparison against the immutable upstream anchor above with rename detection disabled. Squashed imports do not require anchor ancestry. Unknown core, dependency, catalog-entry or runtime-installer changes fail admission; a missing anchor object, a failed tree comparison, unavailable API evidence or failed upstream consumers also fail closed. Adding a reviewed path requires code review, not a label override.
 
 The gate revalidates successful upstream push run [39177780870](https://github.com/NousResearch/hermes-agent/actions/runs/39177780870) and its individual Linux/macOS/Windows, bootstrap, Rust, remote-backend and workspace-check consumers. Unchanged core trees reuse that proof; changed Desktop plugins still run focused integration, typecheck, lint and build locally. Skipped upstream E2E is not passing proof. The Actions summary distinguishes reused proof from executed fork checks.
 

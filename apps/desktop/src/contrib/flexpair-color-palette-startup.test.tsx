@@ -11,6 +11,56 @@ import { createPluginContext } from './plugin'
 
 const disposers: (() => void)[] = []
 
+it.each(['pagehide', 'beforeunload'])('releases only the closing window on %s without context disposal', event => {
+  window.localStorage.clear()
+  $gatewayState.set('open')
+  modePref.assign('default', 'light')
+  modePref.assign('work', 'light')
+  const closing = window
+  const remaining = document.createElement('iframe')
+  document.body.append(remaining)
+  const otherWindow = remaining.contentWindow!
+  // Separate renderer lifecycles, shared origin-wide preferences.
+  Object.defineProperty(otherWindow, 'localStorage', { configurable: true, value: closing.localStorage })
+  $activeGatewayProfile.set('work')
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  vi.stubGlobal('window', otherWindow)
+  $activeGatewayProfile.set('default')
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  vi.stubGlobal('window', closing)
+  closing.dispatchEvent(new Event(event))
+  expect(modePref.resolve('work')).toBe('light')
+  expect(modePref.resolve('default')).toBe('dark')
+  // Late host disposal of the closed renderer must not consume a new owner.
+  disposers.shift()!()
+  vi.stubGlobal('window', otherWindow)
+  disposers.splice(0).forEach(dispose => dispose())
+  expect(modePref.resolve('default')).toBe('light')
+  vi.unstubAllGlobals()
+  remaining.remove()
+})
+
+it.each(['connecting', 'closed', 'idle'] as const)('uses established work routing during %s and disable/re-enable', socketState => {
+  window.localStorage.clear()
+  Object.defineProperty(window, 'hermesDesktop', {
+    configurable: true, value: { localSkin: { profile: 'research' } }
+  })
+  window.history.replaceState(null, '', '/?profile=research')
+  modePref.assign('research', 'light')
+  modePref.assign('work', 'light')
+  $activeGatewayProfile.set('work')
+  $gatewayState.set('open')
+  $gatewayState.set(socketState)
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  expect(modePref.resolve('work')).toBe('dark')
+  expect(modePref.resolve('research')).toBe('light')
+  disposers.splice(0).forEach(dispose => dispose())
+  expect(modePref.resolve('work')).toBe('light')
+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+  expect(modePref.resolve('work')).toBe('dark')
+  expect(modePref.resolve('research')).toBe('light')
+})
+
 it.each(['work', 'research'])('isolates independent registrations when disposing %s first', first => {
   window.localStorage.clear()
   Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
@@ -143,6 +193,7 @@ it.each([
 afterEach(() => {
   act(() => cleanup())
   act(() => { disposers.splice(0).forEach(dispose => dispose()) })
+  vi.unstubAllGlobals()
   act(() => {
     window.localStorage.clear()
     $activeGatewayProfile.set('default')

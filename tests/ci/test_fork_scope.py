@@ -80,12 +80,87 @@ class ForkScopeTests(unittest.TestCase):
                 scope.main()
                 api.assert_not_called()
 
-    def test_missing_ancestry_fails_closed(self):
+    def test_non_ancestral_tree_equivalence_and_core_deltas(self):
+        import os
+        import subprocess
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+
+            def git(*args):
+                return subprocess.check_output(["git", *args], cwd=repo, stderr=subprocess.PIPE)
+
+            git("init", "-q")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            (repo / "core.txt").write_text("proven core\n")
+            git("add", ".")
+            git("commit", "-qm", "proven upstream")
+            anchor = git("rev-parse", "HEAD").decode().strip()
+            git("checkout", "--orphan", "fork")
+            (repo / "fork.txt").write_text("reviewed delta\n")
+            git("add", ".")
+            git("commit", "-qm", "squashed fork")
+            self.assertEqual(subprocess.run(
+                ["git", "merge-base", "--is-ancestor", anchor, "HEAD"], cwd=repo, check=False,
+            ).returncode, 1)
+            manifest = repo / "scripts/ci/fork_scope_paths.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(json.dumps(["fork.txt"]))
+            output, summary = repo / "output", repo / "summary"
+            proof = dict(self.proof_run, head_sha=anchor, html_url="https://example.invalid/proof")
+
+            def api(path):
+                return {"jobs": self.jobs} if "/jobs?" in path else proof
+
+            previous = Path.cwd()
+            try:
+                os.chdir(repo)
+                with patch.dict(scope.os.environ, GITHUB_REPOSITORY="Flexpair/hermes-agent",
+                                GITHUB_EVENT_NAME="pull_request", GITHUB_OUTPUT=str(output),
+                                GITHUB_STEP_SUMMARY=str(summary)), patch.object(scope, "ANCHOR", anchor), patch.object(scope, "api", side_effect=api) as evidence:
+                    scope.main()
+                    self.assertIn("fork_delta=true", output.read_text())
+                    self.assertIn(f"`{anchor}`", summary.read_text())
+                    for lane in scope.REUSED_LANES:
+                        self.assertIn(f"{lane}=false", output.read_text())
+                    output.unlink()
+                    summary.unlink()
+                    for change in ("modify", "delete", "add", "rename"):
+                        with self.subTest(change=change):
+                            git("reset", "--hard", "-q", "HEAD")
+                            if change == "modify":
+                                (repo / "core.txt").write_text("unproven core\n")
+                            elif change == "delete":
+                                (repo / "core.txt").unlink()
+                            elif change == "rename":
+                                (repo / "fork.txt").unlink()
+                                (repo / "core.txt").rename(repo / "fork.txt")
+                            else:
+                                (repo / "new-core.txt").write_text("unreviewed\n")
+                            git("add", "-u")
+                            if change == "add":
+                                git("add", "new-core.txt")
+                            git("commit", "-qm", change)
+                            evidence.reset_mock()
+                            with self.assertRaisesRegex(ValueError, "Unreviewed fork/core delta"):
+                                scope.main()
+                            evidence.assert_not_called()
+                            self.assertFalse(output.exists())
+                            self.assertFalse(summary.exists())
+                            git("reset", "--hard", "-q", "HEAD~1")
+            finally:
+                os.chdir(previous)
+
+    def test_missing_anchor_or_failed_diff_fails_closed(self):
         from unittest.mock import patch
         import subprocess
-        with patch.dict(scope.os.environ, GITHUB_REPOSITORY="Flexpair/hermes-agent", GITHUB_EVENT_NAME="pull_request"), patch.object(scope.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "git")):
+        with patch.dict(scope.os.environ, GITHUB_REPOSITORY="Flexpair/hermes-agent", GITHUB_EVENT_NAME="pull_request"), patch.object(scope, "git", side_effect=subprocess.CalledProcessError(128, "git diff")), patch.object(scope, "api") as evidence:
             with self.assertRaises(subprocess.CalledProcessError):
                 scope.main()
+            evidence.assert_not_called()
 
     def test_missing_network_proof_fails_closed(self):
         from unittest.mock import patch

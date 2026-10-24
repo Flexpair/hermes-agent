@@ -59,9 +59,11 @@ def main():
     # Push, release and dispatch retain the upstream full-suite policy.
     if os.environ.get("GITHUB_REPOSITORY") != "Flexpair/hermes-agent" or os.environ.get("GITHUB_EVENT_NAME") != "pull_request":
         return
-    subprocess.run(["git", "merge-base", "--is-ancestor", ANCHOR, "HEAD"], check=True, timeout=30)
+    # Squashed upstream imports need not retain ANCHOR's ancestry. Compare the
+    # complete trees directly: every non-reviewed path must still match the
+    # proven commit. Never use a merge-base/PR diff, which hides missing code.
     allowed = json.loads(Path("scripts/ci/fork_scope_paths.json").read_text(encoding="utf-8-sig"))
-    paths = git("diff", "--name-only", "-z", ANCHOR, "HEAD").decode().split("\0")
+    paths = git("diff", "--no-renames", "--name-only", "-z", ANCHOR, "HEAD").decode().split("\0")
     admit_paths(filter(None, paths), allowed)
     run = api(f"/actions/runs/{RUN}")
     jobs = []
