@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 from collections import Counter
 
 # The TUI surfaces whose /status and /context read as main's TUI sidecar did.
@@ -159,9 +160,12 @@ async def context_breakdown(connection, ref, params) -> dict:
 
 
 def _agent_context_marks(agent) -> tuple:
-    """What the breakdown reads off the agent besides the transcript: model, toolset size, window,
+    """What the breakdown reads off the agent besides the transcript: model, tool schemas, window,
     measured prompt tokens, compressions and the usage anchors."""
     comp = getattr(agent, 'context_compressor', None)
-    return (getattr(agent, 'model', None), getattr(agent, 'provider', None), len(getattr(agent, 'tools', None) or ()),
+    # Match the cost estimator's JSON input, including nested in-place schema edits.
+    # This is only a read-cache mark; never refresh the resident toolset or prompt.
+    tools = json.dumps(list(getattr(agent, 'tools', None) or []), ensure_ascii=False)
+    return (getattr(agent, 'model', None), getattr(agent, 'provider', None), tools,
             *(getattr(comp, name, None) for name in ('context_length', 'last_prompt_tokens', 'compression_count')),
             repr(getattr(agent, '_turn_base_usage_anchor', None)), repr(getattr(agent, '_usage_anchor', None)))
