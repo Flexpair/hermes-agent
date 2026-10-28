@@ -20,8 +20,8 @@ set -u
 # hygiene can't break the locked sync the way it used to before pm owned it.
 export UV_NO_CONFIG=1
 
-REPO_URL="${HERMES_REPO_URL:-https://github.com/NousResearch/hermes-agent.git}"
-BRANCH="main"
+REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
+BRANCH="2026-10-29-patched"
 INSTALL_COMMIT=""
 # The update channel to install: stable (the latest published release, the default for the
 # official repository's main line) or main (every commit). An explicit choice is persisted.
@@ -708,6 +708,22 @@ stable_unreachable() {
 }
 
 stage_repository() {
+    # The distribution follows the explicitly selected deploy branch, never a release pin.
+    if [ "$BRANCH" = 2026-10-29-patched ]; then
+        [ -z "$INSTALL_COMMIT$CHANNEL" ] || fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
+        if [ -e "$INSTALL_DIR/.git" ]; then
+            local source dirty
+            source="$(git -C "$INSTALL_DIR" config --get remote.origin.url)" || fail "cannot read origin" git_fetch_failed
+            [ "$source" = "$REPO_URL" ] || fail "refusing a different repository" dir_not_checkout
+            dirty="$(git -C "$INSTALL_DIR" status --porcelain)" || fail "cannot inspect local changes" local_changes_blocked
+            [ -z "$dirty" ] || fail "commit or move local changes before updating" local_changes_blocked
+            run_logged "Fetching origin/$BRANCH" git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || fail "git fetch failed" git_fetch_failed
+            run_logged "Checking out $BRANCH" git -C "$INSTALL_DIR" checkout "$BRANCH" || fail "git checkout failed" git_checkout_failed
+            run_logged "Fast-forwarding $BRANCH" git -C "$INSTALL_DIR" merge --ff-only "origin/$BRANCH" || fail "cannot fast-forward deploy branch" git_checkout_failed
+            [ "$(git -C "$INSTALL_DIR" rev-parse HEAD)" = "$(git -C "$INSTALL_DIR" rev-parse "origin/$BRANCH")" ] || fail "local branch is ahead of deploy HEAD" git_checkout_failed
+            return 0
+        fi
+    fi
     local pinned=false channel="" release="" origin
     # An interrupted clone from an older installer can leave a .git with no
     # initial commit, where stash/checkout abort ("You do not have the

@@ -85,6 +85,11 @@ class RuntimeSessionCompressionMixin:
             model_config_patch=model_config_patch, watermark=watermark, lock_holder=lock_holder,
             tail_count=tail_count, carried_messages=carried, covered_ids=covered_ids,
             unresolved_held=unresolved, held_for_cas=cas))
+        if result.get('stale_held_rows'):
+            # _apply has durably cleared the receipted entry before the caller discards its pass.
+            from hermes_state_errors import HeldRowRewrittenError
+            raise HeldRowRewrittenError(
+                f'a held row of session {session_id} was rewritten in place before the commit')
         from agent.runtime_session_store import apply_row_annotations
         apply_row_annotations(compacted_messages, result['annotations'])
         return result['value']
