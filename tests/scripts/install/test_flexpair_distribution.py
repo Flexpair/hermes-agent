@@ -11,7 +11,7 @@ import pytest
 pytestmark = pytest.mark.platforms("posix")
 ROOT = Path(__file__).resolve().parents[3]
 # The deployed branch name is whatever the checked-out installer carries.
-BRANCH = re.search(r'^BRANCH="([^"]+)"', (ROOT / "scripts/install.sh").read_text(), re.M).group(1)
+BRANCH = re.search(r'^BRANCH="([^"]+)"', (ROOT / "scripts/install.sh").read_text(), re.MULTILINE).group(1)
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,7 @@ def patched_installer(tmp_path):
     patch.write_text((ROOT / "flexpair.patch").read_text().replace("@BRANCH@", BRANCH))
     patch = str(patch)
     only = ("--include=scripts/install.sh", "--include=scripts/install.ps1")  # the patch also carries core repairs
-    if subprocess.run(["git", "-C", str(repo), "apply", *only, "--reverse", "--check", patch], capture_output=True).returncode == 0:
+    if subprocess.run(["git", "-C", str(repo), "apply", *only, "--reverse", "--check", patch], capture_output=True, check=False).returncode == 0:
         git(repo, "apply", *only, "--reverse", patch)
     git(repo, "apply", *only, "--check", patch)
     git(repo, "apply", *only, patch)
