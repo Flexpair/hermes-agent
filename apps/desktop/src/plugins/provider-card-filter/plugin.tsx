@@ -24,7 +24,7 @@ const plugin: HermesPlugin = {
     const style = document.createElement('style');
     style.id = 'hermes-provider-card-filter';
     style.textContent = css + '\n[data-hermes-provider-filter="account"], [data-hermes-provider-filter="messenger"] { display: none !important; }';
-    document.head.appendChild(style);
+    document.body.appendChild(style);
     const marked = new Map<Element, string>();
     let lastCount = -1;
 

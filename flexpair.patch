@@ -1,91 +1,3 @@
-diff --git a/scripts/install.ps1 b/scripts/install.ps1
-index 951b062e3c..e51444539f 100644
---- a/scripts/install.ps1
-+++ b/scripts/install.ps1
-@@ -23,7 +23,7 @@
- #                         `hermes update --set-channel`
- [CmdletBinding(PositionalBinding=$false)]
- param(
--    [string]$Branch = "main",
-+    [string]$Branch = "@BRANCH@",
-     [string]$Commit = "",
-     [string]$Channel = $(if ($env:HERMES_INSTALL_CHANNEL) { $env:HERMES_INSTALL_CHANNEL } else { "" }),
-     [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
-@@ -77,7 +77,7 @@ $script:BoundParams = $PSBoundParameters
- # Under iex, script scope is the caller's session and outlives a run; start
- # each run without the previous run's answer (see Set-LauncherUserPath).
- $script:BinDirOnCallerPath = $null
--$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/NousResearch/hermes-agent.git" }
-+$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/Flexpair/hermes-agent.git" }
- 
- # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
- # Derived from pm/lock.json. DO NOT EDIT BY HAND:
-@@ -961,6 +961,27 @@ function Confirm-StableUnreachable([string]$What) {
- }
- 
- function Stage-Repository {
-+    if ($Branch -ceq '@BRANCH@') {
-+        if ($Commit -or $Channel) { Fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch }
-+        if (Test-Path (Join-Path $InstallDir '.git')) {
-+            if (-not (Ensure-Git)) { Fail "Git unavailable" unsupported_platform }
-+            $source = "$(Invoke-Native { git -C $InstallDir config --get remote.origin.url })".Trim()
-+            if ($LASTEXITCODE -or $source -cne $RepoUrl) { Fail "refusing a different repository" dir_not_checkout }
-+            $dirty = Invoke-Native { git -C $InstallDir status --porcelain }
-+            if ($LASTEXITCODE -or $dirty) { Fail "commit or move local changes before updating" local_changes_blocked }
-+            Invoke-Logged "Fetching origin/$Branch" { git -C $InstallDir fetch origin "+refs/heads/${Branch}:refs/remotes/origin/${Branch}" }
-+            if ($LASTEXITCODE) { Fail "git fetch failed" git_fetch_failed }
-+            Invoke-Logged "Checking out $Branch" { git -C $InstallDir checkout $Branch }
-+            if ($LASTEXITCODE) { Fail "git checkout failed" git_checkout_failed }
-+            Invoke-Logged "Fast-forwarding $Branch" { git -C $InstallDir merge --ff-only "origin/$Branch" }
-+            if ($LASTEXITCODE) { Fail "cannot fast-forward deploy branch" git_checkout_failed }
-+            $head = Invoke-Native { git -C $InstallDir rev-parse HEAD }
-+            if ($LASTEXITCODE) { Fail "cannot read HEAD" git_checkout_failed }
-+            $target = Invoke-Native { git -C $InstallDir rev-parse "origin/$Branch" }
-+            if ($LASTEXITCODE -or "$head" -cne "$target") { Fail "local branch is ahead of deploy HEAD" git_checkout_failed }
-+            return
-+        }
-+    }
-     $pinned = $false
-     # Not $channel: variables are case-insensitive, and the helpers below read the -Channel
-     # parameter through this scope.
-diff --git a/scripts/install.sh b/scripts/install.sh
-index 395208bdf3..cccfa1431a 100755
---- a/scripts/install.sh
-+++ b/scripts/install.sh
-@@ -20,8 +20,8 @@ set -u
- # hygiene can't break the locked sync the way it used to before pm owned it.
- export UV_NO_CONFIG=1
- 
--REPO_URL="${HERMES_REPO_URL:-https://github.com/NousResearch/hermes-agent.git}"
--BRANCH="main"
-+REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
-+BRANCH="@BRANCH@"
- INSTALL_COMMIT=""
- # The update channel to install: stable (the latest published release, the default for the
- # official repository's main line) or main (every commit). An explicit choice is persisted.
-@@ -708,6 +708,22 @@ stable_unreachable() {
- }
- 
- stage_repository() {
-+    # The distribution follows the explicitly selected deploy branch, never a release pin.
-+    if [ "$BRANCH" = @BRANCH@ ]; then
-+        [ -z "$INSTALL_COMMIT$CHANNEL" ] || fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
-+        if [ -e "$INSTALL_DIR/.git" ]; then
-+            local source dirty
-+            source="$(git -C "$INSTALL_DIR" config --get remote.origin.url)" || fail "cannot read origin" git_fetch_failed
-+            [ "$source" = "$REPO_URL" ] || fail "refusing a different repository" dir_not_checkout
-+            dirty="$(git -C "$INSTALL_DIR" status --porcelain)" || fail "cannot inspect local changes" local_changes_blocked
-+            [ -z "$dirty" ] || fail "commit or move local changes before updating" local_changes_blocked
-+            run_logged "Fetching origin/$BRANCH" git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || fail "git fetch failed" git_fetch_failed
-+            run_logged "Checking out $BRANCH" git -C "$INSTALL_DIR" checkout "$BRANCH" || fail "git checkout failed" git_checkout_failed
-+            run_logged "Fast-forwarding $BRANCH" git -C "$INSTALL_DIR" merge --ff-only "origin/$BRANCH" || fail "cannot fast-forward deploy branch" git_checkout_failed
-+            [ "$(git -C "$INSTALL_DIR" rev-parse HEAD)" = "$(git -C "$INSTALL_DIR" rev-parse "origin/$BRANCH")" ] || fail "local branch is ahead of deploy HEAD" git_checkout_failed
-+            return 0
-+        fi
-+    fi
-     local pinned=false channel="" release="" origin
-     # An interrupted clone from an older installer can leave a .git with no
-     # initial commit, where stash/checkout abort ("You do not have the
 diff --git a/agent/runtime_session_compression.py b/agent/runtime_session_compression.py
 index 4f77b9e41b..de6387c650 100644
 --- a/agent/runtime_session_compression.py
@@ -103,12 +15,15 @@ index 4f77b9e41b..de6387c650 100644
          apply_row_annotations(compacted_messages, result['annotations'])
          return result['value']
 diff --git a/apps/desktop/src/contrib/radio-plugin.test.ts b/apps/desktop/src/contrib/radio-plugin.test.ts
-index d6c30125aa..4dcb62bab3 100644
+index 1f88a47428..678d764b76 100644
 --- a/apps/desktop/src/contrib/radio-plugin.test.ts
 +++ b/apps/desktop/src/contrib/radio-plugin.test.ts
-@@ -34,7 +34,13 @@ afterEach(async () => {
+@@ -32,9 +32,15 @@ afterEach(async () => {
+ })
+ 
  describe('bundled Radio plugin', () => {
-   it('inventories off by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
+-  it('inventories off by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
++  it('starts on by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
      // Other bundled plugins are outside this integration test; Radio has no saved decision.
 -    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
 +    $pluginDecisions.set({
@@ -121,7 +36,46 @@ index d6c30125aa..4dcb62bab3 100644
      const fetch = vi.fn()
      const audio = vi.fn()
      vi.stubGlobal('fetch', fetch)
-@@ -59,7 +65,13 @@ describe('bundled Radio plugin', () => {
+@@ -44,24 +50,49 @@ describe('bundled Radio plugin', () => {
+     const initialStyles = document.head.querySelectorAll('style').length
+ 
+     discoverBundledPlugins()
+-    expect($pluginRecords.get().radio).toMatchObject({ kind: 'bundled', status: 'disabled' })
++    expect($pluginRecords.get().radio.status).toBe('loaded')
++    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(true)
++    expect(document.head.querySelectorAll('style').length).toBe(initialStyles + 1)
++    expect(player().status.get()).toBe('paused')
++    expect(audio).not.toHaveBeenCalled()
++    expect(fetch).not.toHaveBeenCalled()
++
++    await setPluginEnabled('radio', false)
+     expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
+     expect(document.head.querySelectorAll('style').length).toBe(initialStyles)
++    expect($pluginDecisions.get().radio).toBe(false)
+ 
+     await setPluginEnabled('radio', true)
+     expect($pluginRecords.get().radio.status).toBe('loaded')
++    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(true)
+     expect(player().status.get()).toBe('paused')
+     expect(audio).not.toHaveBeenCalled()
+     expect(fetch).not.toHaveBeenCalled()
++  })
+ 
+-    await setPluginEnabled('radio', false)
++  it('keeps an explicit disabled decision across bundled rediscovery', async () => {
++    $pluginDecisions.set({
++      accent: false,
++      kanban: false,
++      'hermes-bots': false,
++      'flexpair-color-palette': false,
++      'provider-card-filter': false,
++      radio: false
++    })
++    discoverBundledPlugins()
++    expect($pluginRecords.get().radio?.status).toBe('disabled')
+     expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
+-    expect(document.head.querySelectorAll('style').length).toBe(initialStyles)
+-    expect($pluginDecisions.get().radio).toBe(false)
    })
  
    it('releases the stream on disable and ignores late media events from the old player', async () => {
@@ -131,12 +85,13 @@ index d6c30125aa..4dcb62bab3 100644
 +      kanban: false,
 +      'hermes-bots': false,
 +      'flexpair-color-palette': false,
-+      'provider-card-filter': false
++      'provider-card-filter': false,
++      radio: false
 +    })
      discoverBundledPlugins()
      // jsdom has no decoder: the actual player and plugin lifecycle run against DOM media events.
      vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
-@@ -86,7 +98,13 @@ describe('bundled Radio plugin', () => {
+@@ -88,7 +119,14 @@ describe('bundled Radio plugin', () => {
    })
  
    it('survives external pause without destroying the stream or blocking resume', async () => {
@@ -146,12 +101,13 @@ index d6c30125aa..4dcb62bab3 100644
 +      kanban: false,
 +      'hermes-bots': false,
 +      'flexpair-color-palette': false,
-+      'provider-card-filter': false
++      'provider-card-filter': false,
++      radio: false
 +    })
      discoverBundledPlugins()
      vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
      vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-@@ -117,7 +135,13 @@ describe('bundled Radio plugin', () => {
+@@ -119,7 +157,14 @@ describe('bundled Radio plugin', () => {
    })
  
    it('resumes the preserved stream when dictation text lands in an editable field (#108113)', async () => {
@@ -161,12 +117,13 @@ index d6c30125aa..4dcb62bab3 100644
 +      kanban: false,
 +      'hermes-bots': false,
 +      'flexpair-color-palette': false,
-+      'provider-card-filter': false
++      'provider-card-filter': false,
++      radio: false
 +    })
      discoverBundledPlugins()
      const playMock = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
      vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-@@ -150,7 +174,13 @@ describe('bundled Radio plugin', () => {
+@@ -152,7 +197,14 @@ describe('bundled Radio plugin', () => {
    })
  
    it('keeps the plugin Pause destructive: no paste resume, and Play reconnects (#108113)', async () => {
@@ -176,24 +133,54 @@ index d6c30125aa..4dcb62bab3 100644
 +      kanban: false,
 +      'hermes-bots': false,
 +      'flexpair-color-palette': false,
-+      'provider-card-filter': false
++      'provider-card-filter': false,
++      radio: false
 +    })
      discoverBundledPlugins()
      const playMock = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
      vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+diff --git a/apps/desktop/src/plugins/radio/README.md b/apps/desktop/src/plugins/radio/README.md
+index 59a4cbc1d3..ff7831d218 100644
+--- a/apps/desktop/src/plugins/radio/README.md
++++ b/apps/desktop/src/plugins/radio/README.md
+@@ -1,6 +1,6 @@
+ # Radio
+ 
+-Bundled Hermes Desktop plugin, **off by default**. Enable **Radio** in
++Bundled Hermes Desktop plugin, **on by default**. You can disable it anytime in
+ Capabilities → Plugins. Playback starts only when you press Play.
+ 
+ ## Controls
+@@ -20,8 +20,9 @@ Pins, station, and volume use plugin-scoped local storage.
+ 
+ `plugin.js` imports only `@hermes/plugin-sdk`, `react`, and
+ `react/jsx-runtime`. Existing bundled discovery finds it automatically;
+-`defaultEnabled: false` uses the ordinary live enable toggle. No shell,
+-SDK, backend, dependency, or registry changes are needed.
++`defaultEnabled: true` registers Radio for new users and the ordinary live
++enable toggle preserves an explicit off choice. No shell, SDK, backend,
++dependency, or registry changes are needed.
+ 
+ The same plain-ESM file can be loaded through the runtime plugin door at
+ `$HERMES_HOME/desktop-plugins/radio/plugin.js` for development. Do not install
+diff --git a/apps/desktop/src/plugins/radio/plugin.js b/apps/desktop/src/plugins/radio/plugin.js
+index 5ee509d861..85b87b94be 100644
+--- a/apps/desktop/src/plugins/radio/plugin.js
++++ b/apps/desktop/src/plugins/radio/plugin.js
+@@ -685,7 +685,7 @@ export default {
+   id: ID,
+   name: 'Radio',
+   description: 'Free live radio with pinned stations, search, and an audio-reactive waveform.',
+-  defaultEnabled: false,
++  defaultEnabled: true,
+   register(ctx) {
+     ctx.i18n.register(LOCALES)
+     const style = document.createElement('style')
 diff --git a/gateway/session_tui_reads.py b/gateway/session_tui_reads.py
-index 2dd430d391..fd4857b89c 100644
+index c779cad633..fcc50cb510 100644
 --- a/gateway/session_tui_reads.py
 +++ b/gateway/session_tui_reads.py
-@@ -11,6 +11,7 @@ from __future__ import annotations
- 
- import asyncio
- import contextlib
-+import json
- from collections import Counter
- 
- # The TUI surfaces whose /status and /context read as main's TUI sidecar did.
-@@ -159,9 +160,12 @@ async def context_breakdown(connection, ref, params) -> dict:
+@@ -200,9 +200,12 @@ def _stored_breakdown(row, conversation, usage) -> dict:
  
  
  def _agent_context_marks(agent) -> tuple:
@@ -275,8 +262,96 @@ index 5b301db727..5391f423ae 100644
      from hermes_state_runtime import row_annotations
      return {'value': value, 'annotations': row_annotations(payload['messages'])}
  
+diff --git a/scripts/install.ps1 b/scripts/install.ps1
+index 9bcdfb29bd..7558b0f5ad 100644
+--- a/scripts/install.ps1
++++ b/scripts/install.ps1
+@@ -22,7 +22,7 @@
+ #                         `hermes update --set-channel`
+ [CmdletBinding(PositionalBinding=$false)]
+ param(
+-    [string]$Branch = "main",
++    [string]$Branch = "@BRANCH@",
+     [string]$Commit = "",
+     [string]$Channel = $(if ($env:HERMES_INSTALL_CHANNEL) { $env:HERMES_INSTALL_CHANNEL } else { "" }),
+     [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
+@@ -76,7 +76,7 @@ $script:BoundParams = $PSBoundParameters
+ # Under iex, script scope is the caller's session and outlives a run; start
+ # each run without the previous run's answer (see Set-LauncherUserPath).
+ $script:BinDirOnCallerPath = $null
+-$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/NousResearch/hermes-agent.git" }
++$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/Flexpair/hermes-agent.git" }
+ 
+ # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
+ # Derived from pm/lock.json. DO NOT EDIT BY HAND:
+@@ -960,6 +960,27 @@ function Confirm-StableUnreachable([string]$What) {
+ }
+ 
+ function Stage-Repository {
++    if ($Branch -ceq '@BRANCH@') {
++        if ($Commit -or $Channel) { Fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch }
++        if (Test-Path (Join-Path $InstallDir '.git')) {
++            if (-not (Ensure-Git)) { Fail "Git unavailable" unsupported_platform }
++            $source = "$(Invoke-Native { git -C $InstallDir config --get remote.origin.url })".Trim()
++            if ($LASTEXITCODE -or $source -cne $RepoUrl) { Fail "refusing a different repository" dir_not_checkout }
++            $dirty = Invoke-Native { git -C $InstallDir status --porcelain }
++            if ($LASTEXITCODE -or $dirty) { Fail "commit or move local changes before updating" local_changes_blocked }
++            Invoke-Logged "Fetching origin/$Branch" { git -C $InstallDir fetch origin "+refs/heads/${Branch}:refs/remotes/origin/${Branch}" }
++            if ($LASTEXITCODE) { Fail "git fetch failed" git_fetch_failed }
++            Invoke-Logged "Checking out $Branch" { git -C $InstallDir checkout $Branch }
++            if ($LASTEXITCODE) { Fail "git checkout failed" git_checkout_failed }
++            Invoke-Logged "Fast-forwarding $Branch" { git -C $InstallDir merge --ff-only "origin/$Branch" }
++            if ($LASTEXITCODE) { Fail "cannot fast-forward deploy branch" git_checkout_failed }
++            $head = Invoke-Native { git -C $InstallDir rev-parse HEAD }
++            if ($LASTEXITCODE) { Fail "cannot read HEAD" git_checkout_failed }
++            $target = Invoke-Native { git -C $InstallDir rev-parse "origin/$Branch" }
++            if ($LASTEXITCODE -or "$head" -cne "$target") { Fail "local branch is ahead of deploy HEAD" git_checkout_failed }
++            return
++        }
++    }
+     $pinned = $false
+     # Not $channel: variables are case-insensitive, and the helpers below read the -Channel
+     # parameter through this scope.
+diff --git a/scripts/install.sh b/scripts/install.sh
+index eb7308c17f..fd53b9b2ce 100755
+--- a/scripts/install.sh
++++ b/scripts/install.sh
+@@ -20,8 +20,8 @@ set -u
+ # hygiene can't break the locked sync the way it used to before pm owned it.
+ export UV_NO_CONFIG=1
+ 
+-REPO_URL="${HERMES_REPO_URL:-https://github.com/NousResearch/hermes-agent.git}"
+-BRANCH="main"
++REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
++BRANCH="@BRANCH@"
+ INSTALL_COMMIT=""
+ # The update channel to install: stable (the latest published release, the default for the
+ # official repository's main line) or main (every commit). An explicit choice is persisted.
+@@ -708,6 +708,22 @@ stable_unreachable() {
+ }
+ 
+ stage_repository() {
++    # The distribution follows the explicitly selected deploy branch, never a release pin.
++    if [ "$BRANCH" = @BRANCH@ ]; then
++        [ -z "$INSTALL_COMMIT$CHANNEL" ] || fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
++        if [ -e "$INSTALL_DIR/.git" ]; then
++            local source dirty
++            source="$(git -C "$INSTALL_DIR" config --get remote.origin.url)" || fail "cannot read origin" git_fetch_failed
++            [ "$source" = "$REPO_URL" ] || fail "refusing a different repository" dir_not_checkout
++            dirty="$(git -C "$INSTALL_DIR" status --porcelain)" || fail "cannot inspect local changes" local_changes_blocked
++            [ -z "$dirty" ] || fail "commit or move local changes before updating" local_changes_blocked
++            run_logged "Fetching origin/$BRANCH" git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || fail "git fetch failed" git_fetch_failed
++            run_logged "Checking out $BRANCH" git -C "$INSTALL_DIR" checkout "$BRANCH" || fail "git checkout failed" git_checkout_failed
++            run_logged "Fast-forwarding $BRANCH" git -C "$INSTALL_DIR" merge --ff-only "origin/$BRANCH" || fail "cannot fast-forward deploy branch" git_checkout_failed
++            [ "$(git -C "$INSTALL_DIR" rev-parse HEAD)" = "$(git -C "$INSTALL_DIR" rev-parse "origin/$BRANCH")" ] || fail "local branch is ahead of deploy HEAD" git_checkout_failed
++            return 0
++        fi
++    fi
+     local pinned=false channel="" release="" origin
+     # An interrupted clone from an older installer can leave a .git with no
+     # initial commit, where stash/checkout abort ("You do not have the
 diff --git a/tests/gateway/test_tui_session_reads.py b/tests/gateway/test_tui_session_reads.py
-index 7f380686cd..7195570113 100644
+index 6255884297..7d7ec75dfe 100644
 --- a/tests/gateway/test_tui_session_reads.py
 +++ b/tests/gateway/test_tui_session_reads.py
 @@ -15,6 +15,10 @@ import pytest_asyncio
@@ -290,7 +365,7 @@ index 7f380686cd..7195570113 100644
      from gateway import run
      from gateway.config import GatewayConfig
      from gateway.session import SessionStore
-@@ -285,3 +289,46 @@ async def test_context_breakdown_follows_an_in_place_row_rewrite(owner, monkeypa
+@@ -299,3 +303,46 @@ async def test_context_breakdown_follows_an_in_place_row_rewrite(owner, monkeypa
      assert db.set_user_message_content(stored, row_id, expanded) == 1
      after = await owner.call('session.context_breakdown', session_id=sid)
      assert after['estimated_total'] == len(expanded) > before['estimated_total']
@@ -601,7 +676,7 @@ index 835f842e32..ad3d9035df 100644
  | [**inference-sh-cli**](../user-guide/skills/optional/devops/devops-inference-sh-cli.md) | Run 150+ AI apps (image, video, LLM) via inference.sh CLI. |
  | [**pinggy-tunnel**](../user-guide/skills/optional/devops/devops-pinggy-tunnel.md) | Zero-install localhost tunnels over SSH via Pinggy. |
 diff --git a/website/sidebars.ts b/website/sidebars.ts
-index 99988dd328..34965d5bee 100644
+index 0b6a05597f..4432c46e70 100644
 --- a/website/sidebars.ts
 +++ b/website/sidebars.ts
 @@ -415,6 +415,7 @@ const sidebars: SidebarsConfig = {

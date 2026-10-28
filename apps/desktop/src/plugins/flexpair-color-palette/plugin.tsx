@@ -1,6 +1,6 @@
 // Fixed Flexpair accent seeds; palette derivation remains Hermes core behavior.
 import type { HermesPlugin } from '@hermes/plugin-sdk'
-import { host, setAccentOverride } from '@hermes/plugin-sdk'
+import { host, randomUuid, setAccentOverride } from '@hermes/plugin-sdk'
 
 interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: Record<string, string>, generations?: Record<string, string> }
 const legacyOwnerPrefix = 'legacy:'
@@ -10,7 +10,7 @@ function registrationOwner(window: Window, profile: string): string {
   let windowId = window.sessionStorage.getItem(key)
 
   if (!windowId) {
-    windowId = crypto.randomUUID()
+    windowId = randomUuid()
     window.sessionStorage.setItem(key, windowId)
   }
 
@@ -48,7 +48,7 @@ function discoverOwners(
     return () => {}
   }
 
-  const request = crypto.randomUUID()
+  const request = randomUuid()
   const replies = new Set<string>()
   let pending = true
 
@@ -190,7 +190,7 @@ const plugin: HermesPlugin = {
       const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
       // Capture the renderer slot and route before the pending lock can yield.
       const owner = registrationOwner(window, profile)
-      const ownerGeneration = crypto.randomUUID()
+      const ownerGeneration = randomUuid()
       const releasePrefix = `${baselineKey}:released:`
       withPaletteTransaction(() => {
       if (disposed) { return }

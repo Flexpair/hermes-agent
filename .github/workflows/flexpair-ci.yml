@@ -1,0 +1,124 @@
+name: Flexpair focused verification
+
+# Pull-request head SHA is a GitHub-provided immutable commit identifier.
+# This independent check does not replace upstream's existing CI or Sonar gate.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-proof:
+    name: Verify upstream evidence and fork scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch upstream reference
+        run: git fetch --no-tags https://github.com/NousResearch/hermes-agent.git +refs/heads/main:refs/remotes/upstream/main
+      - name: Check the inherited revision and its CI
+        run: python3 flexpair/ci_proof.py
+
+  main-tests:
+    name: Verify fork main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind the current main ref for attribution and diff checks
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if [ -n "$PR_BASE" ]; then
+            git cat-file -e "${PR_BASE}^{commit}"
+            git update-ref refs/remotes/origin/main "$PR_BASE"
+          fi
+      - uses: ./.github/actions/setup-pm
+        with:
+          toolchain: all
+          extras: '[]'
+          test-environment: 'true'
+      - name: Install locked desktop dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Installer, skill and admission tests
+        run: scripts/run_tests.sh tests/scripts/install/test_flexpair_distribution.py tests/skills/test_flexpair_hermes_distribution_skill.py tests/ci/test_flexpair_ci_proof.py tests/ci/test_flexpair_ci_supply_chain.py -q -j 2
+      - name: Contributor attribution
+        run: python scripts/audit_pr_attribution.py
+      - name: Repository hygiene and code-health ratchet
+        run: python scripts/check --only agents-md,case-collisions,lazy-deps,profile-archives,blob-size,health --base origin/main
+      - name: Fail on critical supply-chain patterns in PR diff
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: python3 flexpair/ci_supply_chain.py
+      - name: Bundled plugins and unchanged Radio
+        working-directory: apps/desktop
+        run: npx --no-install vitest run --project ui src/contrib/radio-plugin.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/flexpair-color-palette-startup.test.tsx src/contrib/provider-card-filter.test.ts src/contrib/flexpair-bundled-lifecycle.test.ts
+      - name: Lint fork-owned plugins
+        working-directory: apps/desktop
+        run: node ../../node_modules/eslint/bin/eslint.js src/plugins/provider-card-filter/plugin.tsx src/plugins/flexpair-color-palette/plugin.tsx
+      - name: Typecheck and production build
+        working-directory: apps/desktop
+        run: npm run typecheck && npm run build
+
+  patch-tests:
+    name: Verify rendered distribution patch
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Create isolated patch branch
+        run: |
+          set -euo pipefail
+          base=$(git rev-parse HEAD)
+          git config user.name 'Flexpair CI'
+          git config user.email 'actions@users.noreply.github.com'
+          bash flexpair/new-branch.sh ci-test "$base"
+          test "$(git branch --show-current)" = ci-test-patched
+      - uses: ./.github/actions/setup-pm
+        with:
+          toolchain: all
+          extras: '[]'
+          test-environment: 'true'
+      - name: Install locked desktop dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Patched Python behavioral regressions
+        run: scripts/run_tests.sh tests/gateway/test_tui_session_reads.py tests/hermes_state/test_runtime_worker_archive_staleness.py tests/hermes_state/test_session_delete_hook.py tests/hermes_state/test_session_delete_profile_scope.py tests/skills/test_skill_docs_contract.py -q -j 2
+      - name: Patched Radio and bundled plugins
+        working-directory: apps/desktop
+        run: npx --no-install vitest run --project ui src/contrib/radio-plugin.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/flexpair-color-palette-startup.test.tsx src/contrib/provider-card-filter.test.ts src/contrib/flexpair-bundled-lifecycle.test.ts
+      - name: Patched Desktop typecheck and production build
+        working-directory: apps/desktop
+        run: npm run typecheck && npm run build
+
+  focused-gate:
+    name: Flexpair focused verification
+    needs: [upstream-proof, main-tests, patch-tests]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RESULTS: ${{ toJSON(needs) }}
+    steps:
+      - name: Require all evidence and integration checks
+        run: |
+          python3 -c 'import json, os; needs=json.loads(os.environ["RESULTS"]); print({key: value["result"] for key, value in needs.items()}); assert all(value["result"] == "success" for value in needs.values()), "A required focused check did not succeed"'
