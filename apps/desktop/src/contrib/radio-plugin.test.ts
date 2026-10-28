@@ -32,7 +32,7 @@ afterEach(async () => {
 })
 
 describe('bundled Radio plugin', () => {
-  it('starts off by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
+  it('inventories off by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
     // Other bundled plugins are outside this integration test; Radio has no saved decision.
     $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
     const fetch = vi.fn()
@@ -46,8 +46,7 @@ describe('bundled Radio plugin', () => {
     discoverBundledPlugins()
     expect($pluginRecords.get().radio).toMatchObject({ kind: 'bundled', status: 'disabled' })
     expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
-    // The Flexpair palette plugin inserts its own style during bundled discovery.
-    expect(document.head.querySelectorAll('style').length).toBe(initialStyles + 1)
+    expect(document.head.querySelectorAll('style').length).toBe(initialStyles)
 
     await setPluginEnabled('radio', true)
     expect($pluginRecords.get().radio.status).toBe('loaded')
@@ -57,7 +56,7 @@ describe('bundled Radio plugin', () => {
 
     await setPluginEnabled('radio', false)
     expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
-    expect(document.head.querySelectorAll('style').length).toBe(initialStyles + 1)
+    expect(document.head.querySelectorAll('style').length).toBe(initialStyles)
     expect($pluginDecisions.get().radio).toBe(false)
   })
 
