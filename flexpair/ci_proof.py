@@ -21,7 +21,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable, Sequence
-from urllib.error import HTTPError, URLError
+from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
@@ -313,7 +313,7 @@ def _github_get_json(url: str, token: str) -> object:
             raw = response.read(MAX_API_RESPONSE_BYTES + 1)
     except HTTPError as exc:
         raise ProofError(f"GitHub API request failed (HTTP {exc.code})") from None
-    except (URLError, TimeoutError, OSError):
+    except OSError:
         raise ProofError("GitHub API request failed or timed out") from None
     if len(raw) > MAX_API_RESPONSE_BYTES:
         raise ProofError("GitHub API response exceeded the size limit")
@@ -321,6 +321,49 @@ def _github_get_json(url: str, token: str) -> object:
         return json.loads(raw.decode("utf-8", errors="strict"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise ProofError("GitHub API returned invalid JSON") from None
+
+
+def _pagination_response(
+    payload: object,
+    collection_key: str,
+) -> tuple[int, list[dict[str, object]]]:
+    """Validate one page's GitHub response shape and return its items/count."""
+    if not isinstance(payload, dict):
+        raise ProofError("GitHub API response has an invalid shape")
+    count = payload.get("total_count")
+    page_items = payload.get(collection_key)
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        raise ProofError("GitHub API response has an invalid total_count")
+    if not isinstance(page_items, list) or any(not isinstance(item, dict) for item in page_items):
+        raise ProofError(f"GitHub API response has an invalid {collection_key} list")
+    return count, page_items
+
+
+def _pagination_page_count(total_count: int) -> int:
+    page_count = max(1, (total_count + API_PAGE_SIZE - 1) // API_PAGE_SIZE)
+    if page_count > MAX_API_PAGES:
+        raise ProofError("GitHub API pagination cap exceeded")
+    return page_count
+
+
+def _append_pagination_page(
+    items: list[dict[str, object]],
+    page_items: list[dict[str, object]],
+    page: int,
+    page_count: int | None,
+    expected_count: int | None,
+) -> bool:
+    """Append a validated page, rejecting excess or incomplete page sequences."""
+    if page_count is None:
+        raise ProofError("GitHub API pagination count was not initialized")
+    if page > page_count:
+        raise ProofError("GitHub API returned more pages than its total_count")
+    items.extend(page_items)
+    if page != page_count:
+        return False
+    if len(items) != expected_count:
+        raise ProofError("GitHub API pagination returned an incomplete result set")
+    return True
 
 
 def _paginated_items(
@@ -337,29 +380,13 @@ def _paginated_items(
     for page in range(1, MAX_API_PAGES + 1):
         url = _api_url(path, params, page)
         payload = api_get_json(url, token)
-        if not isinstance(payload, dict):
-            raise ProofError("GitHub API response has an invalid shape")
-        count = payload.get("total_count")
-        page_items = payload.get(collection_key)
-        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
-            raise ProofError("GitHub API response has an invalid total_count")
-        if not isinstance(page_items, list) or any(not isinstance(item, dict) for item in page_items):
-            raise ProofError(f"GitHub API response has an invalid {collection_key} list")
+        count, page_items = _pagination_response(payload, collection_key)
         if expected_count is None:
             expected_count = count
-            page_count = max(1, (count + API_PAGE_SIZE - 1) // API_PAGE_SIZE)
-            if page_count > MAX_API_PAGES:
-                raise ProofError("GitHub API pagination cap exceeded")
+            page_count = _pagination_page_count(count)
         elif count != expected_count:
             raise ProofError("GitHub API result count changed during pagination")
-        if page_count is None:
-            raise ProofError("GitHub API pagination count was not initialized")
-        if page > page_count:
-            raise ProofError("GitHub API returned more pages than its total_count")
-        items.extend(page_items)
-        if page == page_count:
-            if len(items) != expected_count:
-                raise ProofError("GitHub API pagination returned an incomplete result set")
+        if _append_pagination_page(items, page_items, page, page_count, expected_count):
             return items
 
     raise ProofError("GitHub API pagination cap exceeded")
@@ -404,6 +431,33 @@ def _verify_required_jobs(jobs: Sequence[dict[str, object]]) -> None:
         raise ProofError(f"upstream required job(s) did not succeed: {', '.join(failed)}")
 
 
+def _is_successful_run(run: dict[str, object]) -> bool:
+    return run.get("status") == "completed" and run.get("conclusion") == "success"
+
+
+def _verify_successful_run(
+    run: dict[str, object],
+    anchor: str,
+    token: str,
+    api_get_json: ApiGetJson,
+) -> UpstreamProof | str:
+    """Verify run identity details and its required per-job evidence."""
+    run_id = run.get("id")
+    if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id <= 0:
+        return "matching upstream CI run has an invalid ID"
+    expected_url = f"https://github.com/{UPSTREAM_REPO}/actions/runs/{run_id}"
+    if run.get("html_url") != expected_url:
+        return "matching upstream CI run has an invalid URL"
+
+    jobs_path = f"/repos/{UPSTREAM_REPO}/actions/runs/{run_id}/jobs"
+    jobs = _paginated_items(jobs_path, {"filter": "latest"}, "jobs", token, api_get_json)
+    try:
+        _verify_required_jobs(jobs)
+    except ProofError as exc:
+        return str(exc)
+    return UpstreamProof(anchor, run_id, expected_url, REQUIRED_JOB_NAMES)
+
+
 def verify_upstream_ci(
     anchor: str,
     token: str,
@@ -426,27 +480,13 @@ def verify_upstream_ci(
 
     failures: list[str] = []
     for run in runs:
-        if not _run_matches(run, anchor):
+        if not _run_matches(run, anchor) or not _is_successful_run(run):
             continue
-        if run.get("status") != "completed" or run.get("conclusion") != "success":
+        verification = _verify_successful_run(run, anchor, token, get_json)
+        if not isinstance(verification, UpstreamProof):
+            failures.append(verification)
             continue
-        run_id = run.get("id")
-        if isinstance(run_id, bool) or not isinstance(run_id, int) or run_id <= 0:
-            failures.append("matching upstream CI run has an invalid ID")
-            continue
-        expected_url = f"https://github.com/{UPSTREAM_REPO}/actions/runs/{run_id}"
-        if run.get("html_url") != expected_url:
-            failures.append("matching upstream CI run has an invalid URL")
-            continue
-
-        jobs_path = f"/repos/{UPSTREAM_REPO}/actions/runs/{run_id}/jobs"
-        jobs = _paginated_items(jobs_path, {"filter": "latest"}, "jobs", token, get_json)
-        try:
-            _verify_required_jobs(jobs)
-        except ProofError as exc:
-            failures.append(str(exc))
-            continue
-        return UpstreamProof(anchor, run_id, expected_url, REQUIRED_JOB_NAMES)
+        return verification
 
     detail = f" ({'; '.join(failures)})" if failures else ""
     raise ProofError(f"no successful exact upstream CI push proved anchor {anchor}{detail}")

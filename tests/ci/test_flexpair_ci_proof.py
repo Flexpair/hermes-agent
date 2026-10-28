@@ -186,21 +186,24 @@ def test_success_requires_the_exact_upstream_push_run_and_named_jobs():
     ids=["wrong-sha", "wrong-repository", "wrong-workflow", "wrong-event", "wrong-branch", "incomplete", "failed", "wrong-name", "unsafe-run-url"],
 )
 def test_wrong_or_incomplete_run_identity_fails_closed(overrides):
+    api_payloads = _api_payloads(run=_run(**overrides))
     with pytest.raises(proof.ProofError):
-        proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=_api_payloads(run=_run(**overrides)))
+        proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=api_payloads)
 
 
 def test_missing_required_job_fails_closed():
     jobs = _jobs()[:-1]
+    api_payloads = _api_payloads(jobs=jobs)
     with pytest.raises(proof.ProofError, match="All required checks pass"):
-        proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=_api_payloads(jobs=jobs))
+        proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=api_payloads)
 
 
 @pytest.mark.parametrize("status,conclusion", [("queued", None), ("completed", "skipped"), ("completed", "failure")])
 def test_non_successful_required_job_fails_closed(status, conclusion):
     jobs = _jobs(**{"Python tests / Run tests (1/2)": {"status": status, "conclusion": conclusion}})
+    api_payloads = _api_payloads(jobs=jobs)
     with pytest.raises(proof.ProofError, match=r"Run tests \(1/2\)"):
-        proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=_api_payloads(jobs=jobs))
+        proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=api_payloads)
 
 
 def test_anonymous_public_upstream_proof_needs_no_token():
