@@ -12,6 +12,24 @@ import { createPluginContext } from './plugin'
 
 const disposers: (() => void)[] = []
 
+it('initializes and restores appearance when randomUUID is unavailable', () => {
+  window.localStorage.clear()
+  window.sessionStorage.clear()
+  $gatewayState.set('open')
+  $activeGatewayProfile.set('work')
+  modePref.assign('default', 'light')
+  modePref.assign('work', 'light')
+  vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) })
+
+  act(() => plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose))))
+  expect(modePref.resolve('default')).toBe('dark')
+  expect(modePref.resolve('work')).toBe('dark')
+
+  act(() => { disposers.splice(0).forEach(dispose => dispose()) })
+  expect(modePref.resolve('default')).toBe('light')
+  expect(modePref.resolve('work')).toBe('light')
+})
+
 it('still releases preferences and resets zoom when the release notification cannot be saved', () => {
   window.localStorage.clear()
   window.sessionStorage.clear()
