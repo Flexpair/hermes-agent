@@ -71,7 +71,7 @@ jobs:
         run: npx --no-install vitest run --project ui src/contrib/radio-plugin.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/flexpair-color-palette-startup.test.tsx src/contrib/provider-card-filter.test.ts src/contrib/flexpair-bundled-lifecycle.test.ts
       - name: Lint fork-owned plugins
         working-directory: apps/desktop
-        run: npm exec -- eslint src/plugins/provider-card-filter/plugin.tsx src/plugins/flexpair-color-palette/plugin.tsx
+        run: node ../../node_modules/eslint/bin/eslint.js src/plugins/provider-card-filter/plugin.tsx src/plugins/flexpair-color-palette/plugin.tsx
       - name: Typecheck and production build
         working-directory: apps/desktop
         run: npm run typecheck && npm run build
