@@ -59,12 +59,14 @@ _ORIGINAL_FORK_ADDITIONS = (
     "website/docs/user-guide/skills/optional/devops/devops-flexpair-hermes-distribution.md",
 )
 
-# Three reviewed paths for this CI proof: helper, tests, and the additive
-# consumer workflow. Keep this manifest exact; it is not a glob/prefix policy.
+# Reviewed CI and launcher additions. Keep this manifest exact; it is not a
+# glob/prefix policy.
 EXPECTED_FORK_ADDITIONS = _ORIGINAL_FORK_ADDITIONS + (
     ".github/workflows/flexpair-ci.yml",
     "flexpair/ci_proof.py",
     "flexpair/ci_supply_chain.py",
+    "flexpair/install-lxqt-terminal-launcher.sh",
+    "flexpair/tests/test_lxqt_terminal_launcher.py",
     "tests/ci/test_flexpair_ci_proof.py",
     "tests/ci/test_flexpair_ci_supply_chain.py",
 )
