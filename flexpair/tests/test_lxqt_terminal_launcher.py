@@ -132,21 +132,22 @@ assert marker.exists(), "Gio did not execute Hermes in " + str(home)
 assert marker.read_text(encoding="utf-8").splitlines() == [str(home), "qterminal"], "wrong home or terminal"
 print("Gio -> QTerminal -> Hermes: PASS", home)
 ''', encoding="utf-8")
+        probe.chmod(0o644)
         script = r'''
 set -euo pipefail
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
   python3 python3-gi qterminal lxqt-panel xvfb xauth xdotool dbus-x11 desktop-file-utils procps >/dev/null
-useradd --create-home --user-group --shell /bin/bash launcher
+useradd --uid 12345 --create-home --user-group --shell /bin/bash launcher
 for home in /home/launcher /home/lxqt%case '/home/alice smith' '/home/joe&tim'; do
   install -d -o launcher -g launcher "$home"
   runuser -u launcher -- env HOME="$home" dbus-run-session -- \
-    xvfb-run -a -s '-screen 0 1024x768x24' python3 /fixtures/lxqt_click_probe.py
+    xvfb-run -a -s '-screen 0 1024x768x24' python3 /fixture.py
 done
 '''
         command = ["docker", "run", "--rm", "--platform=linux/amd64",
                    "--mount", f"type=bind,source={REPOSITORY_ROOT},target=/workspace,readonly",
-                   "--mount", f"type=bind,source={self.scratch_path},target=/fixtures,readonly",
+                   "--mount", f"type=bind,source={probe},target=/fixture.py,readonly",
                    DOCKER_IMAGE, "bash", "-c", script]
         result = subprocess.run(command, capture_output=True, text=True, timeout=300)
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
