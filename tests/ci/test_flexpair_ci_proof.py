@@ -93,8 +93,9 @@ def test_manifest_accepts_lxqt_launcher_and_rejects_neighboring_path():
     }
     assert expected <= set(proof.EXPECTED_FORK_ADDITIONS)
     proof.verify_additive_diff(_added_records())
+    disallowed = _added_records() + [("A", "flexpair/install-other.sh")]
     with pytest.raises(proof.ProofError, match="unreviewed path"):
-        proof.verify_additive_diff(_added_records() + [("A", "flexpair/install-other.sh")])
+        proof.verify_additive_diff(disallowed)
 
 
 def _git(repo, env, *args):
