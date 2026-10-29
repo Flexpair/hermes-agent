@@ -73,6 +73,87 @@ cp -- /usr/bin/true "$HOME/.local/bin/hermes"
 chmod 755 -- "$HOME/.local/bin/hermes"
 """
 
+    def test_lxqt_quicklaunch_executes_hermes_in_qterminal(self):
+        probe = self.scratch_path / "lxqt_click_probe.py"
+        probe.write_text(r'''import os
+from pathlib import Path
+import subprocess
+import time
+from gi.repository import Gio
+
+home = Path(os.environ["HOME"])
+binary = home / ".local/bin/hermes"
+binary.parent.mkdir(parents=True)
+binary.write_text("#!/bin/sh\nprintf '%s\\n%s\\n' \"$HOME\" \"$(ps -o comm= -p \"$PPID\")\" > \"$HOME/.launcher-result\"\nsleep 3\n", encoding="utf-8")
+binary.chmod(0o755)
+marker = home / ".launcher-result"
+marker.unlink(missing_ok=True)
+subprocess.run(["bash", "/workspace/flexpair/install-lxqt-terminal-launcher.sh"], check=True, timeout=30)
+desktop = home / ".local/share/applications/hermes.desktop"
+subprocess.run(["desktop-file-validate", str(desktop)], check=True, timeout=10)
+panel = home / ".config/lxqt/panel.conf"
+panel.parent.mkdir(parents=True)
+panel.write_text("[General]\n__userfile__=true\npanels=panel1\n\n[panel1]\nalignment=-1\niconSize=48\nlineCount=1\npanelSize=60\nplugins=quicklaunch\nposition=Top\nreserve-space=true\nwidth=100\nwidth-percent=true\n\n[quicklaunch]\nalignment=Left\napps\\1\\desktop=" + str(desktop) + "\napps\\size=1\ntype=quicklaunch\n", encoding="utf-8")
+panel_process = subprocess.Popen(["lxqt-panel"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+try:
+    deadline = time.monotonic() + 15
+    window = None
+    while time.monotonic() < deadline:
+        result = subprocess.run(["xdotool", "search", "--onlyvisible", "--class", "lxqt-panel"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.splitlines():
+            window = result.stdout.splitlines()[0]
+            break
+        if panel_process.poll() is not None:
+            raise AssertionError("LXQt panel exited")
+        time.sleep(.1)
+    assert window, "LXQt panel did not appear"
+    time.sleep(.5)
+    subprocess.run(["xdotool", "mousemove", "--window", window, "24", "24", "click", "1"], check=True, timeout=5)
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(.1)
+    assert marker.exists(), "quicklaunch did not execute Hermes in " + str(home)
+    assert marker.read_text(encoding="utf-8").splitlines() == [str(home), "qterminal"], "wrong home or terminal"
+    print("LXQt click -> QTerminal -> Hermes: PASS", home)
+finally:
+    panel_process.terminate()
+    try:
+        panel_process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        panel_process.kill()
+        panel_process.wait(timeout=5)
+marker.unlink()
+app = Gio.DesktopAppInfo.new_from_filename(str(desktop))
+assert app is not None and app.launch([], None), "Gio did not start the launcher"
+deadline = time.monotonic() + 10
+while time.monotonic() < deadline and not marker.exists():
+    time.sleep(.1)
+assert marker.exists(), "Gio did not execute Hermes in " + str(home)
+assert marker.read_text(encoding="utf-8").splitlines() == [str(home), "qterminal"], "wrong home or terminal"
+print("Gio -> QTerminal -> Hermes: PASS", home)
+''', encoding="utf-8")
+        script = r'''
+set -euo pipefail
+apt-get update -qq
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+  python3 python3-gi qterminal lxqt-panel xvfb xauth xdotool dbus-x11 desktop-file-utils procps >/dev/null
+useradd --create-home --user-group --shell /bin/bash launcher
+for home in /home/launcher /home/lxqt%case '/home/alice smith' '/home/joe&tim'; do
+  install -d -o launcher -g launcher "$home"
+  runuser -u launcher -- env HOME="$home" dbus-run-session -- \
+    xvfb-run -a -s '-screen 0 1024x768x24' python3 /fixtures/lxqt_click_probe.py
+done
+'''
+        command = ["docker", "run", "--rm", "--platform=linux/amd64",
+                   "--mount", f"type=bind,source={REPOSITORY_ROOT},target=/workspace,readonly",
+                   "--mount", f"type=bind,source={self.scratch_path},target=/fixtures,readonly",
+                   DOCKER_IMAGE, "bash", "-c", script]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        for home in ("/home/launcher", "/home/lxqt%case", "/home/alice smith", "/home/joe&tim"):
+            self.assertIn(f"LXQt click -> QTerminal -> Hermes: PASS {home}", result.stdout)
+            self.assertIn(f"Gio -> QTerminal -> Hermes: PASS {home}", result.stdout)
+
     def test_linux_install_is_idempotent_copies_repo_icon_and_owns_outputs(self):
         script = self.user_home_setup() + r"""
 launcher="$HOME/.hermes/hermes-agent/flexpair/install-lxqt-terminal-launcher.sh"
@@ -111,13 +192,13 @@ printf '\nTEMP_FILES=%s\n' "$(find "$HOME/.local/share" -type f -name '.hermes-a
             "[Desktop Entry]\n"
             "Type=Application\n"
             "Name=Hermes Agent\n"
-            'Exec=/usr/bin/qterminal -e "/home/launcher/.local/bin/hermes"\n'
+            'Exec=/usr/bin/qterminal -e /bin/sh -c "cd||exit;exec\\\\$IFS./.local/bin/hermes"\n'
             "Icon=/home/launcher/.local/share/icons/hermes-agent.png\n"
             "Terminal=false\n"
             "Categories=Development;\n",
         )
 
-    def test_exec_quotes_home_path_with_spaces(self):
+    def test_icon_path_preserves_spaces(self):
         script = self.user_home_setup() + r"""
 rm -- "$HOME/.local/bin/hermes"
 ln -s -- /usr/bin/true "$HOME/.local/bin/hermes"
@@ -136,43 +217,10 @@ printf '\n'
         )
         desktop_contents = base64.b64decode(encoded_desktop).decode("utf-8")
         self.assertIn(
-            'Exec=/usr/bin/qterminal -e "/home/alice smith/.local/bin/hermes"\n',
-            desktop_contents,
-        )
-        self.assertIn(
             "Icon=/home/alice smith/.local/share/icons/hermes-agent.png\n",
             desktop_contents,
         )
 
-    def test_exec_quotes_reserved_home_characters(self):
-        script = self.user_home_setup() + r"""
-bash "$HOME/.hermes/hermes-agent/flexpair/install-lxqt-terminal-launcher.sh"
-printf 'DESKTOP_B64='
-base64 -w 0 -- "$HOME/.local/share/applications/hermes.desktop"
-printf '\n'
-"""
-        home = "/home/joe&tim;name"
-        result = self.run_in_ubuntu(script, home=home)
-        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
-        encoded = next(line.removeprefix("DESKTOP_B64=") for line in result.stdout.splitlines()
-                       if line.startswith("DESKTOP_B64="))
-        desktop = base64.b64decode(encoded).decode("utf-8")
-        self.assertIn(f'Exec=/usr/bin/qterminal -e "{home}/.local/bin/hermes"\n', desktop)
-
-    def test_exec_escapes_reserved_characters_through_desktop_parser(self):
-        script = self.user_home_setup() + r"""
-bash "$HOME/.hermes/hermes-agent/flexpair/install-lxqt-terminal-launcher.sh"
-printf 'DESKTOP_B64='
-base64 -w 0 -- "$HOME/.local/share/applications/hermes.desktop"
-printf '\n'
-"""
-        home = '/home/a\\b$c`d"e%f'
-        result = self.run_in_ubuntu(script, home=home)
-        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
-        encoded = next(line.removeprefix("DESKTOP_B64=") for line in result.stdout.splitlines()
-                       if line.startswith("DESKTOP_B64="))
-        desktop = base64.b64decode(encoded).decode("utf-8")
-        self.assertIn('Exec=/usr/bin/qterminal -e "/home/a\\\\\\\\b\\\\$c\\\\`d\\\\"e%%f/.local/bin/hermes"\n', desktop)
 
     def test_control_characters_in_home_are_rejected_before_writes(self):
         script = self.user_home_setup() + r"""

@@ -99,17 +99,6 @@ validate_output_file() {
 validate_output_file "$icon_path"
 validate_output_file "$desktop_path"
 
-quote_exec_argument() {
-  local value="$1"
-  value=${value//\\/\\\\}
-  value=${value//\"/\\\"}
-  value=${value//\$/\\\$}
-  value=${value//\`/\\\`}
-  value=${value//%/%%}
-  value=${value//\\/\\\\}
-  printf '"%s"' "$value"
-}
-
 escape_desktop_string() {
   local value="$1"
   value=${value//\\/\\\\}
@@ -119,7 +108,6 @@ escape_desktop_string() {
   printf '%s' "$value"
 }
 
-exec_path=$(quote_exec_argument "$real_home/.local/bin/hermes")
 icon_value=$(escape_desktop_string "$icon_path")
 
 # Stage both complete files beside their destinations so each final rename is atomic.
@@ -190,7 +178,10 @@ chmod 0644 -- "$tmp_icon" || fail 'could not set icon permissions'
   printf '[Desktop Entry]\n'
   printf 'Type=Application\n'
   printf 'Name=Hermes Agent\n'
-  printf 'Exec=/usr/bin/qterminal -e %s\n' "$exec_path"
+  # QTerminal splits -e on spaces, and LXQt does not unescape %% in paths.
+  # Run a fixed, whitespace-free shell command so HOME is never parsed as Exec text.
+  # shellcheck disable=SC2016 # IFS is expanded by the launcher's shell, not this installer.
+  printf '%s\n' 'Exec=/usr/bin/qterminal -e /bin/sh -c "cd||exit;exec\\$IFS./.local/bin/hermes"'
   printf 'Icon=%s\n' "$icon_value"
   printf 'Terminal=false\n'
   printf 'Categories=Development;\n'
