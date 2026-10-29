@@ -57,7 +57,9 @@ jobs:
       - name: Installer, skill and admission tests
         run: scripts/run_tests.sh tests/scripts/install/test_flexpair_distribution.py tests/skills/test_flexpair_hermes_distribution_skill.py tests/ci/test_flexpair_ci_proof.py tests/ci/test_flexpair_ci_supply_chain.py -q -j 2
       - name: LXQt launcher behavior
-        run: python3 -m unittest discover -s flexpair/tests -p 'test_lxqt_terminal_launcher.py' -v
+        run: |
+          docker pull ubuntu:22.04
+          python3 -m unittest discover -s flexpair/tests -p 'test_lxqt_terminal_launcher.py' -v
       - name: Contributor attribution
         run: python scripts/audit_pr_attribution.py
       - name: Repository hygiene and code-health ratchet
