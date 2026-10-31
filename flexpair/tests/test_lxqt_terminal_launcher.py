@@ -1,4 +1,4 @@
-"""Integration tests for Flexpair's isolated LXQt CLI launcher helper."""
+"""Integration tests for Flexpair's isolated LXQt Desktop launcher helper."""
 
 import base64
 import shutil
@@ -73,7 +73,7 @@ cp -- /usr/bin/true "$HOME/.local/bin/hermes"
 chmod 755 -- "$HOME/.local/bin/hermes"
 """
 
-    def test_lxqt_quicklaunch_executes_hermes_in_qterminal(self):
+    def test_lxqt_quicklaunch_executes_hermes_desktop(self):
         probe = self.scratch_path / "lxqt_click_probe.py"
         probe.write_text(r'''import os
 from pathlib import Path
@@ -84,7 +84,7 @@ from gi.repository import Gio
 home = Path(os.environ["HOME"])
 binary = home / ".local/bin/hermes"
 binary.parent.mkdir(parents=True)
-binary.write_text("#!/bin/sh\nprintf '%s\\n%s\\n' \"$HOME\" \"$(ps -o comm= -p \"$PPID\")\" > \"$HOME/.launcher-result.tmp\"\nmv \"$HOME/.launcher-result.tmp\" \"$HOME/.launcher-result\"\nsleep 3\n", encoding="utf-8")
+binary.write_text("#!/bin/sh\nprintf '%s\\n%s\\n%s\\n%s\\n' \"$HOME\" \"${1-}\" \"${2-}\" \"$(ps -o comm= -p \"$PPID\")\" > \"$HOME/.launcher-result.tmp\"\nmv \"$HOME/.launcher-result.tmp\" \"$HOME/.launcher-result\"\nsleep 3\n", encoding="utf-8")
 binary.chmod(0o755)
 marker = home / ".launcher-result"
 marker.unlink(missing_ok=True)
@@ -113,8 +113,9 @@ try:
     while time.monotonic() < deadline and not marker.exists():
         time.sleep(.1)
     assert marker.exists(), "quicklaunch did not execute Hermes in " + str(home)
-    assert marker.read_text(encoding="utf-8").splitlines() == [str(home), "qterminal"], "wrong home or terminal"
-    print("LXQt click -> QTerminal -> Hermes: PASS", home)
+    actual = marker.read_text(encoding="utf-8").splitlines()
+    assert actual[:3] == [str(home), "desktop", "--skip-build"] and actual[3] != "qterminal", actual
+    print("LXQt click -> Hermes Desktop: PASS", home)
 finally:
     panel_process.terminate()
     try:
@@ -129,8 +130,9 @@ deadline = time.monotonic() + 10
 while time.monotonic() < deadline and not marker.exists():
     time.sleep(.1)
 assert marker.exists(), "Gio did not execute Hermes in " + str(home)
-assert marker.read_text(encoding="utf-8").splitlines() == [str(home), "qterminal"], "wrong home or terminal"
-print("Gio -> QTerminal -> Hermes: PASS", home)
+actual = marker.read_text(encoding="utf-8").splitlines()
+assert actual[:3] == [str(home), "desktop", "--skip-build"] and actual[3] != "qterminal", actual
+print("Gio -> Hermes Desktop: PASS", home)
 ''', encoding="utf-8")
         probe.chmod(0o644)
         script = r'''
@@ -152,8 +154,8 @@ done
         result = subprocess.run(command, capture_output=True, text=True, timeout=300)
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         for home in ("/home/launcher", "/home/lxqt%case", "/home/alice smith", "/home/joe&tim"):
-            self.assertIn(f"LXQt click -> QTerminal -> Hermes: PASS {home}", result.stdout)
-            self.assertIn(f"Gio -> QTerminal -> Hermes: PASS {home}", result.stdout)
+            self.assertIn(f"LXQt click -> Hermes Desktop: PASS {home}", result.stdout)
+            self.assertIn(f"Gio -> Hermes Desktop: PASS {home}", result.stdout)
 
     def test_linux_install_is_idempotent_copies_repo_icon_and_owns_outputs(self):
         script = self.user_home_setup() + r"""
@@ -193,7 +195,7 @@ printf '\nTEMP_FILES=%s\n' "$(find "$HOME/.local/share" -type f -name '.hermes-a
             "[Desktop Entry]\n"
             "Type=Application\n"
             "Name=Hermes Agent\n"
-            'Exec=/usr/bin/qterminal -e /bin/sh -c "cd||exit;exec\\\\$IFS./.local/bin/hermes"\n'
+            'Exec=/bin/sh -c "cd||exit;exec\\\\$IFS./.local/bin/hermes\\\\${IFS}desktop\\\\${IFS}--skip-build"\n'
             "Icon=/home/launcher/.local/share/icons/hermes-agent.png\n"
             "Terminal=false\n"
             "Categories=Development;\n",
