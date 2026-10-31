@@ -22,7 +22,7 @@
 #                         `hermes update --set-channel`
 [CmdletBinding(PositionalBinding=$false)]
 param(
-    [string]$Branch = "main",
+    [string]$Branch = "2026-10-31-patched",
     [string]$Commit = "",
     [string]$Channel = $(if ($env:HERMES_INSTALL_CHANNEL) { $env:HERMES_INSTALL_CHANNEL } else { "" }),
     [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
@@ -76,7 +76,7 @@ $script:BoundParams = $PSBoundParameters
 # Under iex, script scope is the caller's session and outlives a run; start
 # each run without the previous run's answer (see Set-LauncherUserPath).
 $script:BinDirOnCallerPath = $null
-$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/NousResearch/hermes-agent.git" }
+$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/Flexpair/hermes-agent.git" }
 
 # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
 # Derived from pm/lock.json. DO NOT EDIT BY HAND:
@@ -960,6 +960,27 @@ function Confirm-StableUnreachable([string]$What) {
 }
 
 function Stage-Repository {
+    if ($Branch -ceq '2026-10-31-patched') {
+        if ($Commit -or $Channel) { Fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch }
+        if (Test-Path (Join-Path $InstallDir '.git')) {
+            if (-not (Ensure-Git)) { Fail "Git unavailable" unsupported_platform }
+            $source = "$(Invoke-Native { git -C $InstallDir config --get remote.origin.url })".Trim()
+            if ($LASTEXITCODE -or $source -cne $RepoUrl) { Fail "refusing a different repository" dir_not_checkout }
+            $dirty = Invoke-Native { git -C $InstallDir status --porcelain }
+            if ($LASTEXITCODE -or $dirty) { Fail "commit or move local changes before updating" local_changes_blocked }
+            Invoke-Logged "Fetching origin/$Branch" { git -C $InstallDir fetch origin "+refs/heads/${Branch}:refs/remotes/origin/${Branch}" }
+            if ($LASTEXITCODE) { Fail "git fetch failed" git_fetch_failed }
+            Invoke-Logged "Checking out $Branch" { git -C $InstallDir checkout $Branch }
+            if ($LASTEXITCODE) { Fail "git checkout failed" git_checkout_failed }
+            Invoke-Logged "Fast-forwarding $Branch" { git -C $InstallDir merge --ff-only "origin/$Branch" }
+            if ($LASTEXITCODE) { Fail "cannot fast-forward deploy branch" git_checkout_failed }
+            $head = Invoke-Native { git -C $InstallDir rev-parse HEAD }
+            if ($LASTEXITCODE) { Fail "cannot read HEAD" git_checkout_failed }
+            $target = Invoke-Native { git -C $InstallDir rev-parse "origin/$Branch" }
+            if ($LASTEXITCODE -or "$head" -cne "$target") { Fail "local branch is ahead of deploy HEAD" git_checkout_failed }
+            return
+        }
+    }
     $pinned = $false
     # Not $channel: variables are case-insensitive, and the helpers below read the -Channel
     # parameter through this scope.

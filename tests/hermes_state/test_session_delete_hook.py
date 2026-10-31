@@ -4,6 +4,7 @@ Real ``SessionDB`` + the real plugin hook registry. The callback reads the row b
 also proves dispatch ran AFTER the commit, never before.
 """
 
+import hermes_bootstrap  # Activate dependencies before the home I/O guard.
 import pytest
 
 import hermes_state_runtime as rt

@@ -1,6 +1,6 @@
 # Radio
 
-Bundled Hermes Desktop plugin, **off by default**. Enable **Radio** in
+Bundled Hermes Desktop plugin, **on by default**. You can disable it anytime in
 Capabilities → Plugins. Playback starts only when you press Play.
 
 ## Controls
@@ -20,8 +20,9 @@ Pins, station, and volume use plugin-scoped local storage.
 
 `plugin.js` imports only `@hermes/plugin-sdk`, `react`, and
 `react/jsx-runtime`. Existing bundled discovery finds it automatically;
-`defaultEnabled: false` uses the ordinary live enable toggle. No shell,
-SDK, backend, dependency, or registry changes are needed.
+`defaultEnabled: true` registers Radio for new users and the ordinary live
+enable toggle preserves an explicit off choice. No shell, SDK, backend,
+dependency, or registry changes are needed.
 
 The same plain-ESM file can be loaded through the runtime plugin door at
 `$HERMES_HOME/desktop-plugins/radio/plugin.js` for development. Do not install
