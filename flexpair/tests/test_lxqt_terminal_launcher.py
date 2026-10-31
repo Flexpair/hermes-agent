@@ -84,7 +84,7 @@ from gi.repository import Gio
 home = Path(os.environ["HOME"])
 binary = home / ".local/bin/hermes"
 binary.parent.mkdir(parents=True)
-binary.write_text("#!/bin/sh\nprintf '%s\\n%s\\n' \"$HOME\" \"$(ps -o comm= -p \"$PPID\")\" > \"$HOME/.launcher-result\"\nsleep 3\n", encoding="utf-8")
+binary.write_text("#!/bin/sh\nprintf '%s\\n%s\\n' \"$HOME\" \"$(ps -o comm= -p \"$PPID\")\" > \"$HOME/.launcher-result.tmp\"\nmv \"$HOME/.launcher-result.tmp\" \"$HOME/.launcher-result\"\nsleep 3\n", encoding="utf-8")
 binary.chmod(0o755)
 marker = home / ".launcher-result"
 marker.unlink(missing_ok=True)
