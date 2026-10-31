@@ -86,6 +86,18 @@ def test_manifest_accepts_reviewed_paths_including_ci_proof_additions():
     proof.verify_additive_diff(_added_records())
 
 
+def test_manifest_accepts_lxqt_launcher_and_rejects_neighboring_path():
+    expected = {
+        "flexpair/install-lxqt-terminal-launcher.sh",
+        "flexpair/tests/test_lxqt_terminal_launcher.py",
+    }
+    assert expected <= set(proof.EXPECTED_FORK_ADDITIONS)
+    proof.verify_additive_diff(_added_records())
+    disallowed = _added_records() + [("A", "flexpair/install-other.sh")]
+    with pytest.raises(proof.ProofError, match="unreviewed path"):
+        proof.verify_additive_diff(disallowed)
+
+
 def _git(repo, env, *args):
     return subprocess.run(
         ["git", *args], cwd=repo, env=env, check=True,
