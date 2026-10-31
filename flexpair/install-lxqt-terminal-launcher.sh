@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install a user-local LXQt launcher for the Flexpair Hermes CLI checkout.
+# Install a user-local LXQt launcher for Flexpair Hermes Desktop.
 set -euo pipefail
 
 fail() {
@@ -178,10 +178,9 @@ chmod 0644 -- "$tmp_icon" || fail 'could not set icon permissions'
   printf '[Desktop Entry]\n'
   printf 'Type=Application\n'
   printf 'Name=Hermes Agent\n'
-  # QTerminal splits -e on spaces, and LXQt does not unescape %% in paths.
-  # Run a fixed, whitespace-free shell command so HOME is never parsed as Exec text.
+  # Resolve HOME inside the shell: LXQt does not unescape %% in absolute paths.
   # shellcheck disable=SC2016 # IFS is expanded by the launcher's shell, not this installer.
-  printf '%s\n' 'Exec=/usr/bin/qterminal -e /bin/sh -c "cd||exit;exec\\$IFS./.local/bin/hermes"'
+  printf '%s\n' 'Exec=/bin/sh -c "cd||exit;exec\\$IFS./.local/bin/hermes\\${IFS}desktop\\${IFS}--skip-build"'
   printf 'Icon=%s\n' "$icon_value"
   printf 'Terminal=false\n'
   printf 'Categories=Development;\n'

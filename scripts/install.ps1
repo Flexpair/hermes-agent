@@ -22,7 +22,7 @@
 #                         `hermes update --set-channel`
 [CmdletBinding(PositionalBinding=$false)]
 param(
-    [string]$Branch = "2026-10-31-patched",
+    [string]$Branch = "2026-10-31-desktop-patched",
     [string]$Commit = "",
     [string]$Channel = $(if ($env:HERMES_INSTALL_CHANNEL) { $env:HERMES_INSTALL_CHANNEL } else { "" }),
     [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
@@ -960,7 +960,7 @@ function Confirm-StableUnreachable([string]$What) {
 }
 
 function Stage-Repository {
-    if ($Branch -ceq '2026-10-31-patched') {
+    if ($Branch -ceq '2026-10-31-desktop-patched') {
         if ($Commit -or $Channel) { Fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch }
         if (Test-Path (Join-Path $InstallDir '.git')) {
             if (-not (Ensure-Git)) { Fail "Git unavailable" unsupported_platform }

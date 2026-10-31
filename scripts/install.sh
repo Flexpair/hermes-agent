@@ -21,7 +21,7 @@ set -u
 export UV_NO_CONFIG=1
 
 REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
-BRANCH="2026-10-31-patched"
+BRANCH="2026-10-31-desktop-patched"
 INSTALL_COMMIT=""
 # The update channel to install: stable (the latest published release, the default for the
 # official repository's main line) or main (every commit). An explicit choice is persisted.
@@ -709,7 +709,7 @@ stable_unreachable() {
 
 stage_repository() {
     # The distribution follows the explicitly selected deploy branch, never a release pin.
-    if [ "$BRANCH" = 2026-10-31-patched ]; then
+    if [ "$BRANCH" = 2026-10-31-desktop-patched ]; then
         [ -z "$INSTALL_COMMIT$CHANNEL" ] || fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
         if [ -e "$INSTALL_DIR/.git" ]; then
             local source dirty
