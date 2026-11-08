@@ -345,4 +345,5 @@ async def test_context_breakdown_refreshes_equal_count_tool_content(owner, monke
     assert after['estimated_total'] > first['estimated_total']
     assert await owner.call('session.context_breakdown', session_id=sid) == after
     assert compute.call_count == prompt.call_count == 2
-    assert agent.tools is resident_tools and agent.tools == snapshot
+    assert agent.tools is resident_tools
+    assert agent.tools == snapshot

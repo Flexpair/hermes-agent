@@ -34,7 +34,8 @@ def test_archive_cas_miss_is_receipted_and_future_writes_finish(worker):
     assert receipt == {'value': None, 'annotations': [], 'stale_held_rows': True}
     assert db.get_session('owned')['runtime_revision'] == revision
     assert db._read_one('SELECT last_sequence FROM worker_executions')[0] == sequence
-    assert store.failure is None and store.journal['pending'] == []
+    assert store.failure is None
+    assert store.journal['pending'] == []
     assert store.journal['next_sequence'] == sequence + 1
     assert json.loads(store.path.read_text()) == store.journal
     assert '_row_id' not in replacement[0]
@@ -45,7 +46,8 @@ def test_archive_cas_miss_is_receipted_and_future_writes_finish(worker):
     store.finish()
     assert db._read_one('SELECT status FROM worker_executions')[0] == 'terminal'
     assert [m['content'] for m in db.get_messages_as_conversation('owned')] == ['winner', 'after']
-    assert store.failure is None and store.journal['pending'] == []
+    assert store.failure is None
+    assert store.journal['pending'] == []
 
 
 def test_micro_compaction_discards_commit_window_cas_miss(worker):
@@ -65,8 +67,10 @@ def test_micro_compaction_discards_commit_window_cas_miss(worker):
     assert MicroCompactionMixin._sync_micro_compact_to_db(
         SimpleNamespace(_session_db=store, _session_id='owned'), [marker],
         held=held, start_watermark=watermark) is False
-    assert '_db_persisted' not in marker and '_row_id' not in marker
-    assert store.failure is None and store.journal['pending'] == []
+    assert '_db_persisted' not in marker
+    assert '_row_id' not in marker
+    assert store.failure is None
+    assert store.journal['pending'] == []
     assert [m['content'] for m in db.get_messages_as_conversation('owned')] == ['winner']
     store.append_messages_batch('owned', [{'role': 'assistant', 'content': 'after'}])
     store.finish()

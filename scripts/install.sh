@@ -709,8 +709,8 @@ stable_unreachable() {
 
 stage_repository() {
     # The distribution follows the explicitly selected deploy branch, never a release pin.
-    if [ "$BRANCH" = 2026-11-08-patched ]; then
-        [ -z "$INSTALL_COMMIT$CHANNEL" ] || fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
+    if [[ "$BRANCH" = 2026-11-08-patched ]]; then
+        [[ -z "$INSTALL_COMMIT$CHANNEL" ]] || fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
     fi
     local pinned=false channel="" release="" origin
     # An interrupted clone from an older installer can leave a .git with no
@@ -725,17 +725,17 @@ stage_repository() {
         log_warn "$INSTALL_DIR is not a usable git checkout (interrupted clone or damaged .git); moving it aside to $broken"
         mv "$INSTALL_DIR" "$broken" || fail "cannot move $INSTALL_DIR aside" filesystem_error
     fi
-    if [ "$BRANCH" = 2026-11-08-patched ] && [ -e "$INSTALL_DIR/.git" ]; then
+    if [[ "$BRANCH" = 2026-11-08-patched ]] && [[ -e "$INSTALL_DIR/.git" ]]; then
         local source dirty refs
         source="$(git -C "$INSTALL_DIR" config --get remote.origin.url)" || fail "cannot read origin" git_fetch_failed
-        [ "$source" = "$REPO_URL" ] || fail "refusing a different repository" dir_not_checkout
+        [[ "$source" = "$REPO_URL" ]] || fail "refusing a different repository" dir_not_checkout
         dirty="$(git -C "$INSTALL_DIR" status --porcelain)" || fail "cannot inspect local changes" local_changes_blocked
-        [ -z "$dirty" ] || fail "commit or move local changes before updating" local_changes_blocked
+        [[ -z "$dirty" ]] || fail "commit or move local changes before updating" local_changes_blocked
         run_logged "Fetching origin/$BRANCH" git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || fail "git fetch failed" git_fetch_failed
         # A detached commit must remain reachable after leaving it.
         if ! git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null; then
             refs="$(git -C "$INSTALL_DIR" for-each-ref --contains HEAD refs/heads refs/tags refs/remotes)" || fail "cannot inspect detached HEAD" git_checkout_failed
-            [ -n "$refs" ] || fail "save detached HEAD on a branch or tag before updating" git_checkout_failed
+            [[ -n "$refs" ]] || fail "save detached HEAD on a branch or tag before updating" git_checkout_failed
         fi
         if git -C "$INSTALL_DIR" show-ref --verify --quiet "refs/heads/$BRANCH"; then
             run_logged "Checking out $BRANCH" git -C "$INSTALL_DIR" checkout --no-overwrite-ignore "$BRANCH" || fail "git checkout failed" git_checkout_failed
@@ -743,7 +743,7 @@ stage_repository() {
             run_logged "Checking out $BRANCH" git -C "$INSTALL_DIR" checkout --no-overwrite-ignore -b "$BRANCH" "origin/$BRANCH" || fail "git checkout failed" git_checkout_failed
         fi
         run_logged "Fast-forwarding $BRANCH" git -C "$INSTALL_DIR" merge --ff-only --no-overwrite-ignore "origin/$BRANCH" || fail "cannot fast-forward deploy branch" git_checkout_failed
-        [ "$(git -C "$INSTALL_DIR" rev-parse HEAD)" = "$(git -C "$INSTALL_DIR" rev-parse "origin/$BRANCH")" ] || fail "local branch is ahead of deploy HEAD" git_checkout_failed
+        [[ "$(git -C "$INSTALL_DIR" rev-parse HEAD)" = "$(git -C "$INSTALL_DIR" rev-parse "origin/$BRANCH")" ]] || fail "local branch is ahead of deploy HEAD" git_checkout_failed
         return 0
     fi
     if [ -d "$INSTALL_DIR/.git" ]; then
