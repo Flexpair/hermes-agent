@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -44,8 +45,9 @@ def _run(**overrides):
 def _jobs(**overrides):
     jobs = [
         {"name": "JS & TS checks / JS & TS checks", "status": "completed", "conclusion": "success"},
-        {"name": "Python tests / Run tests (1/2)", "status": "completed", "conclusion": "success"},
-        {"name": "Python tests / Run tests (2/2)", "status": "completed", "conclusion": "success"},
+        {"name": "Python tests / Run tests (1/3)", "status": "completed", "conclusion": "success"},
+        {"name": "Python tests / Run tests (2/3)", "status": "completed", "conclusion": "success"},
+        {"name": "Python tests / Run tests (3/3)", "status": "completed", "conclusion": "success"},
         {"name": "All required checks pass (v2)", "status": "completed", "conclusion": "success"},
     ]
     for job in jobs:
@@ -210,11 +212,40 @@ def test_missing_required_job_fails_closed():
         proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=api_payloads)
 
 
+@pytest.mark.parametrize("shard", [1, 2, 3])
+@pytest.mark.parametrize(
+    "defect,reason",
+    [("missing", "missing required"), ("skipped", "did not succeed"), ("duplicate", "ambiguous required")],
+)
+def test_python_shard_must_be_present_successful_and_unambiguous(shard, defect, reason):
+    name = f"Python tests / Run tests ({shard}/3)"
+    jobs = _jobs()
+    job = next(job for job in jobs if job["name"] == name)
+    if defect == "missing":
+        jobs.remove(job)
+    elif defect == "skipped":
+        job["conclusion"] = "skipped"
+    else:
+        jobs.append(job.copy())
+    with pytest.raises(proof.ProofError, match=rf"{reason}.*{re.escape(name)}"):
+        proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=_api_payloads(jobs=jobs))
+
+
+def test_old_two_shard_run_fails_closed():
+    jobs = [job for job in _jobs() if not job["name"].startswith("Python tests / Run tests")]
+    jobs.extend(
+        {"name": f"Python tests / Run tests ({shard}/2)", "status": "completed", "conclusion": "success"}
+        for shard in (1, 2)
+    )
+    with pytest.raises(proof.ProofError, match=r"missing required.*Run tests \(1/3\)"):
+        proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=_api_payloads(jobs=jobs))
+
+
 @pytest.mark.parametrize("status,conclusion", [("queued", None), ("completed", "skipped"), ("completed", "failure")])
 def test_non_successful_required_job_fails_closed(status, conclusion):
-    jobs = _jobs(**{"Python tests / Run tests (1/2)": {"status": status, "conclusion": conclusion}})
+    jobs = _jobs(**{"Python tests / Run tests (1/3)": {"status": status, "conclusion": conclusion}})
     api_payloads = _api_payloads(jobs=jobs)
-    with pytest.raises(proof.ProofError, match=r"Run tests \(1/2\)"):
+    with pytest.raises(proof.ProofError, match=r"Run tests \(1/3\)"):
         proof.verify_upstream_ci("a" * 40, "test-token", api_get_json=api_payloads)
 
 
@@ -239,7 +270,8 @@ def test_run_pagination_finds_anchor_after_more_than_one_hundred_results():
         page = int(query["page"][0])
         if urlsplit(url).path.endswith("/actions/runs/123456/jobs"):
             job_pages.append(page)
-            return {"total_count": 4, "jobs": _jobs()}
+            jobs = _jobs()
+            return {"total_count": len(jobs), "jobs": jobs}
         run_pages.append(page)
         return {"total_count": 101, "workflow_runs": pages[page]}
 

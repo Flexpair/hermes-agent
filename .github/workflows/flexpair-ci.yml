@@ -53,7 +53,7 @@ jobs:
           extras: '[]'
           test-environment: 'true'
       - name: Install locked desktop dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Installer, skill and admission tests
         run: scripts/run_tests.sh tests/scripts/install/test_flexpair_distribution.py tests/skills/test_flexpair_hermes_distribution_skill.py tests/ci/test_flexpair_ci_proof.py tests/ci/test_flexpair_ci_supply_chain.py -q -j 2
       - name: LXQt launcher behavior
@@ -72,13 +72,13 @@ jobs:
         run: python3 flexpair/ci_supply_chain.py
       - name: Bundled plugins and unchanged Radio
         working-directory: apps/desktop
-        run: npx --no-install vitest run --project ui src/contrib/radio-plugin.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/flexpair-color-palette-startup.test.tsx src/contrib/provider-card-filter.test.ts src/contrib/flexpair-bundled-lifecycle.test.ts
+        run: pnpm exec vitest run --project ui src/contrib/radio-plugin.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/flexpair-color-palette-startup.test.tsx src/contrib/provider-card-filter.test.ts src/contrib/flexpair-bundled-lifecycle.test.ts
       - name: Lint fork-owned plugins
         working-directory: apps/desktop
-        run: node ../../node_modules/eslint/bin/eslint.js src/plugins/provider-card-filter/plugin.tsx src/plugins/flexpair-color-palette/plugin.tsx
+        run: pnpm exec eslint src/plugins/provider-card-filter/plugin.tsx src/plugins/flexpair-color-palette/plugin.tsx
       - name: Typecheck and production build
         working-directory: apps/desktop
-        run: npm run typecheck && npm run build
+        run: pnpm run typecheck && pnpm run build
 
   patch-tests:
     name: Verify rendered distribution patch
@@ -104,15 +104,15 @@ jobs:
           extras: '[]'
           test-environment: 'true'
       - name: Install locked desktop dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Patched Python behavioral regressions
         run: scripts/run_tests.sh tests/gateway/test_tui_session_reads.py tests/hermes_state/test_runtime_worker_archive_staleness.py tests/hermes_state/test_session_delete_hook.py tests/hermes_state/test_session_delete_profile_scope.py tests/skills/test_skill_docs_contract.py -q -j 2
       - name: Patched Radio and bundled plugins
         working-directory: apps/desktop
-        run: npx --no-install vitest run --project ui src/contrib/radio-plugin.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/flexpair-color-palette-startup.test.tsx src/contrib/provider-card-filter.test.ts src/contrib/flexpair-bundled-lifecycle.test.ts
+        run: pnpm exec vitest run --project ui src/contrib/radio-plugin.test.ts src/contrib/flexpair-color-palette.test.ts src/contrib/flexpair-color-palette-startup.test.tsx src/contrib/provider-card-filter.test.ts src/contrib/flexpair-bundled-lifecycle.test.ts
       - name: Patched Desktop typecheck and production build
         working-directory: apps/desktop
-        run: npm run typecheck && npm run build
+        run: pnpm run typecheck && pnpm run build
 
   focused-gate:
     name: Flexpair focused verification
