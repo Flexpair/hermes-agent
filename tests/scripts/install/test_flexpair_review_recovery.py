@@ -13,20 +13,21 @@ BRANCH = "2026-11-08-patched"
 
 
 def _env():
-    return dict(
-        os.environ,
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    env.update(
         GIT_ALLOW_PROTOCOL="file",
         GIT_CONFIG_GLOBAL=os.devnull,
         GIT_CONFIG_NOSYSTEM="1",
         GIT_CONFIG_COUNT="0",
         GIT_TERMINAL_PROMPT="0",
     )
+    return env
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, stdin: str | None = None) -> str:
     result = subprocess.run(
         ["git", "-C", str(repo), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", *args],
-        env=_env(), capture_output=True, text=True, check=True,
+        env=_env(), input=stdin, capture_output=True, text=True, check=True,
     )
     return result.stdout.strip()
 
@@ -45,7 +46,7 @@ def _origin(tmp_path: Path) -> Path:
     return repo
 
 
-def _stage(tmp_path: Path, origin: Path) -> subprocess.CompletedProcess:
+def _stage(tmp_path: Path, origin: Path, prelude: str = "") -> subprocess.CompletedProcess:
     env = _env()
     env.update(
         HOME=str(tmp_path),
@@ -54,8 +55,49 @@ def _stage(tmp_path: Path, origin: Path) -> subprocess.CompletedProcess:
         HERMES_REPO_URL=str(origin),
         HERMES_INSTALL_CHANNEL="",
     )
-    command = f"source {shlex.quote(str(INSTALLER))} --manifest --branch {shlex.quote(BRANCH)}\nstage_repository"
+    command = f"source {shlex.quote(str(INSTALLER))} --manifest --branch {shlex.quote(BRANCH)}\n{prelude}\nstage_repository"
     return subprocess.run(["bash", "-c", command], env=env, capture_output=True, text=True, check=False, timeout=60)
+
+
+def _partial_checkout(tmp_path: Path, origin: Path, linked: bool, clone_filter: str = "blob:none"):
+    install = tmp_path / "install"
+    if linked:
+        main_checkout = tmp_path / "main-checkout"
+        _git(tmp_path, "clone", "-q", str(origin), str(main_checkout))
+        _git(main_checkout, "worktree", "add", "-q", "-b", BRANCH, str(install), f"origin/{BRANCH}")
+    else:
+        _git(tmp_path, "clone", "-q", "--single-branch", "--branch", BRANCH, str(origin), str(install))
+
+    _git(install, "config", "gc.auto", "0")
+    _git(install, "config", "maintenance.auto", "false")
+    _git(install, "repack", "-adq")
+    common_dir = Path(_git(install, "rev-parse", "--git-common-dir"))
+    if not common_dir.is_absolute():
+        common_dir = install / common_dir
+    pack_dir = common_dir / "objects" / "pack"
+    [pack] = pack_dir.glob("pack-*.pack")
+    unmarked = pack.with_suffix(".promisor")
+
+    # A second real pack has a nonempty marker, which must not be truncated.
+    tip = _git(install, "rev-parse", "HEAD")
+    pack_hash = _git(install, "pack-objects", "--no-reuse-delta", str(pack_dir / "pack"), stdin=f"{tip}\n")
+    existing = pack_dir / f"pack-{pack_hash}.promisor"
+    assert existing != unmarked
+    existing.write_text(f"{tip} refs/heads/{BRANCH}\n")
+    _git(install, "config", "remote.origin.promisor", "true")
+    _git(install, "config", "remote.origin.partialclonefilter", clone_filter)
+    assert not unmarked.exists()
+    return install, common_dir, unmarked, existing
+
+
+def _guard_fetch(marker: Path, witness: Path) -> str:
+    # Simulate Git rejecting an unmarked pack while leaving the real local fetch intact.
+    return (
+        'git() { local arg; for arg in "$@"; do if [ "$arg" = fetch ]; then '
+        f"printf 'fetch\\n' >> {shlex.quote(str(witness))}; "
+        f"[ -e {shlex.quote(str(marker))} ] || {{ echo 'unmarked pack before fetch' >&2; return 128; }}; "
+        'break; fi; done; command git "$@"; }'
+    )
 
 
 @pytest.mark.parametrize("damage", ["commitless", "lost_head", "dangling_gitdir"])
@@ -107,6 +149,31 @@ def test_single_branch_checkout_creates_and_updates_deploy_branch(tmp_path):
     assert _git(install, "rev-parse", "HEAD") == _git(origin, "rev-parse", BRANCH)
 
 
+@pytest.mark.parametrize("linked", [False, True], ids=["checkout", "linked-worktree"])
+@pytest.mark.parametrize("clone_filter", ["blob:none", "tree:0"])
+def test_partial_clone_is_repaired_before_fetch(tmp_path, linked, clone_filter):
+    origin = _origin(tmp_path)
+    _git(origin, "config", "uploadpack.allowFilter", "true")
+    install, _, unmarked, existing = _partial_checkout(tmp_path, origin, linked, clone_filter)
+    original_marker = existing.read_bytes()
+    _git(origin, "checkout", "-q", BRANCH)
+    (origin / "file").write_text("new deploy")
+    _git(origin, "commit", "-qam", "new deploy")
+    witness = tmp_path / "fetches"
+
+    result = _stage(tmp_path, origin, prelude=_guard_fetch(unmarked, witness))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert witness.read_text().splitlines()
+    assert unmarked.exists()
+    assert existing.read_bytes() == original_marker
+    assert _git(install, "config", "--get", "remote.origin.partialclonefilter") == "blob:none"
+    for setting in ("maintenance.commit-graph.enabled", "gc.writeCommitGraph", "fetch.writeCommitGraph"):
+        assert _git(install, "config", "--bool", "--get", setting) == "false"
+    assert _git(install, "rev-parse", "HEAD") == _git(origin, "rev-parse", BRANCH)
+    assert (install / "file").read_text() == "new deploy"
+
+
 @pytest.mark.parametrize("state", ["ahead", "diverged"])
 def test_existing_local_branch_is_not_reset(tmp_path, state):
     origin = _origin(tmp_path)
@@ -129,24 +196,33 @@ def test_existing_local_branch_is_not_reset(tmp_path, state):
     assert not _git(install, "stash", "list")
 
 
+@pytest.mark.parametrize("linked", [False, True], ids=["checkout", "linked-worktree"])
 @pytest.mark.parametrize("state", ["dirty", "wrong_origin"])
-def test_refusal_preserves_existing_checkout(tmp_path, state):
+def test_refusal_preserves_existing_checkout(tmp_path, state, linked):
     origin = _origin(tmp_path)
-    install = tmp_path / "install"
-    _git(tmp_path, "clone", "-q", "--single-branch", "--branch", BRANCH, str(origin), str(install))
+    install, common_dir, unmarked, existing = _partial_checkout(tmp_path, origin, linked)
     tip = _git(install, "rev-parse", "HEAD")
     if state == "dirty":
         (install / "file").write_text("local edit")
     else:
         _git(install, "remote", "set-url", "origin", str(tmp_path / "different-origin"))
+    status = _git(install, "status", "--porcelain")
+    config = (common_dir / "config").read_bytes()
+    original_marker = existing.read_bytes()
+    witness = tmp_path / "fetches"
 
-    result = _stage(tmp_path, origin)
+    result = _stage(tmp_path, origin, prelude=_guard_fetch(unmarked, witness))
 
     assert result.returncode != 0
+    assert ("local changes" if state == "dirty" else "different repository") in result.stderr
+    assert not witness.exists()
+    assert not unmarked.exists()
+    assert existing.read_bytes() == original_marker
+    assert (common_dir / "config").read_bytes() == config
     assert _git(install, "rev-parse", "HEAD") == tip
+    assert _git(install, "status", "--porcelain") == status
     assert not _git(install, "stash", "list")
-    if state == "dirty":
-        assert (install / "file").read_text() == "local edit"
+    assert (install / "file").read_text() == ("local edit" if state == "dirty" else "deploy")
 
 
 @pytest.mark.parametrize("operation", ["checkout_existing", "checkout_new", "merge"])

@@ -707,6 +707,45 @@ stable_unreachable() {
     fail "$1$(native_detail). Rerun the installer to retry, or pass --channel main to install main's tip" git_fetch_failed
 }
 
+repair_partial_clone() {
+    # git 2.53+ aborts fetches into a partial clone whose packs lack a .promisor
+    # marker (#124272), and an install stuck there never fetches the updater that
+    # heals it. Marking is idempotent and never rewrites objects.
+    if [ "$(git -C "$INSTALL_DIR" config --bool --get remote.origin.promisor)" = true ]; then
+        local common_dir pack
+        if common_dir="$(git -C "$INSTALL_DIR" rev-parse --git-common-dir)"; then
+            case "$common_dir" in /*) ;; *) common_dir="$INSTALL_DIR/$common_dir" ;; esac
+            for pack in "$common_dir"/objects/pack/pack-*.pack; do
+                if [ -f "$pack" ] && [ ! -e "${pack%.pack}.promisor" ]; then
+                    : > "${pack%.pack}.promisor" || log_warn "could not mark $pack as a partial-clone pack"
+                fi
+            done
+        else
+            log_warn "could not find the shared git directory in $INSTALL_DIR"
+        fi
+        # Existing treeless checkout: same commit-graph lazy-fetch loop guard (#127711).
+        git -C "$INSTALL_DIR" config maintenance.commit-graph.enabled false \
+            || log_warn "could not disable maintenance.commit-graph.enabled in $INSTALL_DIR"
+        git -C "$INSTALL_DIR" config gc.writeCommitGraph false \
+            || log_warn "could not disable gc.writeCommitGraph in $INSTALL_DIR"
+        git -C "$INSTALL_DIR" config fetch.writeCommitGraph false \
+            || log_warn "could not disable fetch.writeCommitGraph in $INSTALL_DIR"
+        # A treeless (tree:0) checkout from a late-September installer downloads whole
+        # directory snapshots again on every history walk (#129514). Fetch its trees once; the
+        # new filter is recorded only after that succeeds, so `hermes update` retries otherwise.
+        if [ "$(git -C "$INSTALL_DIR" config --get remote.origin.partialclonefilter)" = tree:0 ]; then
+            if run_logged --may-fail "Fetching directory history once (treeless checkout)" \
+                git -C "$INSTALL_DIR" -c gc.auto=0 -c maintenance.auto=false fetch --refetch \
+                --filter=blob:none origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"; then
+                git -C "$INSTALL_DIR" config remote.origin.partialclonefilter blob:none \
+                    || log_warn "could not record the blobless filter in $INSTALL_DIR"
+            else
+                log_warn "could not fetch the directory history; the next hermes update retries it"
+            fi
+        fi
+    fi
+}
+
 stage_repository() {
     # The distribution follows the explicitly selected deploy branch, never a release pin.
     if [[ "$BRANCH" = 2026-11-08-patched ]]; then
@@ -731,6 +770,7 @@ stage_repository() {
         [[ "$source" = "$REPO_URL" ]] || fail "refusing a different repository" dir_not_checkout
         dirty="$(git -C "$INSTALL_DIR" status --porcelain)" || fail "cannot inspect local changes" local_changes_blocked
         [[ -z "$dirty" ]] || fail "commit or move local changes before updating" local_changes_blocked
+        repair_partial_clone
         run_logged "Fetching origin/$BRANCH" git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || fail "git fetch failed" git_fetch_failed
         # A detached commit must remain reachable after leaving it.
         if ! git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null; then
@@ -779,37 +819,7 @@ stage_repository() {
         # Explicit refspec: a tag-pinned --single-branch checkout from an older
         # installer maps only the tag, so a by-name fetch writes FETCH_HEAD and
         # never the origin/$BRANCH everything below resolves (#125112).
-        # git 2.53+ aborts fetches into a partial clone whose packs lack a .promisor
-        # marker (#124272), and an install stuck there never fetches the updater that
-        # heals it. Marking is idempotent and never rewrites objects.
-        if [ "$(git -C "$INSTALL_DIR" config --bool --get remote.origin.promisor)" = true ]; then
-            local pack
-            for pack in "$INSTALL_DIR"/.git/objects/pack/pack-*.pack; do
-                if [ -f "$pack" ] && [ ! -e "${pack%.pack}.promisor" ]; then
-                    : > "${pack%.pack}.promisor" || log_warn "could not mark $pack as a partial-clone pack"
-                fi
-            done
-            # Existing treeless checkout: same commit-graph lazy-fetch loop guard (#127711).
-            git -C "$INSTALL_DIR" config maintenance.commit-graph.enabled false \
-                || log_warn "could not disable maintenance.commit-graph.enabled in $INSTALL_DIR"
-            git -C "$INSTALL_DIR" config gc.writeCommitGraph false \
-                || log_warn "could not disable gc.writeCommitGraph in $INSTALL_DIR"
-            git -C "$INSTALL_DIR" config fetch.writeCommitGraph false \
-                || log_warn "could not disable fetch.writeCommitGraph in $INSTALL_DIR"
-            # A treeless (tree:0) checkout from a late-September installer downloads whole
-            # directory snapshots again on every history walk (#129514). Fetch its trees once; the
-            # new filter is recorded only after that succeeds, so `hermes update` retries otherwise.
-            if [ "$(git -C "$INSTALL_DIR" config --get remote.origin.partialclonefilter)" = tree:0 ]; then
-                if run_logged --may-fail "Fetching directory history once (treeless checkout)" \
-                    git -C "$INSTALL_DIR" -c gc.auto=0 -c maintenance.auto=false fetch --refetch \
-                    --filter=blob:none origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH"; then
-                    git -C "$INSTALL_DIR" config remote.origin.partialclonefilter blob:none \
-                        || log_warn "could not record the blobless filter in $INSTALL_DIR"
-                else
-                    log_warn "could not fetch the directory history; the next hermes update retries it"
-                fi
-            fi
-        fi
+        repair_partial_clone
         if [ -n "$channel" ]; then
             log "Keeping its checkout: \`hermes update\` moves it (\`hermes update --set-channel main\` follows main)"
             return 0
