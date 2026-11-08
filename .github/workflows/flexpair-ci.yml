@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Fetch upstream reference
@@ -90,10 +90,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Create isolated patch branch
+      - name: Create isolated patch branch from PR base
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
-          base=$(git rev-parse HEAD)
+          base="${PR_BASE:-$(git rev-parse HEAD)}"
+          git cat-file -e "${base}^{commit}"
           git config user.name 'Flexpair CI'
           git config user.email 'actions@users.noreply.github.com'
           bash flexpair/new-branch.sh ci-test "$base"
