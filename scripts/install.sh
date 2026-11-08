@@ -734,7 +734,7 @@ stage_repository() {
         run_logged "Fetching origin/$BRANCH" git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || fail "git fetch failed" git_fetch_failed
         # A detached commit must remain reachable after leaving it.
         if ! git -C "$INSTALL_DIR" symbolic-ref -q HEAD >/dev/null; then
-            refs="$(git -C "$INSTALL_DIR" for-each-ref --contains HEAD)" || fail "cannot inspect detached HEAD" git_checkout_failed
+            refs="$(git -C "$INSTALL_DIR" for-each-ref --contains HEAD refs/heads refs/tags refs/remotes)" || fail "cannot inspect detached HEAD" git_checkout_failed
             [ -n "$refs" ] || fail "save detached HEAD on a branch or tag before updating" git_checkout_failed
         fi
         if git -C "$INSTALL_DIR" show-ref --verify --quiet "refs/heads/$BRANCH"; then

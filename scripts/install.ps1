@@ -1063,7 +1063,7 @@ function Stage-Repository {
             # A detached commit must remain reachable after leaving it.
             Invoke-Native { git -C $InstallDir symbolic-ref -q HEAD 2>$null } | Out-Null
             if ($LASTEXITCODE) {
-                $refs = Invoke-Native { git -C $InstallDir for-each-ref --contains HEAD }
+                $refs = Invoke-Native { git -C $InstallDir for-each-ref --contains HEAD refs/heads refs/tags refs/remotes }
                 if ($LASTEXITCODE) { Fail "cannot inspect detached HEAD" git_checkout_failed }
                 if (-not $refs) { Fail "save detached HEAD on a branch or tag before updating" git_checkout_failed }
             }

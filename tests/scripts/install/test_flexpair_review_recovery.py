@@ -196,6 +196,34 @@ def test_detached_unreferenced_commit_is_not_abandoned(tmp_path):
     assert not _git(install, "stash", "list")
 
 
+def test_detached_commit_reachable_only_from_stash_is_not_abandoned(tmp_path):
+    origin = _origin(tmp_path)
+    install = tmp_path / "install"
+    _git(tmp_path, "clone", "-q", "--single-branch", "--branch", BRANCH, str(origin), str(install))
+    branch_tip = _git(install, "rev-parse", BRANCH)
+    _git(install, "checkout", "-q", "--detach")
+    (install / "file").write_text("detached work")
+    _git(install, "commit", "-qam", "detached work")
+    detached_tip = _git(install, "rev-parse", "HEAD")
+    (install / "file").write_text("stashed work")
+    _git(install, "stash", "push", "-qm", "saved from detached HEAD")
+    stash_tip = _git(install, "rev-parse", "refs/stash")
+    assert _git(install, "for-each-ref", "--format=%(refname)", "--contains", "HEAD") == "refs/stash"
+    assert not _git(install, "status", "--porcelain")
+
+    result = _stage(tmp_path, origin)
+
+    assert result.returncode != 0
+    assert "save detached HEAD on a branch or tag before updating" in result.stderr
+    assert _git(install, "rev-parse", "HEAD") == detached_tip
+    assert not _git(install, "branch", "--show-current")
+    assert _git(install, "rev-parse", BRANCH) == branch_tip
+    assert (install / "file").read_text() == "detached work"
+    assert not _git(install, "status", "--porcelain")
+    assert _git(install, "rev-parse", "refs/stash") == stash_tip
+    assert _git(install, "show", "refs/stash:file") == "stashed work"
+
+
 @pytest.mark.parametrize("reference", ["ancestor", "saved_branch"])
 def test_referenced_detached_commit_can_switch(tmp_path, reference):
     origin = _origin(tmp_path)
