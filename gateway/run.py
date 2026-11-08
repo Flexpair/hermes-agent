@@ -44,6 +44,7 @@ from agent.message_metadata import ABSORBED_MESSAGE_UIDS, MESSAGE_UID, copy_iden
 from agent.turn_context import compression_made_progress
 from agent.session_activity import ActivityProvenance, AwakeIdleMeter
 from hermes_cli.config import _is_ssh_remote_tilde_cwd, cfg_get, config_exists
+from gateway.profile_runtime_scope import _load_profile_secret_scope, profile_runtime_scope
 from gateway.run_common import _csv_or_list_to_set
 from hermes_cli.fallback_config import pre_agent_fallback_notice
 from gateway.turn_executor import _UnboundedThreadExecutor
@@ -1776,21 +1777,6 @@ def _terminal_scope_cwd(default: str = "") -> str:
     return _ts_env("TERMINAL_CWD", default)
 
 
-def _load_profile_secret_scope(profile_home: Path) -> dict:
-    """Hydrate and load one profile's secrets under its home override."""
-    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
-    # Caller already hydrated external sources off-loop (#99519).
-    from hermes_cli.env_loader import hydrate_profile_secret_sources
-    from tui_gateway.launch_profile_policy import owner_secret_scope
-
-    home_token = set_hermes_home_override(str(profile_home))
-    try:
-        hydrate_profile_secret_sources(Path(profile_home))
-        return owner_secret_scope(Path(profile_home))
-    finally:
-        reset_hermes_home_override(home_token)
-
-
 @_contextmanager
 def _profile_runtime_scope(
     profile_home: Path, prepared_secret_scope: Optional[dict] = None, *,
@@ -1799,32 +1785,11 @@ def _profile_runtime_scope(
     ``set_hermes_home_override`` is a contextvar (reaches the agent worker via ``copy_context()``);
     ``set_secret_scope`` makes the profile ``.env`` the credential source without mutating
     ``os.environ``, so subprocesses never inherit cross-profile secrets."""
-    from hermes_constants import set_hermes_home_override, reset_hermes_home_override
-    from agent.secret_scope import set_secret_scope, reset_secret_scope
-
-    home_token = secret_token = None
-    try:
-        home_token = set_hermes_home_override(str(profile_home))
-        if prepared_secret_scope is not None:
-            secrets = prepared_secret_scope
-        elif hydrate_secrets:
-            secrets = _load_profile_secret_scope(Path(profile_home))
-        else:
-            from tui_gateway.launch_profile_policy import owner_secret_scope  # caller already hydrated off-loop
-            secrets = owner_secret_scope(Path(profile_home))
-        secret_token = set_secret_scope(secrets, profile_home=str(profile_home))
-        # Install the routed profile's COMPLETE terminal policy, never ambient TERMINAL_* a prior turn set.
-        # Without it terminal_tool reads the process-global TERMINAL_* vars a previous profile's turn may have
-        # pinned (first-writer-wins backend leak; #68559).
-        from tools.terminal_scope import install_and_reset_profile_terminal_scope
-
-        with install_and_reset_profile_terminal_scope(Path(profile_home), prepared=prepared_terminal_scope):
-            yield
-    finally:
-        if secret_token is not None:
-            reset_secret_scope(secret_token)
-        if home_token is not None:
-            reset_hermes_home_override(home_token)
+    with profile_runtime_scope(
+        profile_home, prepared_secret_scope, hydrate_secrets=hydrate_secrets,
+        prepared_terminal_scope=prepared_terminal_scope, load_secrets=_load_profile_secret_scope,
+    ):
+        yield
 
 
 @_asynccontextmanager

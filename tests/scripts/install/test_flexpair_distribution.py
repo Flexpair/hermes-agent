@@ -26,6 +26,12 @@ def patched_installer(tmp_path):
         shutil.copy2(ROOT / "scripts" / name, target)
         target.write_bytes(target.read_bytes().replace(b"\r\n", b"\n"))
     git(repo, "init", "-q", "-b", "main")
+    # An already-rendered deployment branch must test its actual installers,
+    # including corrections made after the stored main-branch patch was created.
+    if (f'BRANCH="{BRANCH}"' in (scripts / "install.sh").read_text()
+            and f'[string]$Branch = "{BRANCH}"' in (scripts / "install.ps1").read_text()
+            and BRANCH != "main"):
+        return
     # flexpair.patch is a template (@BRANCH@); render it for this branch. On a patched
     # checkout the scripts already carry it, so restore the upstream form first.
     patch = tmp_path / "flexpair.rendered.patch"

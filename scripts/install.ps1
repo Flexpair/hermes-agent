@@ -1019,26 +1019,8 @@ function Confirm-StableUnreachable([string]$What) {
 }
 
 function Stage-Repository {
-    if ($Branch -ceq '2026-11-08-patched') {
-        if ($Commit -or $Channel) { Fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch }
-        if (Test-Path (Join-Path $InstallDir '.git')) {
-            if (-not (Ensure-Git)) { Fail "Git unavailable" unsupported_platform }
-            $source = "$(Invoke-Native { git -C $InstallDir config --get remote.origin.url })".Trim()
-            if ($LASTEXITCODE -or $source -cne $RepoUrl) { Fail "refusing a different repository" dir_not_checkout }
-            $dirty = Invoke-Native { git -C $InstallDir status --porcelain }
-            if ($LASTEXITCODE -or $dirty) { Fail "commit or move local changes before updating" local_changes_blocked }
-            Invoke-Logged "Fetching origin/$Branch" { git -C $InstallDir fetch origin "+refs/heads/${Branch}:refs/remotes/origin/${Branch}" }
-            if ($LASTEXITCODE) { Fail "git fetch failed" git_fetch_failed }
-            Invoke-Logged "Checking out $Branch" { git -C $InstallDir checkout $Branch }
-            if ($LASTEXITCODE) { Fail "git checkout failed" git_checkout_failed }
-            Invoke-Logged "Fast-forwarding $Branch" { git -C $InstallDir merge --ff-only "origin/$Branch" }
-            if ($LASTEXITCODE) { Fail "cannot fast-forward deploy branch" git_checkout_failed }
-            $head = Invoke-Native { git -C $InstallDir rev-parse HEAD }
-            if ($LASTEXITCODE) { Fail "cannot read HEAD" git_checkout_failed }
-            $target = Invoke-Native { git -C $InstallDir rev-parse "origin/$Branch" }
-            if ($LASTEXITCODE -or "$head" -cne "$target") { Fail "local branch is ahead of deploy HEAD" git_checkout_failed }
-            return
-        }
+    if ($Branch -ceq '2026-11-08-patched' -and ($Commit -or $Channel)) {
+        Fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
     }
     $pinned = $false
     # Not $channel: variables are case-insensitive, and the helpers below read the -Channel
@@ -1068,6 +1050,37 @@ function Stage-Repository {
             $broken = "$InstallDir.broken-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
             Write-Warn "$InstallDir is not a usable git checkout (interrupted clone or damaged .git); moving it aside to $broken"
             Move-Item -LiteralPath $InstallDir -Destination $broken
+        }
+    }
+    if ($Branch -ceq '2026-11-08-patched') {
+        if (Test-Path (Join-Path $InstallDir '.git')) {
+            $source = "$(Invoke-Native { git -C $InstallDir config --get remote.origin.url })".Trim()
+            if ($LASTEXITCODE -or $source -cne $RepoUrl) { Fail "refusing a different repository" dir_not_checkout }
+            $dirty = Invoke-Native { git -C $InstallDir status --porcelain }
+            if ($LASTEXITCODE -or $dirty) { Fail "commit or move local changes before updating" local_changes_blocked }
+            Invoke-Logged "Fetching origin/$Branch" { git -C $InstallDir fetch origin "+refs/heads/${Branch}:refs/remotes/origin/${Branch}" }
+            if ($LASTEXITCODE) { Fail "git fetch failed" git_fetch_failed }
+            # A detached commit must remain reachable after leaving it.
+            Invoke-Native { git -C $InstallDir symbolic-ref -q HEAD 2>$null } | Out-Null
+            if ($LASTEXITCODE) {
+                $refs = Invoke-Native { git -C $InstallDir for-each-ref --contains HEAD }
+                if ($LASTEXITCODE) { Fail "cannot inspect detached HEAD" git_checkout_failed }
+                if (-not $refs) { Fail "save detached HEAD on a branch or tag before updating" git_checkout_failed }
+            }
+            Invoke-Native { git -C $InstallDir show-ref --verify --quiet "refs/heads/$Branch" }
+            if ($LASTEXITCODE) {
+                Invoke-Logged "Checking out $Branch" { git -C $InstallDir checkout --no-overwrite-ignore -b $Branch "origin/$Branch" }
+            } else {
+                Invoke-Logged "Checking out $Branch" { git -C $InstallDir checkout --no-overwrite-ignore $Branch }
+            }
+            if ($LASTEXITCODE) { Fail "git checkout failed" git_checkout_failed }
+            Invoke-Logged "Fast-forwarding $Branch" { git -C $InstallDir merge --ff-only --no-overwrite-ignore "origin/$Branch" }
+            if ($LASTEXITCODE) { Fail "cannot fast-forward deploy branch" git_checkout_failed }
+            $head = Invoke-Native { git -C $InstallDir rev-parse HEAD }
+            if ($LASTEXITCODE) { Fail "cannot read HEAD" git_checkout_failed }
+            $target = Invoke-Native { git -C $InstallDir rev-parse "origin/$Branch" }
+            if ($LASTEXITCODE -or "$head" -cne "$target") { Fail "local branch is ahead of deploy HEAD" git_checkout_failed }
+            return
         }
     }
     if (Test-Path (Join-Path $InstallDir ".git")) {

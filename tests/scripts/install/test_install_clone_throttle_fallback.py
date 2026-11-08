@@ -28,7 +28,7 @@ def test_clone_retries_and_publishes_only_materialized_tree(tmp_path, materializ
     env = dict(os.environ, HOME=tmp_path.as_posix(), HERMES_HOME=(tmp_path / "home").as_posix(),
                HERMES_INSTALL_DIR=dest.as_posix(), HERMES_REPO_URL=origin.as_posix())
     # Inject throttling at the network boundary; the fallback and checkout use real Git.
-    script = f'''source {shlex.quote((ROOT / 'scripts/install.sh').as_posix())} --manifest
+    script = f'''source {shlex.quote((ROOT / 'scripts/install.sh').as_posix())} --manifest --branch main
 sleep() {{ :; }}
 git() {{
     if [ "$1" = clone ]; then
@@ -60,7 +60,7 @@ def _run_repository_stage(installer: str, tmp_path: Path, install: Path, origin_
     env = dict(os.environ, HOME=tmp_path.as_posix(), HERMES_HOME=(tmp_path / "home").as_posix(),
                HERMES_INSTALL_DIR=install.as_posix(), HERMES_REPO_URL=origin_url)
     if installer == "sh":
-        script = f"source {shlex.quote((ROOT / 'scripts/install.sh').as_posix())} --manifest\nsleep() {{ :; }}\nstage_repository\n"
+        script = f"source {shlex.quote((ROOT / 'scripts/install.sh').as_posix())} --manifest --branch main\nsleep() {{ :; }}\nstage_repository\n"
         return subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, check=False)
     if os.name != "nt":
         # pwsh on POSIX cannot run the Windows-only pinned Git: seed its PM store slot with host git.
@@ -72,7 +72,7 @@ def _run_repository_stage(installer: str, tmp_path: Path, install: Path, origin_
                 (cmd / name).symlink_to(shutil.which("git"))
         env.update(HERMES_RUNTIME_DIR=str(tmp_path / "tools"), PATH=str(cmd) + os.pathsep + env["PATH"])
     return subprocess.run([POWERSHELL, "-NoProfile", "-File", str(ROOT / "scripts" / "install.ps1"),
-                           "-Stage", "repository", "-NonInteractive", "-InstallDir", str(install),
+                           "-Stage", "repository", "-NonInteractive", "-Branch", "main", "-InstallDir", str(install),
                            "-HermesHome", str(tmp_path / "home")],
                           env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=240, check=False)
 

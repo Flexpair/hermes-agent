@@ -70,18 +70,75 @@ describe('bundled Radio plugin', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('keeps an explicit disabled decision across bundled rediscovery', async () => {
-    $pluginDecisions.set({
+  it('preserves a saved disable across fresh bundled boots without autoplay', async () => {
+    localStorage.clear()
+    localStorage.setItem('hermes.desktop.pluginDecisions.v2', JSON.stringify({
       accent: false,
       kanban: false,
       'hermes-bots': false,
       'flexpair-color-palette': false,
-      'provider-card-filter': false,
-      radio: false
-    })
-    discoverBundledPlugins()
-    expect($pluginRecords.get().radio?.status).toBe('disabled')
-    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
+      'provider-card-filter': false
+    }))
+    const audio = vi.fn()
+    const fetch = vi.fn()
+    vi.stubGlobal('Audio', audio)
+    vi.stubGlobal('fetch', fetch)
+    vi.stubGlobal('hermesDesktop', undefined)
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play')
+
+    // The other tests use a runtime-loader mock; this boot uses the real loader.
+    vi.doUnmock('./runtime-loader')
+    vi.resetModules()
+
+    const boot = async () => {
+      const loader = await import('./plugins')
+      const store = await import('./plugins-store')
+      const { registry: contributions } = await import('./registry')
+      expect(store.$pluginRecords.get()).toEqual({})
+      loader.discoverBundledPlugins()
+
+      return { store, contributions }
+    }
+
+    let initial: Awaited<ReturnType<typeof boot>> | undefined
+
+    try {
+      initial = await boot()
+      expect(initial.store.$pluginDecisions.get()).not.toHaveProperty('radio')
+      expect(initial.store.$pluginRecords.get().radio).toMatchObject({ kind: 'bundled', status: 'loaded' })
+      const radio = initial.contributions.getArea('statusBar.right').find(item => item.source === 'plugin:radio')
+      const element = radio?.render?.()
+      expect(isValidElement<{ player: RadioPlayer }>(element)).toBe(true)
+
+      if (!isValidElement<{ player: RadioPlayer }>(element)) {
+        throw new Error('Radio did not contribute its player through the SDK')
+      }
+
+      expect(element.props.player.status.get()).toBe('paused')
+      expect(audio).not.toHaveBeenCalled()
+      expect(play).not.toHaveBeenCalled()
+      expect(fetch).not.toHaveBeenCalled()
+
+      await initial.store.setPluginEnabled('radio', false)
+      expect(initial.contributions.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
+      expect(JSON.parse(localStorage.getItem('hermes.desktop.pluginDecisions.v2')!)).toMatchObject({ radio: false })
+
+      // Keep Storage, but give the loader, store and registry a new module graph each time.
+      for (const generation of ['restart', 'second restart']) {
+        vi.resetModules()
+        const app = await boot()
+        expect(app.store.$pluginDecisions.get().radio, generation).toBe(false)
+        expect(app.store.$pluginRecords.get().radio, generation).toMatchObject({ kind: 'bundled', status: 'disabled' })
+        expect(app.contributions.getArea('statusBar.right').some(item => item.source === 'plugin:radio'), generation).toBe(false)
+        expect(document.querySelector('audio'), generation).toBeNull()
+        expect(audio, generation).not.toHaveBeenCalled()
+        expect(play, generation).not.toHaveBeenCalled()
+        expect(fetch, generation).not.toHaveBeenCalled()
+      }
+    } finally {
+      await initial?.store.setPluginEnabled('radio', false)
+      vi.doMock('./runtime-loader', () => ({ watchRuntimePlugins: vi.fn() }))
+    }
   })
 
   it('releases the stream on disable and ignores late media events from the old player', async () => {

@@ -35,7 +35,7 @@ def test_stage_processes_restore_pinned_git_and_never_fall_back(tmp_path):
 
     def stage(name):
         result = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-                                 "-File", str(INSTALLER), "-Stage", name, "-Json"],
+                                 "-File", str(INSTALLER), "-Stage", name, "-Json", "-Branch", "main"],
                                 env=env, capture_output=True, text=True, timeout=240, check=False)
         frames = [json.loads(line) for line in result.stdout.splitlines() if line.startswith("{")]
         assert result.returncode == 0 and len(frames) == 1 and frames[0]["ok"], result.stdout + result.stderr

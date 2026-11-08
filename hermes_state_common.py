@@ -441,8 +441,6 @@ def emit_session_deleted(db, deleted_ids, *, reason, primary=None, sessions_dir=
         scope = contextlib.nullcontext()
         if profile is not None:
             from pathlib import Path
-            from gateway.run import _profile_runtime_scope
-
             from hermes_constants import get_routing_process_hermes_home, hermes_home_key
             from tui_gateway.launch_profile_policy import launch_profile_runtime_scope
 
@@ -451,7 +449,12 @@ def emit_session_deleted(db, deleted_ids, *, reason, primary=None, sessions_dir=
             if hermes_home_key(home) == hermes_home_key(get_routing_process_hermes_home()):
                 scope = launch_profile_runtime_scope(Path(home))
             else:
-                scope = _profile_runtime_scope(Path(home))
+                from gateway.profile_runtime_scope import profile_runtime_scope
+
+                # Keep the gateway facade's patch point when the runner is already loaded.
+                gateway_run = sys.modules.get("gateway.run")
+                scope_factory = getattr(gateway_run, "_profile_runtime_scope", profile_runtime_scope)
+                scope = scope_factory(Path(home))
         with scope:
             invoke_hook("on_session_delete", **payload)
     except Exception:

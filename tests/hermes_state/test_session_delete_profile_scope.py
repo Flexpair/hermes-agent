@@ -1,6 +1,10 @@
 """Deletion hooks bind the store owner's complete scope, including lazy discovery."""
 
+import os
 from pathlib import Path
+import subprocess
+import sys
+import textwrap
 from types import SimpleNamespace
 
 import hermes_bootstrap  # Activate dependencies before the home I/O guard.
@@ -10,6 +14,78 @@ from agent.secret_scope import get_secret, reset_secret_scope, set_secret_scope
 from hermes_constants import get_hermes_home, reset_hermes_home_override, set_hermes_home_override
 from hermes_state_common import emit_session_deleted
 from tools.terminal_scope import reset_terminal_scope, set_terminal_scope, terminal_env
+
+
+@pytest.mark.parametrize("own_profile", [True, False])
+@pytest.mark.parametrize("preset_flags", [False, True])
+def test_cold_process_deletion_does_not_initialize_gateway(tmp_path, own_profile, preset_flags):
+    script = textwrap.dedent("""\
+        import os
+        from pathlib import Path
+        import sys
+
+        root = Path(sys.argv[1])
+        own_profile = sys.argv[2] == "True"
+        preset_flags = sys.argv[3] == "True"
+        launch = root / ".hermes" / "profiles" / "launch"
+        other = launch.parent / "repair"
+        launch.mkdir(parents=True)
+        other.mkdir()
+        target = launch if own_profile else other
+        os.environ["HERMES_HOME"] = str(launch)
+        os.environ["OPENAI_API_KEY"] = "test-launch-only"
+        os.environ["TERMINAL_ENV"] = "ssh"
+        os.environ["TERMINAL_SSH_HOST"] = "launch-only.invalid"
+        for key in ("_HERMES_GATEWAY", "HERMES_QUIET"):
+            if preset_flags:
+                os.environ[key] = "original"
+            else:
+                os.environ.pop(key, None)
+        (other / ".env").write_text("OPENAI_API_KEY=test-owner-only\\n", encoding="utf-8")
+        (other / "config.yaml").write_text("terminal:\\n  env: local\\n", encoding="utf-8")
+
+        from agent.secret_scope import get_secret, set_secret_scope
+        from hermes_constants import get_hermes_home, set_hermes_home_override
+        from hermes_cli import lifecycle
+        from hermes_state import SessionDB
+        from tools.terminal_scope import set_terminal_scope, terminal_env
+        from tui_gateway.launch_profile_policy import activate_multi_profile_hosting
+
+        activate_multi_profile_hosting()
+        set_hermes_home_override(str(target))
+        set_secret_scope({"OPENAI_API_KEY": "test-stale"}, profile_home=str(other))
+        set_terminal_scope({"TERMINAL_ENV": "local", "TERMINAL_SSH_HOST": "stale.invalid"})
+        seen = []
+        def record(name, **payload):
+            seen.append((name, payload["profile"], get_hermes_home(), get_secret("OPENAI_API_KEY"),
+                         terminal_env("TERMINAL_ENV"), terminal_env("TERMINAL_SSH_HOST")))
+        lifecycle.invoke_hook = record
+
+        db = SessionDB(db_path=target / "state.db")
+        db.create_session("s", source="cli")
+        assert "gateway.run" not in sys.modules
+        env_before = dict(os.environ)
+        assert db.delete_session("s") is True
+        assert db.get_session("s") is None
+        expected = ("launch", "test-launch-only", "ssh", "launch-only.invalid") if own_profile else (
+            "repair", "test-owner-only", "local", "")
+        assert seen == [("on_session_delete", expected[0], target, *expected[1:])]
+        assert get_hermes_home() == target
+        assert get_secret("OPENAI_API_KEY") == "test-stale"
+        assert terminal_env("TERMINAL_SSH_HOST") == "stale.invalid"
+        assert dict(os.environ) == env_before
+        assert "gateway.run" not in sys.modules
+        db.close()
+    """)
+    env = os.environ.copy()
+    # Keep the account home distinct from the synthetic profile hierarchy.
+    env["HOME"] = str(tmp_path / "account-home")
+    env["HERMES_HOME"] = str(tmp_path / ".hermes")
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(tmp_path), str(own_profile), str(preset_flags)],
+        cwd=Path(__file__).resolve().parents[2], env=env, capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("same_home", [False, True])

@@ -55,7 +55,7 @@ jobs:
       - name: Install locked desktop dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Installer, skill and admission tests
-        run: scripts/run_tests.sh tests/scripts/install/test_flexpair_distribution.py tests/skills/test_flexpair_hermes_distribution_skill.py tests/ci/test_flexpair_ci_proof.py tests/ci/test_flexpair_ci_supply_chain.py -q -j 2
+        run: scripts/run_tests.sh tests/scripts/install/test_flexpair_distribution.py tests/scripts/install/test_flexpair_review_recovery.py tests/scripts/install/test_install_sh_repository_stage.py tests/scripts/install/test_install_sh_existing_destination.py tests/scripts/install/test_install_clone_throttle_fallback.py tests/scripts/install/test_install_diverged_rescue_ref.py tests/skills/test_flexpair_hermes_distribution_skill.py tests/ci/test_flexpair_ci_proof.py tests/ci/test_flexpair_ci_supply_chain.py tests/gateway/test_tui_session_reads.py tests/hermes_state/test_runtime_worker_archive_staleness.py tests/hermes_state/test_session_delete_hook.py tests/hermes_state/test_session_delete_profile_scope.py tests/tools/test_terminal_scope_multiplex.py tests/tools/test_multiplex_turn_parity.py tests/tui_gateway/test_launch_profile_scope_plugin_hooks.py tests/gateway/test_multiplex_interactive_auth.py tests/skills/test_skill_docs_contract.py -q -j 2
       - name: LXQt launcher behavior
         run: |
           docker pull ubuntu:22.04
