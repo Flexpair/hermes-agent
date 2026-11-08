@@ -48,10 +48,21 @@ const IS_WINDOWS = process.platform === 'win32'
 
 const STAMP_COMMIT_RE = /^[0-9a-f]{7,40}$/i
 const FALLBACK_COMMIT_RE = /^0{7,40}$/
+// Keep this in sync with the dated branch rendered into scripts/install.sh.
+const FLEXPAIR_BRANCH = '2026-11-08-patched'
 const FALLBACK_BRANCH = 'main'
 
 function isPinnedCommit(commit) {
   return typeof commit === 'string' && STAMP_COMMIT_RE.test(commit) && !FALLBACK_COMMIT_RE.test(commit)
+}
+
+function isFlexpairBranch(installStamp) {
+  return process.platform === 'linux' && installStamp?.branch === FLEXPAIR_BRANCH &&
+    typeof installStamp?.commit === 'string' && isPinnedCommit(installStamp.commit)
+}
+
+function shouldPinBootstrapCommit(existingCheckout, installStamp) {
+  return !existingCheckout && !isFlexpairBranch(installStamp)
 }
 
 type ExecGitFn = (args: string[], cwd: string) => string
@@ -224,12 +235,12 @@ function cachedScriptPath(hermesHome, cacheKey) {
   return path.join(bootstrapCacheDir(hermesHome), `install-${cacheKey}.${process.platform === 'win32' ? 'ps1' : 'sh'}`)
 }
 
-function downloadInstallScript(ref, destPath) {
+function downloadInstallScript(ref, destPath, repoOwner) {
   // Fetch from GitHub raw at the install ref: the packaged SHA for a fresh
   // install, the branch for an existing checkout or a non-git fallback stamp
   // (never the all-zero placeholder, which is not a real GitHub commit).
   const scriptName = installScriptName()
-  const url = `https://raw.githubusercontent.com/NousResearch/hermes-agent/${ref}/scripts/${scriptName}`
+  const url = `https://raw.githubusercontent.com/${repoOwner}/hermes-agent/${ref}/scripts/${scriptName}`
 
   return new Promise((resolve, reject) => {
     fs.mkdirSync(path.dirname(destPath), { recursive: true })
@@ -354,7 +365,7 @@ async function resolveInstallScript({
       (installRef.pinned ? '' : ' (unpinned branch)')
   })
 
-  await _download(installRef.ref, cached)
+  await _download(installRef.ref, cached, isFlexpairBranch(installStamp) ? 'Flexpair' : 'NousResearch')
   emit({ type: 'log', line: `[bootstrap] saved to ${cached}` })
 
   return { path: cached, source: 'download', commit: resolvedCommit, kind: installScriptKind() }
@@ -913,7 +924,9 @@ async function runBootstrap(opts) {
 
   try {
     const existingCheckout = hasExistingGitCheckout(activeRoot)
-    const pinCommit = !existingCheckout
+    // Flexpair's Linux distribution follows the dated branch HEAD and its
+    // installer rejects an explicit commit pin, even on a fresh install.
+    const pinCommit = shouldPinBootstrapCommit(existingCheckout, installStamp)
 
     if (existingCheckout && installStamp && installStamp.commit) {
       emit({

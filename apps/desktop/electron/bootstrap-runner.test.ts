@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { EventEmitter } from 'node:events'
 import fs from 'node:fs'
+import https from 'node:https'
 import os from 'node:os'
 import path from 'node:path'
+import { Readable } from 'node:stream'
 
-import { test } from 'vitest'
+import { test, vi } from 'vitest'
 
 import {
   buildPinArgs,
@@ -75,6 +79,108 @@ test('fresh bootstrap args include the packaged commit pin', () => {
     }),
     ['--dir', '/tmp/hermes-agent', '--hermes-home', '/tmp/hermes', '--branch', 'main', '--commit', installStamp.commit]
   )
+})
+
+async function assertFreshDownloadedBootstrap(branch: string, useFlexpair: boolean) {
+  const home = mkTmpHome()
+  const activeRoot = path.join(home, 'checkout')
+  const origin = path.join(home, 'origin')
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: origin, encoding: 'utf8' }).trim()
+  const author = ['-c', 'user.name=Bootstrap Fixture', '-c', 'user.email=bootstrap@example.test', '-c', 'commit.gpgsign=false']
+  const urls: string[] = []
+
+  const installer = [
+    '#!/usr/bin/env bash',
+    'set -e',
+    'printf "%s\\n" "$@" >> "$HERMES_HOME/invocations"',
+    'printf "%s\\n" "---" >> "$HERMES_HOME/invocations"',
+    'if [ "$1" = "--manifest" ]; then',
+    '  printf "%s\\n" \'{"stages":[{"name":"checkout"}]}\'',
+    'else',
+    ...(useFlexpair
+      ? ['  for arg in "$@"; do [ "$arg" != "--commit" ] || { echo "commit pin forbidden" >&2; exit 1; }; done']
+      : []),
+    '  branch="" dir="" commit=""',
+    '  while [ "$#" -gt 0 ]; do',
+    '    case "$1" in',
+    '      --branch) branch="$2"; shift 2 ;;',
+    '      --dir) dir="$2"; shift 2 ;;',
+    '      --commit) commit="$2"; shift 2 ;;',
+    '      *) shift ;;',
+    '    esac',
+    '  done',
+    '  git clone -q --branch "$branch" "$HERMES_HOME/origin" "$dir"',
+    '  if [ -n "$commit" ]; then git -C "$dir" checkout -q --detach "$commit"; fi',
+    '  printf "%s\\n" \'{"ok":true,"stage":"checkout"}\'',
+    'fi',
+    ''
+  ].join('\n')
+
+  const getSpy = vi.spyOn(https, 'get').mockImplementation(((url: string, callback: (response: any) => void) => {
+    urls.push(String(url))
+    const response = Object.assign(Readable.from([installer]), { statusCode: 200 })
+    process.nextTick(() => callback(response))
+
+    return new EventEmitter()
+  }) as unknown as typeof https.get)
+
+  try {
+    fs.mkdirSync(origin)
+    git('init', '-q', '-b', branch)
+    git(...author, 'commit', '--allow-empty', '-qm', 'packaged')
+    const packagedCommit = git('rev-parse', 'HEAD')
+    git(...author, 'commit', '--allow-empty', '-qm', 'branch head')
+    const branchHead = git('rev-parse', 'HEAD')
+
+    const result = await runBootstrap({
+      installStamp: { commit: packagedCommit, branch },
+      activeRoot,
+      sourceRepoRoot: null,
+      hermesHome: home,
+      logRoot: home
+    })
+
+    assert.equal(result.ok, true, result.error)
+    const installedGitHead = execFileSync('git', ['-C', activeRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    assert.equal(installedGitHead, useFlexpair ? branchHead : packagedCommit)
+    assert.equal(result.marker.pinnedCommit, installedGitHead)
+    assert.equal(result.marker.pinnedBranch, branch)
+
+    const ref = useFlexpair ? branch : packagedCommit
+    const owner = useFlexpair ? 'Flexpair' : 'NousResearch'
+    assert.deepEqual(urls, [`https://raw.githubusercontent.com/${owner}/hermes-agent/${ref}/scripts/install.sh`])
+
+    const pinArgs = [
+      '--dir', activeRoot,
+      '--hermes-home', home,
+      '--branch', branch,
+      ...(useFlexpair ? [] : ['--commit', packagedCommit])
+    ]
+
+    const invocations = fs.readFileSync(path.join(home, 'invocations'), 'utf8')
+      .split('---\n')
+      .filter(Boolean)
+      .map(invocation => invocation.trimEnd().split('\n'))
+
+    assert.deepEqual(invocations, [
+      ['--manifest', ...pinArgs],
+      ['--stage', 'checkout', '--non-interactive', '--json', ...pinArgs]
+    ])
+  } finally {
+    getSpy.mockRestore()
+    fs.rmSync(home, { recursive: true, force: true })
+  }
+}
+
+test.skipIf(process.platform === 'win32').each(['main', '2026-11-08-patched-extra', '2026-11-09-patched'])(
+  'fresh upstream bootstrap pins %s and downloads from NousResearch',
+  async branch => {
+    await assertFreshDownloadedBootstrap(branch, false)
+  }
+)
+
+test.skipIf(process.platform === 'win32')('fresh dated patched bootstrap follows the Linux Flexpair branch', async () => {
+  await assertFreshDownloadedBootstrap('2026-11-08-patched', process.platform === 'linux')
 })
 
 test('existing-checkout bootstrap args keep branch but skip the packaged commit pin', () => {
