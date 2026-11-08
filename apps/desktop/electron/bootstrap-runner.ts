@@ -56,9 +56,10 @@ function isPinnedCommit(commit) {
   return typeof commit === 'string' && STAMP_COMMIT_RE.test(commit) && !FALLBACK_COMMIT_RE.test(commit)
 }
 
+// A fallback stamp can identify the branch without providing a commit pin.
 function isFlexpairBranch(installStamp) {
   return process.platform === 'linux' && installStamp?.branch === FLEXPAIR_BRANCH &&
-    typeof installStamp?.commit === 'string' && isPinnedCommit(installStamp.commit)
+    typeof installStamp?.commit === 'string' && STAMP_COMMIT_RE.test(installStamp.commit)
 }
 
 function shouldPinBootstrapCommit(existingCheckout, installStamp) {

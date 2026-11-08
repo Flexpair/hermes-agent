@@ -81,7 +81,7 @@ test('fresh bootstrap args include the packaged commit pin', () => {
   )
 })
 
-async function assertFreshDownloadedBootstrap(branch: string, useFlexpair: boolean) {
+async function assertFreshDownloadedBootstrap(branch: string, useFlexpair: boolean, fallback = false) {
   const home = mkTmpHome()
   const activeRoot = path.join(home, 'checkout')
   const origin = path.join(home, 'origin')
@@ -133,7 +133,7 @@ async function assertFreshDownloadedBootstrap(branch: string, useFlexpair: boole
     const branchHead = git('rev-parse', 'HEAD')
 
     const result = await runBootstrap({
-      installStamp: { commit: packagedCommit, branch },
+      installStamp: { commit: fallback ? ZERO_COMMIT : packagedCommit, branch },
       activeRoot,
       sourceRepoRoot: null,
       hermesHome: home,
@@ -142,11 +142,20 @@ async function assertFreshDownloadedBootstrap(branch: string, useFlexpair: boole
 
     assert.equal(result.ok, true, result.error)
     const installedGitHead = execFileSync('git', ['-C', activeRoot, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-    assert.equal(installedGitHead, useFlexpair ? branchHead : packagedCommit)
+    assert.equal(installedGitHead, useFlexpair || fallback ? branchHead : packagedCommit)
+
+    if (useFlexpair || fallback) {
+      const installedBranch = execFileSync('git', ['-C', activeRoot, 'symbolic-ref', '--short', 'HEAD'], {
+        encoding: 'utf8'
+      }).trim()
+
+      assert.equal(installedBranch, branch)
+    }
+
     assert.equal(result.marker.pinnedCommit, installedGitHead)
     assert.equal(result.marker.pinnedBranch, branch)
 
-    const ref = useFlexpair ? branch : packagedCommit
+    const ref = useFlexpair || fallback ? branch : packagedCommit
     const owner = useFlexpair ? 'Flexpair' : 'NousResearch'
     assert.deepEqual(urls, [`https://raw.githubusercontent.com/${owner}/hermes-agent/${ref}/scripts/install.sh`])
 
@@ -154,7 +163,7 @@ async function assertFreshDownloadedBootstrap(branch: string, useFlexpair: boole
       '--dir', activeRoot,
       '--hermes-home', home,
       '--branch', branch,
-      ...(useFlexpair ? [] : ['--commit', packagedCommit])
+      ...(useFlexpair || fallback ? [] : ['--commit', packagedCommit])
     ]
 
     const invocations = fs.readFileSync(path.join(home, 'invocations'), 'utf8')
@@ -181,6 +190,37 @@ test.skipIf(process.platform === 'win32').each(['main', '2026-11-08-patched-extr
 
 test.skipIf(process.platform === 'win32')('fresh dated patched bootstrap follows the Linux Flexpair branch', async () => {
   await assertFreshDownloadedBootstrap('2026-11-08-patched', process.platform === 'linux')
+})
+
+test.skipIf(process.platform !== 'linux')('fallback stamp follows the Linux Flexpair branch', async () => {
+  await assertFreshDownloadedBootstrap('2026-11-08-patched', true, true)
+})
+
+test.skipIf(process.platform !== 'linux')('fallback stamp on an upstream branch still uses NousResearch', async () => {
+  await assertFreshDownloadedBootstrap('main', false, true)
+})
+
+test.skipIf(process.platform !== 'linux')('missing and malformed stamps cannot resolve the Flexpair installer', async () => {
+  for (const installStamp of [
+    null,
+    { branch: '2026-11-08-patched' },
+    { commit: '000000', branch: '2026-11-08-patched' },
+    { commit: '0'.repeat(41), branch: '2026-11-08-patched' },
+    { commit: 'not-a-commit', branch: '2026-11-08-patched' }
+  ]) {
+    await assert.rejects(
+      resolveInstallScript({
+        installStamp,
+        sourceRepoRoot: null,
+        hermesHome: '',
+        emit: () => {},
+        _download: async () => {
+          throw new Error('unexpected download')
+        }
+      }),
+      /no install stamp/
+    )
+  }
 })
 
 test('existing-checkout bootstrap args keep branch but skip the packaged commit pin', () => {
