@@ -32,9 +32,15 @@ afterEach(async () => {
 })
 
 describe('bundled Radio plugin', () => {
-  it('inventories off by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
+  it('starts on by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
     // Other bundled plugins are outside this integration test; Radio has no saved decision.
-    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
+    $pluginDecisions.set({
+      accent: false,
+      kanban: false,
+      'hermes-bots': false,
+      'flexpair-color-palette': false,
+      'provider-card-filter': false
+    })
     const fetch = vi.fn()
     const audio = vi.fn()
     vi.stubGlobal('fetch', fetch)
@@ -44,12 +50,9 @@ describe('bundled Radio plugin', () => {
     const initialStyles = document.head.querySelectorAll('style').length
 
     discoverBundledPlugins()
-    expect($pluginRecords.get().radio).toMatchObject({ kind: 'bundled', status: 'disabled' })
-    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
-    expect(document.head.querySelectorAll('style').length).toBe(initialStyles)
-
-    await setPluginEnabled('radio', true)
     expect($pluginRecords.get().radio.status).toBe('loaded')
+    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(true)
+    expect(document.head.querySelectorAll('style').length).toBe(initialStyles + 1)
     expect(player().status.get()).toBe('paused')
     expect(audio).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
@@ -58,10 +61,38 @@ describe('bundled Radio plugin', () => {
     expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
     expect(document.head.querySelectorAll('style').length).toBe(initialStyles)
     expect($pluginDecisions.get().radio).toBe(false)
+
+    await setPluginEnabled('radio', true)
+    expect($pluginRecords.get().radio.status).toBe('loaded')
+    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(true)
+    expect(player().status.get()).toBe('paused')
+    expect(audio).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('keeps an explicit disabled decision across bundled rediscovery', async () => {
+    $pluginDecisions.set({
+      accent: false,
+      kanban: false,
+      'hermes-bots': false,
+      'flexpair-color-palette': false,
+      'provider-card-filter': false,
+      radio: false
+    })
+    discoverBundledPlugins()
+    expect($pluginRecords.get().radio?.status).toBe('disabled')
+    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
   })
 
   it('releases the stream on disable and ignores late media events from the old player', async () => {
-    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
+    $pluginDecisions.set({
+      accent: false,
+      kanban: false,
+      'hermes-bots': false,
+      'flexpair-color-palette': false,
+      'provider-card-filter': false,
+      radio: false
+    })
     discoverBundledPlugins()
     // jsdom has no decoder: the actual player and plugin lifecycle run against DOM media events.
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
@@ -88,7 +119,14 @@ describe('bundled Radio plugin', () => {
   })
 
   it('survives external pause without destroying the stream or blocking resume', async () => {
-    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
+    $pluginDecisions.set({
+      accent: false,
+      kanban: false,
+      'hermes-bots': false,
+      'flexpair-color-palette': false,
+      'provider-card-filter': false,
+      radio: false
+    })
     discoverBundledPlugins()
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
@@ -119,7 +157,14 @@ describe('bundled Radio plugin', () => {
   })
 
   it('resumes the preserved stream when dictation text lands in an editable field (#108113)', async () => {
-    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
+    $pluginDecisions.set({
+      accent: false,
+      kanban: false,
+      'hermes-bots': false,
+      'flexpair-color-palette': false,
+      'provider-card-filter': false,
+      radio: false
+    })
     discoverBundledPlugins()
     const playMock = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
@@ -152,7 +197,14 @@ describe('bundled Radio plugin', () => {
   })
 
   it('keeps the plugin Pause destructive: no paste resume, and Play reconnects (#108113)', async () => {
-    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
+    $pluginDecisions.set({
+      accent: false,
+      kanban: false,
+      'hermes-bots': false,
+      'flexpair-color-palette': false,
+      'provider-card-filter': false,
+      radio: false
+    })
     discoverBundledPlugins()
     const playMock = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})

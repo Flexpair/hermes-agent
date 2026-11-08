@@ -15,6 +15,10 @@ import pytest_asyncio
 
 @pytest_asyncio.fixture
 async def owner(tmp_path, monkeypatch):
+    # Source checkouts have no installed payload manifest; do not probe a parent
+    # under the real Hermes home when this checkout lives in its scratch cache.
+    from pm import environments
+    monkeypatch.setattr(environments, '_payload_manifest', lambda root: None)
     from gateway import run
     from gateway.config import GatewayConfig
     from gateway.session import SessionStore
@@ -299,3 +303,46 @@ async def test_context_breakdown_follows_an_in_place_row_rewrite(owner, monkeypa
     assert db.set_user_message_content(stored, row_id, expanded) == 1
     after = await owner.call('session.context_breakdown', session_id=sid)
     assert after['estimated_total'] == len(expanded) > before['estimated_total']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', ['replacement', 'description', 'schema'])
+async def test_context_breakdown_refreshes_equal_count_tool_content(owner, monkeypatch, change):
+    """Cost reads follow resident schemas without rebuilding an unchanged prompt snapshot."""
+    from copy import deepcopy
+    from unittest.mock import Mock
+    from agent import context_breakdown, context_file_sources, system_prompt
+
+    sid = (await owner.call('session.create', request_id='tools', source='cli',
+                            cwd=str(owner.workdir)))['session_id']
+    agent = SimpleNamespace(model='fake-model', provider='custom', tools=[{
+        'type': 'function', 'function': {'name': 'mcp_example_search', 'description': 'Search',
+                                       'parameters': {'type': 'object', 'properties': {}}}}])
+    owner.authority.runner._cached_agent_for = lambda route: agent
+    prompt = Mock(return_value={'stable': 'Fixed system prompt', 'volatile': '', 'context': ''})
+    monkeypatch.setattr(system_prompt, 'build_system_prompt_parts', prompt)
+    monkeypatch.setattr(context_file_sources, 'context_file_sources_for_agent', lambda a: [])
+    compute = Mock(wraps=context_breakdown.compute_session_context_breakdown)
+    monkeypatch.setattr(context_breakdown, 'compute_session_context_breakdown', compute)
+
+    first = await owner.call('session.context_breakdown', session_id=sid)
+    assert await owner.call('session.context_breakdown', session_id=sid) == first
+    assert compute.call_count == prompt.call_count == 1
+    if change == 'replacement':
+        agent.tools = deepcopy(agent.tools)
+        agent.tools[0]['function']['description'] = 'Replacement documentation ' * 200
+    elif change == 'description':
+        agent.tools[0]['function']['description'] += ' Extended documentation ' * 200
+    else:
+        agent.tools[0]['function']['parameters']['properties']['query'] = {
+            'type': 'string', 'description': 'Detailed query documentation ' * 200}
+    resident_tools = agent.tools
+    snapshot = deepcopy(resident_tools)
+    after = await owner.call('session.context_breakdown', session_id=sid)
+    before_mcp = next(cat['tokens'] for cat in first['categories'] if cat['id'] == 'mcp')
+    after_mcp = next(cat['tokens'] for cat in after['categories'] if cat['id'] == 'mcp')
+    assert after_mcp > before_mcp
+    assert after['estimated_total'] > first['estimated_total']
+    assert await owner.call('session.context_breakdown', session_id=sid) == after
+    assert compute.call_count == prompt.call_count == 2
+    assert agent.tools is resident_tools and agent.tools == snapshot

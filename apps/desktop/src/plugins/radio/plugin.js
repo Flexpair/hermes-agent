@@ -685,7 +685,7 @@ export default {
   id: ID,
   name: 'Radio',
   description: 'Free live radio with pinned stations, search, and an audio-reactive waveform.',
-  defaultEnabled: false,
+  defaultEnabled: true,
   register(ctx) {
     ctx.i18n.register(LOCALES)
     const style = document.createElement('style')
