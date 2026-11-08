@@ -73,8 +73,9 @@ EXPECTED_FORK_ADDITIONS = _ORIGINAL_FORK_ADDITIONS + (
 
 REQUIRED_JOB_NAMES = (
     "JS & TS checks / JS & TS checks",
-    "Python tests / Run tests (1/2)",
-    "Python tests / Run tests (2/2)",
+    "Python tests / Run tests (1/3)",
+    "Python tests / Run tests (2/3)",
+    "Python tests / Run tests (3/3)",
     "All required checks pass (v2)",
 )
 
