@@ -5,6 +5,7 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -16,6 +17,16 @@ BRANCH = re.search(r'^BRANCH="([^"]+)"', (ROOT / "scripts/install.sh").read_text
 
 @pytest.fixture(autouse=True)
 def patched_installer(tmp_path):
+    _prepare_installer(tmp_path)
+
+
+def _is_rendered_distribution(scripts, branch):
+    return (branch != "main"
+            and f'BRANCH="{branch}"' in (scripts / "install.sh").read_text()
+            and f'[string]$Branch = "{branch}"' in (scripts / "install.ps1").read_text())
+
+
+def _prepare_installer(tmp_path):
     """Setup keeps the patch unapplied; exercise only a disposable deployment artifact."""
     repo = tmp_path / "installer-artifact"
     scripts = repo / "scripts"
@@ -26,6 +37,10 @@ def patched_installer(tmp_path):
         shutil.copy2(ROOT / "scripts" / name, target)
         target.write_bytes(target.read_bytes().replace(b"\r\n", b"\n"))
     git(repo, "init", "-q", "-b", "main")
+    # A rendered distribution must exercise its actual installers, including
+    # any corrections that have not yet reached the stored patch.
+    if _is_rendered_distribution(scripts, BRANCH):
+        return
     # flexpair.patch is a template (@BRANCH@); render it for this branch. On a patched
     # checkout the scripts already carry it, so restore the upstream form first.
     patch = tmp_path / "flexpair.rendered.patch"
@@ -110,3 +125,43 @@ def test_refusal_preserves_checkout(tmp_path, kind):
     assert git(install, "stash", "list") == ""
     if kind in ("dirty", "ahead"):
         assert (install / "file").read_text() == "local work"
+
+
+def test_rendered_distribution_runs_its_actual_installer(tmp_path, monkeypatch):
+    test_dir = tmp_path / "rendered-fixture"
+    source = test_dir / "source"
+    scripts = source / "scripts"
+    scripts.mkdir(parents=True)
+    for name in ("install.sh", "install.ps1"):
+        content = (ROOT / "scripts" / name).read_bytes().replace(b"\r\n", b"\n")
+        (scripts / name).write_bytes(content)
+    (source / "flexpair.patch").write_bytes((ROOT / "flexpair.patch").read_bytes())
+    branch = BRANCH if BRANCH != "main" else "fixture-patched"
+    patch = test_dir / "rendered.patch"
+    patch.write_text((source / "flexpair.patch").read_text().replace("@BRANCH@", branch))
+    git(source, "init", "-q", "-b", "main")
+    includes = ("--include=scripts/install.sh", "--include=scripts/install.ps1")
+    if not _is_rendered_distribution(scripts, branch):
+        reverse = subprocess.run(["git", "-C", str(source), "apply", *includes, "--reverse", "--check", str(patch)],
+                                 capture_output=True, check=False, timeout=10)
+        if reverse.returncode == 0:
+            git(source, "apply", *includes, "--reverse", str(patch))
+        git(source, "apply", *includes, str(patch))
+    powershell = scripts / "install.ps1"
+    powershell.write_bytes(powershell.read_bytes().replace(b"\r\n", b"\n"))
+    installer = scripts / "install.sh"
+    installer.write_text(installer.read_text().replace(
+        "stage_repository() {\n",
+        "stage_repository() {\n    printf 'deployed-installer-regression-marker\\n'\n",
+        1,
+    ))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", source)
+    monkeypatch.setattr(sys.modules[__name__], "BRANCH", branch)
+
+    _prepare_installer(test_dir)
+    repo = origin(test_dir)
+    result = stage(test_dir, repo)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "deployed-installer-regression-marker" in result.stdout
