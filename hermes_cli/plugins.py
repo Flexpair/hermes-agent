@@ -108,6 +108,8 @@ def _install_plugin_debug_handler(force: bool = False) -> None:
 
 _install_plugin_debug_handler()
 
+# The function that fires each name is listed in website/docs/developer-guide/plugins/index.md
+# ("Where each hook fires"); add a row there when you add a hook.
 VALID_HOOKS: set[str] = {
     "pre_tool_call", "post_tool_call", "transform_terminal_output", "transform_tool_result",
     # transform_llm_output: return a replacement string (first non-None wins) or None.
@@ -133,6 +135,8 @@ VALID_HOOKS: set[str] = {
     # error_body may be unredacted.
     "transform_api_error_classification", "on_session_start", "on_session_end",
     "on_session_finalize", "on_session_reset", "on_session_delete",
+    # on_session_open: local session created/opened, before its first turn. Kwargs: session_id, platform, reason.
+    "on_session_open",
     # on_skill_lifecycle: successful skill lifecycle facts (local skill name visible to plugins).
     "on_skill_lifecycle", "subagent_start", "subagent_stop",
     # pre_gateway_dispatch: once per incoming MessageEvent, after the internal-event guard, BEFORE
@@ -1043,6 +1047,30 @@ def has_hook(hook_name: str) -> bool:
     Lazy-discovers first — same gate-before-invoke rationale as :func:`has_middleware` (tracking #64178).
     """
     return _delivery_manager().has_hook(hook_name)
+
+
+def _loaded_registry_nowait(check: Callable[[PluginManager], bool]) -> bool:
+    """``check(manager)`` when this home's plugins are loaded, else False (unknown). Never discovers or
+    waits. ``_discovered`` is set before a sweep finishes and a force reload clears the registries
+    first, so a held discovery lock is unknown, and ``check`` reads the registry under that lock."""
+    manager = get_plugin_manager()
+    if not manager._discovery_lock.acquire(blocking=False):
+        return False
+    try:
+        return manager._discovered and check(manager)
+    finally:
+        manager._discovery_lock.release()
+
+
+def hook_unused_nowait(hook_name: str) -> bool:
+    """True when this home's plugins are loaded and none handles *hook_name*; safe on an event loop."""
+    return _loaded_registry_nowait(lambda manager: not manager.has_hook(hook_name))
+
+
+def plugin_command_absent_nowait(name: str) -> bool:
+    """True when this home's plugins are loaded and none registered command *name*. Never discovers
+    (discovery runs every plugin's ``register()``, which needs the caller's profile scope)."""
+    return _loaded_registry_nowait(lambda manager: name not in manager._plugin_commands)
 
 
 def iter_hook_callbacks(hook_name: str) -> tuple[Callable, ...]:
