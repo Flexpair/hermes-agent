@@ -20,6 +20,12 @@ def patched_installer(tmp_path):
     _prepare_installer(tmp_path)
 
 
+def _is_rendered_distribution(scripts, branch):
+    return (branch != "main"
+            and f'BRANCH="{branch}"' in (scripts / "install.sh").read_text()
+            and f'[string]$Branch = "{branch}"' in (scripts / "install.ps1").read_text())
+
+
 def _prepare_installer(tmp_path):
     """Setup keeps the patch unapplied; exercise only a disposable deployment artifact."""
     repo = tmp_path / "installer-artifact"
@@ -33,9 +39,7 @@ def _prepare_installer(tmp_path):
     git(repo, "init", "-q", "-b", "main")
     # A rendered distribution must exercise its actual installers, including
     # any corrections that have not yet reached the stored patch.
-    if (f'BRANCH="{BRANCH}"' in (scripts / "install.sh").read_text()
-            and f'[string]$Branch = "{BRANCH}"' in (scripts / "install.ps1").read_text()
-            and BRANCH != "main"):
+    if _is_rendered_distribution(scripts, BRANCH):
         return
     # flexpair.patch is a template (@BRANCH@); render it for this branch. On a patched
     # checkout the scripts already carry it, so restore the upstream form first.
@@ -137,11 +141,12 @@ def test_rendered_distribution_runs_its_actual_installer(tmp_path, monkeypatch):
     patch.write_text((source / "flexpair.patch").read_text().replace("@BRANCH@", branch))
     git(source, "init", "-q", "-b", "main")
     includes = ("--include=scripts/install.sh", "--include=scripts/install.ps1")
-    reverse = subprocess.run(["git", "-C", str(source), "apply", *includes, "--reverse", "--check", str(patch)],
-                             capture_output=True, check=False, timeout=10)
-    if reverse.returncode == 0:
-        git(source, "apply", *includes, "--reverse", str(patch))
-    git(source, "apply", *includes, str(patch))
+    if not _is_rendered_distribution(scripts, branch):
+        reverse = subprocess.run(["git", "-C", str(source), "apply", *includes, "--reverse", "--check", str(patch)],
+                                 capture_output=True, check=False, timeout=10)
+        if reverse.returncode == 0:
+            git(source, "apply", *includes, "--reverse", str(patch))
+        git(source, "apply", *includes, str(patch))
     powershell = scripts / "install.ps1"
     powershell.write_bytes(powershell.read_bytes().replace(b"\r\n", b"\n"))
     installer = scripts / "install.sh"
