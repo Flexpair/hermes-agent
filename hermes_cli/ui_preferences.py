@@ -113,7 +113,7 @@ def _read(path: Path) -> tuple[dict, bool]:
 def read_preferences(path: Optional[Path] = None) -> dict:
     """``{"exists", "revision", "values"[, "generation"]}`` for the store at *path* (the
     machine's by default). Raises :class:`PreferencesBusy` when the file exists but cannot be read."""
-    return _read(path or store_path())[0]
+    return dict(_read(path or store_path())[0], capabilities={"conditionalWrites": True})
 
 
 def _validate(changes: Mapping[str, Optional[str]]) -> None:
@@ -229,7 +229,10 @@ def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = Fals
         if len(values) > MAX_KEYS or sum(len(k) + len(v) for k, v in values.items()) > MAX_TOTAL_CHARS:
             raise PreferencesError("preferences store is full")
         if values == current["values"] and (current["exists"] or not values):
-            return dict(current, conditional=True) if bases is not None else current
+            result = dict(current, capabilities={"conditionalWrites": True})
+            if bases is not None:
+                result["conditional"] = True
+            return result
         revision = current["revision"] + 1
         generation = current.get("generation") or secrets.token_hex(8)
         if not still_ours():
@@ -241,7 +244,13 @@ def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = Fals
             shutil.copy2(path, path.with_name(f"{path.name}.corrupt-{int(time.time() * 1000)}"))
         atomic_json_write(path, {"version": 1, "generation": generation, "revision": revision,
                                  "values": values}, mode=0o600)
-    result = {"exists": True, "revision": revision, "values": values, "generation": generation}
+    result = {
+        "exists": True,
+        "revision": revision,
+        "values": values,
+        "generation": generation,
+        "capabilities": {"conditionalWrites": True},
+    }
     if bases is not None:
         result["conditional"] = True
     return result

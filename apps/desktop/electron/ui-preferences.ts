@@ -33,6 +33,7 @@ export interface UiPreferencesSnapshot {
   exists: boolean
   /** Confirms that this response came from a conditional write. */
   conditional?: true
+  capabilities?: { conditionalWrites: true }
   /** One store's lifetime; a replaced (deleted or corrupt) store gets a new one. */
   generation?: string
   revision: number
@@ -113,7 +114,7 @@ function readStore(file: string): StoreRead {
 /** Synchronous so the preload can hand the first paint a hydrated snapshot.
  *  Throws when the file exists but cannot be read. */
 export function readUiPreferences(file: string): UiPreferencesSnapshot {
-  return readStore(file).snapshot
+  return { ...readStore(file).snapshot, capabilities: { conditionalWrites: true } }
 }
 
 /** For the paths that must never throw (the preload's first paint, the
@@ -291,7 +292,11 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
       }
 
       if (JSON.stringify(values) === JSON.stringify(current.values) && (current.exists || entries.length === 0)) {
-        return write.bases ? { ...current, conditional: true as const } : current
+        return {
+          ...current,
+          capabilities: { conditionalWrites: true as const },
+          ...(write.bases && { conditional: true as const })
+        }
       }
 
       const revision = current.revision + 1
@@ -310,7 +315,14 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
 
       await replaceAtomically(file, `${JSON.stringify({ version: 1, generation, revision, values }, null, 2)}\n`)
 
-      return { exists: true, generation, revision, values, ...(write.bases && { conditional: true as const }) }
+      return {
+        exists: true,
+        generation,
+        revision,
+        values,
+        capabilities: { conditionalWrites: true as const },
+        ...(write.bases && { conditional: true as const })
+      }
     })
   })
 

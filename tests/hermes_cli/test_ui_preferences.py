@@ -51,8 +51,14 @@ def test_the_seed_import_only_adds_keys_and_never_creates_an_empty_store(tmp_pat
     second = ui_preferences.write_preferences({"hermes.desktop.sessionListDensity": "compact",
                                                "hermes-desktop-mode-v1": "dark"}, seed=True, path=path)
 
-    assert empty == {"exists": False, "revision": 0, "values": {}}
+    assert empty == {
+        "exists": False,
+        "revision": 0,
+        "values": {},
+        "capabilities": {"conditionalWrites": True},
+    }
     assert first["values"] == {"hermes.desktop.sessionListDensity": "detailed"}
+    assert first["capabilities"]["conditionalWrites"] is True
     assert second["values"] == {"hermes.desktop.sessionListDensity": "detailed", "hermes-desktop-mode-v1": "dark"}
     assert second["generation"] == first["generation"]
     assert json.loads(path.read_text())["values"] == second["values"]
@@ -147,9 +153,16 @@ def test_the_webapp_reads_and_writes_the_machine_store_behind_the_session_gate(w
     assert not store.exists()
 
     tab = _client(token=True)
-    assert tab.get("/api/ui-preferences").json() == {"exists": False, "revision": 0, "values": {}}
+    snapshot = tab.get("/api/ui-preferences").json()
+    assert snapshot == {
+        "exists": False,
+        "revision": 0,
+        "values": {},
+        "capabilities": {"conditionalWrites": True},
+    }
     written = tab.patch("/api/ui-preferences", json={"values": {"hermes-desktop-mode-v1": "dark"}})
     assert written.status_code == 200
+    assert written.json()["capabilities"]["conditionalWrites"] is True
     assert json.loads(store.read_text())["values"] == {"hermes-desktop-mode-v1": "dark"}
     assert tab.patch("/api/ui-preferences", json={"values": {"hermes.other": "x"}}).status_code == 400
 
@@ -172,6 +185,7 @@ def test_conditional_write_checks_each_key_and_preserves_unconditional_and_seed_
         bases={"hermes-desktop-mode-v1": "light", "hermes.desktop.zoom": "125", "hermes.desktop.new": None}, path=path,
     )
     assert result["conditional"] is True
+    assert result["capabilities"]["conditionalWrites"] is True
     assert result["values"] == {"hermes-desktop-mode-v1": "system", "hermes.desktop.zoom": "150", "hermes.desktop.new": "yes"}
     assert ui_preferences.write_preferences({"hermes-desktop-mode-v1": "light"}, path=path)["values"]["hermes-desktop-mode-v1"] == "light"
     seeded = ui_preferences.write_preferences({"hermes-desktop-mode-v1": "dark", "hermes.desktop.seed": "ok"}, seed=True, path=path)

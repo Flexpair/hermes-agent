@@ -3,20 +3,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { persistentAtom } from '../persisted'
 import { writeKey } from '../storage'
 
+import { saveOutbox } from './outbox'
 import { startUiPreferencesSync, type UiPreferencesBridge, type UiPreferencesSnapshot } from './sync'
 
 // A bridge over an in-memory document with the store's semantics: per-key
 // merge, null deletes, `seed` only adds the keys the store lacks.
-function memoryStore(initial: null | Record<string, string>) {
+function memoryStore(initial: null | Record<string, string>, supportsConditional = true) {
   let doc: null | UiPreferencesSnapshot = initial
     ? { exists: true, generation: 'g1', revision: 1, values: { ...initial } }
     : null
 
-  const writes: { seed?: boolean; values: Record<string, null | string> }[] = []
+  const writes: { seed?: boolean; bases?: Record<string, null | string>; values: Record<string, null | string> }[] = []
   const listeners = new Set<(snapshot: UiPreferencesSnapshot) => void>()
-  const snapshot = (): UiPreferencesSnapshot => doc ?? { exists: false, revision: 0, values: {} }
+
+  const snapshot = (): UiPreferencesSnapshot => {
+    const current = doc ?? { exists: false, revision: 0, values: {} }
+
+    return supportsConditional ? { ...current, capabilities: { conditionalWrites: true } } : current
+  }
 
   const bridge: UiPreferencesBridge = {
+    snapshot: snapshot(),
     read: async () => snapshot(),
     write: async payload => {
       writes.push(payload)
@@ -24,6 +31,10 @@ function memoryStore(initial: null | Record<string, string>) {
       const values = { ...(doc?.values ?? {}) }
 
       for (const [key, value] of Object.entries(payload.values)) {
+        if (supportsConditional && payload.bases && (values[key] ?? null) !== payload.bases[key]) {
+          continue
+        }
+
         if (payload.seed) {
           if (value !== null && !(key in values)) {
             values[key] = value
@@ -37,7 +48,7 @@ function memoryStore(initial: null | Record<string, string>) {
 
       doc = { exists: true, generation: doc?.generation ?? 'g1', revision: (doc?.revision ?? 0) + 1, values }
 
-      return payload.bases ? { ...snapshot(), conditional: true as const } : snapshot()
+      return supportsConditional && payload.bases ? { ...snapshot(), conditional: true as const } : snapshot()
     },
     onChanged: callback => {
       listeners.add(callback)
@@ -57,6 +68,8 @@ function memoryStore(initial: null | Record<string, string>) {
 const DENSITY = 'hermes.desktop.sessionListDensity'
 const MODE = 'hermes-desktop-mode-v1'
 const DRAFT = 'hermes.desktop.composerQueue.v1'
+const FAVORITES = 'hermes.desktop.favorite-models'
+const JOINED = 'hermes:ui-preferences:generation'
 
 describe('machine UI preferences sync', () => {
   let stop: () => void = () => undefined
@@ -68,6 +81,7 @@ describe('machine UI preferences sync', () => {
 
   afterEach(() => {
     stop()
+    saveOutbox(new Map())
     vi.useRealTimers()
   })
 
@@ -189,5 +203,54 @@ describe('machine UI preferences sync', () => {
 
     expect(store.snapshot().values).toEqual({ [DENSITY]: 'detailed' })
     expect(window.localStorage.getItem(MODE)).toBe('x'.repeat(10))
+  })
+
+  it('old store without capability: no write is sent, pending stays local, unrelated keys survive', async () => {
+    const store = memoryStore({ [DENSITY]: 'compact', [FAVORITES]: '["existing"]' }, false)
+    window.localStorage.setItem(JOINED, 'g1')
+
+    stop = startUiPreferencesSync(store.bridge)
+    await vi.runAllTimersAsync()
+    writeKey(DENSITY, 'detailed')
+    writeKey(FAVORITES, '["existing","new"]')
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(store.writes).toEqual([])
+    expect(window.localStorage.getItem(DENSITY)).toBe('detailed')
+    expect(window.localStorage.getItem(FAVORITES)).toBe('["existing","new"]')
+    expect(store.snapshot().values).toEqual({ [DENSITY]: 'compact', [FAVORITES]: '["existing"]' })
+  })
+
+  it('404 on /conditional does not discard the batch', async () => {
+    const store = memoryStore({ [DENSITY]: 'compact' })
+    window.localStorage.setItem(JOINED, 'g1')
+
+    store.bridge.write = async () => {
+      throw new Error('404: not found')
+    }
+
+    stop = startUiPreferencesSync(store.bridge)
+    await vi.runAllTimersAsync()
+    writeKey(DENSITY, 'detailed')
+    writeKey(FAVORITES, '["mine"]')
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(store.writes).toEqual([])
+    expect(window.localStorage.getItem(DENSITY)).toBe('detailed')
+    expect(window.localStorage.getItem(FAVORITES)).toBe('["mine"]')
+  })
+
+  it('capability becomes known after a read', async () => {
+    const store = memoryStore({ [DENSITY]: 'compact' })
+    window.localStorage.setItem(JOINED, 'g1')
+    store.bridge.snapshot = { exists: true, generation: 'g1', revision: 1, values: { [DENSITY]: 'compact' } }
+
+    stop = startUiPreferencesSync(store.bridge)
+    await vi.runAllTimersAsync()
+    writeKey(DENSITY, 'detailed')
+    await vi.advanceTimersByTimeAsync(200)
+
+    expect(store.writes).toEqual([{ bases: { [DENSITY]: 'compact' }, values: { [DENSITY]: 'detailed' } }])
+    expect(store.snapshot().values[DENSITY]).toBe('detailed')
   })
 })

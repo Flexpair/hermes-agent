@@ -154,7 +154,7 @@ export function hydrateFromSnapshot(snapshot: null | undefined | UiPreferencesSn
 function isRefusal(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
 
-  return /^400:|^404:|unsupported preference|unsupported value|store is full/.test(message)
+  return /^400:|unsupported preference|unsupported value|store is full/.test(message)
 }
 
 function announce(key: string, oldValue: null | string, newValue: null | string) {
@@ -272,16 +272,25 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
   let generation: null | string = null
   let flushTimer: ReturnType<typeof setTimeout> | null = null
   let stopped = false
+  let conditionalSupported: boolean | null = null
+  let conditionalWarningLogged = false
   // Nothing is written until first contact: a write that created the store
   // ahead of the seed would make the seed see an existing store and skip the
   // rest of this window's values.
   let ready = false
 
-  const apply = (snapshot: UiPreferencesSnapshot, { live }: { live: boolean }) => {
+  const apply = (
+    snapshot: UiPreferencesSnapshot,
+    { live, capabilityKnown = false }: { live: boolean; capabilityKnown?: boolean }
+  ) => {
     // A replaced store (deleted, or corrupt and kept aside) starts a new
     // generation at a low revision: follow it rather than wait for the count.
     if (!snapshot.exists || (generationOf(snapshot) === generation && snapshot.revision < revision)) {
       return
+    }
+
+    if (capabilityKnown || snapshot.capabilities?.conditionalWrites === true) {
+      conditionalSupported = snapshot.capabilities?.conditionalWrites === true
     }
 
     revision = snapshot.revision
@@ -343,7 +352,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
 
     if (ready && !stopped) {
       void bridge.read().then(
-        snapshot => !stopped && apply(snapshot, { live: true }),
+        snapshot => !stopped && apply(snapshot, { live: true, capabilityKnown: true }),
         () => undefined
       )
     }
@@ -360,6 +369,13 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
   let writing = false
   let writeDelay = RETRY_DELAY_MS
 
+  const warnUnsupportedConditionalWrites = () => {
+    if (!conditionalWarningLogged) {
+      conditionalWarningLogged = true
+      console.warn('ui preferences: store does not support conditional writes; local edits are kept in this window')
+    }
+  }
+
   const schedule = (delay: number) => {
     if (flushTimer === null && !writing && ready && !stopped) {
       flushTimer = setTimeout(() => void flush(), delay)
@@ -375,27 +391,48 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
       return
     }
 
-    const batch = new Map(pending)
-    const bases = new Map([...batch.keys()].map(key => [key, pendingBase.get(key) ?? null]))
-    inFlight = new Set(batch.keys())
+    let batch = new Map<string, null | string>()
+    let bases = new Map<string, null | string>()
     let retryIn = FLUSH_DELAY_MS
     writing = true
 
     try {
-      const snapshot = await bridge.write({ values: Object.fromEntries(batch), bases: Object.fromEntries(bases) })
-
-      if (!snapshot.conditional) {
-        throw new Error('unsupported preference conditional writes')
+      if (conditionalSupported === null) {
+        const snapshot = await bridge.read()
+        conditionalSupported = snapshot.capabilities?.conditionalWrites === true
+        apply(snapshot, { live: true, capabilityKnown: true })
       }
 
-      reconcileWriteBatch(batch, bases, pending, pendingBase, conflicts, snapshot, known, generation, revision)
+      if (conditionalSupported === false) {
+        warnUnsupportedConditionalWrites()
+        writeDelay = MAX_RETRY_DELAY_MS
+        retryIn = MAX_RETRY_DELAY_MS
+      } else if (!stopped && !takenOver() && pending.size > 0) {
+        batch = new Map(pending)
+        bases = new Map([...batch.keys()].map(key => [key, pendingBase.get(key) ?? null]))
+        inFlight = new Set(batch.keys())
+        const snapshot = await bridge.write({ values: Object.fromEntries(batch), bases: Object.fromEntries(bases) })
 
-      inFlight.clear()
-      save()
-      writeDelay = RETRY_DELAY_MS
-      apply(snapshot, { live: true })
+        if (!snapshot.conditional) {
+          throw new Error('unsupported preference conditional writes')
+        }
+
+        reconcileWriteBatch(batch, bases, pending, pendingBase, conflicts, snapshot, known, generation, revision)
+
+        inFlight.clear()
+        save()
+        writeDelay = RETRY_DELAY_MS
+        apply(snapshot, { live: true })
+      }
     } catch (error) {
-      if (isRefusal(error)) {
+      const message = error instanceof Error ? error.message : String(error)
+
+      if (message.startsWith('404:')) {
+        conditionalSupported = false
+        warnUnsupportedConditionalWrites()
+        writeDelay = MAX_RETRY_DELAY_MS
+        retryIn = MAX_RETRY_DELAY_MS
+      } else if (isRefusal(error)) {
         // The store refused this batch outright (oversized value, full store):
         // it stays in this window only, and later changes are not held behind it.
         console.warn('[ui-preferences] the machine store refused these preferences', [...batch.keys()], error)
@@ -571,14 +608,20 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
     connectTimer = null
 
     void (initial ? Promise.resolve(initial) : bridge.read())
-      .then(join)
+      .then(snapshot => {
+        if (!initial) {
+          conditionalSupported = snapshot.capabilities?.conditionalWrites === true
+        }
+
+        return join(snapshot)
+      })
       .then(snapshot => {
         if (stopped) {
           return
         }
 
         ready = true
-        apply(snapshot, { live: true })
+        apply(snapshot, { live: true, capabilityKnown: !initial })
         schedule(FLUSH_DELAY_MS)
       })
       .catch(error => {
@@ -592,7 +635,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
           joinRefused = true
           ready = true
           void bridge.read().then(
-            snapshot => apply(snapshot, { live: true }),
+            snapshot => apply(snapshot, { live: true, capabilityKnown: true }),
             () => undefined
           )
           schedule(FLUSH_DELAY_MS)
