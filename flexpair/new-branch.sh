@@ -11,11 +11,14 @@ main() {
   local base="${2:-origin/main}"
   git diff --quiet && git diff --cached --quiet || { echo "working tree not clean" >&2; return 1; }
   [ "$base" != origin/main ] || git fetch -q origin main
+  rendered_patch=""
+  rendered_patch="$(mktemp)"
+  trap 'rm -f "$rendered_patch"' EXIT
+  sed "s/@BRANCH@/$name/g" flexpair.patch >"$rendered_patch"
   git switch -c "$name" "$base"
-  render() { sed "s/@BRANCH@/$name/g" flexpair.patch; }
-  if ! render | git apply --index --whitespace=nowarn 2>/dev/null; then
+  if ! git apply --index --whitespace=nowarn "$rendered_patch" 2>/dev/null; then
     echo "flexpair.patch does not apply cleanly; retrying as 3-way merge ..." >&2
-    if ! render | git apply --3way --whitespace=nowarn; then
+    if ! git apply --3way --whitespace=nowarn "$rendered_patch"; then
       echo "" >&2
       echo "Conflicts remain in the files listed above (look for <<<<<<< markers)." >&2
       echo "Resolve them, then: git add -A && git commit --no-verify -m 'chore: apply flexpair.patch for $name'" >&2

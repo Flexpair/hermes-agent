@@ -48,6 +48,52 @@ def git(repo, *args):
     return subprocess.run(["git", "-C", str(repo), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
+def test_new_branch_captures_candidate_patch_before_switching_to_base(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.name", "Fixture")
+    git(repo, "config", "user.email", "fixture@example.invalid")
+    (repo / "base.txt").write_text("base\n")
+    (repo / "flexpair.patch").write_text(
+        "diff --git a/wrong.txt b/wrong.txt\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        "+++ b/wrong.txt\n"
+        "@@ -0,0 +1 @@\n"
+        "+wrong\n"
+    )
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "base")
+    base = git(repo, "rev-parse", "HEAD")
+
+    (repo / "flexpair.patch").write_text(
+        "diff --git a/candidate.txt b/candidate.txt\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        "+++ b/candidate.txt\n"
+        "@@ -0,0 +1 @@\n"
+        "+candidate\n"
+    )
+    flexpair_dir = repo / "flexpair"
+    flexpair_dir.mkdir()
+    shutil.copy2(ROOT / "flexpair/new-branch.sh", flexpair_dir / "new-branch.sh")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "candidate")
+
+    result = subprocess.run(
+        ["bash", str(flexpair_dir / "new-branch.sh"), "ci-test", base],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert git(repo, "branch", "--show-current") == "ci-test-patched"
+    assert (repo / "candidate.txt").read_text() == "candidate\n"
+    assert not (repo / "wrong.txt").exists()
+
+
 def origin(tmp_path):
     repo = tmp_path / "origin"
     repo.mkdir()
