@@ -60,13 +60,14 @@ export interface PluginStorage {
 
 /** Raw mode preferences, including absent or older values needed for restoration. */
 export interface PluginModePreferences {
-  read(key: 'global' | 'profiles'): null | string
-  write(key: 'global' | 'profiles', value: null | string): void
+  read(key: 'global' | 'profiles' | 'baseline'): null | string
+  write(key: 'global' | 'profiles' | 'baseline', value: null | string): void
 }
 
 const modePreferenceKeys = {
   global: 'hermes-desktop-mode-v1',
-  profiles: 'hermes-desktop-profile-modes-v1'
+  profiles: 'hermes-desktop-profile-modes-v1',
+  baseline: 'hermes-desktop-flexpair-palette-baseline-v1'
 } as const
 
 /** The curated OS door — every way a plugin reaches outside the app window,

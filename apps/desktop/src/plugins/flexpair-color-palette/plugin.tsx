@@ -1,11 +1,13 @@
 // Fixed Flexpair accent seeds; palette derivation remains Hermes core behavior.
-import type { HermesPlugin } from '@hermes/plugin-sdk'
+import type { HermesPlugin, PluginContext } from '@hermes/plugin-sdk'
 import { host, randomUuid, setAccentOverride } from '@hermes/plugin-sdk'
 
 interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: Record<string, string>, generations?: Record<string, string> }
 const legacyOwnerPrefix = 'legacy:'
+const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
+const legacyBaselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
 
-function registrationOwner(window: Window, profile: string): string {
+function registrationOwner(window: Window): string {
   const key = 'hermes-desktop-plugin-flexpair-color-palette-window-v1'
   let windowId = window.sessionStorage.getItem(key)
 
@@ -15,12 +17,12 @@ function registrationOwner(window: Window, profile: string): string {
   }
 
   // Session storage survives renderer reload/crash, but is separate per window.
-  return `${windowId}:${profile}`
+  return `${window.hermesDesktop ? 'desktop' : 'web'}:${windowId}`
 }
 
-function readBaseline(window: Window, baselineKey: string): Baseline | undefined {
+function parseBaseline(raw: null | string): Baseline | undefined {
   try {
-    const saved = JSON.parse(window.localStorage.getItem(baselineKey) ?? 'null')
+    const saved = JSON.parse(raw ?? 'null')
 
     if (saved && (saved.global === null || typeof saved.global === 'string')
       && saved.profiles && typeof saved.profiles === 'object' && !Array.isArray(saved.profiles)) {
@@ -29,6 +31,43 @@ function readBaseline(window: Window, baselineKey: string): Baseline | undefined
   } catch {
     // A damaged plugin-owned record starts a fresh activation baseline.
   }
+}
+
+function readBaseline(
+  window: Window,
+  ctx: PluginContext
+): Baseline | undefined {
+  const raw = ctx.modePreferences.read('baseline')
+
+  if (raw !== null) {
+    return parseBaseline(raw)
+  }
+
+  const saved = parseBaseline(window.localStorage.getItem(legacyBaselineKey))
+
+  if (!saved) { return }
+
+  const savedOwners = saved.owners && typeof saved.owners === 'object' ? saved.owners : {}
+
+  const owners = Object.fromEntries(
+    Object.entries(savedOwners).map(([id, profile]) => [
+      /^(desktop|web|legacy):/.test(id) ? id : `${legacyOwnerPrefix}${profile}`,
+      profile
+    ])
+  )
+
+  const migrated: Baseline = { ...saved, owners }
+
+  if (Array.isArray(saved.owners)) {
+    migrated.owners = Object.fromEntries(saved.owners
+      .filter((profile): profile is string => typeof profile === 'string')
+      .map(profile => [`${legacyOwnerPrefix}${profile}`, profile]))
+  }
+
+  ctx.modePreferences.write('baseline', JSON.stringify(migrated))
+  window.localStorage.removeItem(legacyBaselineKey)
+
+  return migrated
 }
 
 // One discovery per activation, not a recurring lease. Suspended peers may miss it.
@@ -186,9 +225,9 @@ const plugin: HermesPlugin = {
         ? liveProfile : bootProfile)?.trim() || 'default'
 
       const profiles = profile === 'default' ? [] : [profile]
-      const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
       // Capture the renderer slot and route before the pending lock can yield.
-      const owner = registrationOwner(window, profile)
+      const owner = registrationOwner(window)
+      const originTag = window.hermesDesktop ? 'desktop' : 'web'
       const ownerGeneration = randomUuid()
       const releasePrefix = `${baselineKey}:released:`
       withPaletteTransaction(() => {
@@ -196,7 +235,7 @@ const plugin: HermesPlugin = {
 
       try {
       const modes = readModes()
-      let baseline = readBaseline(window, baselineKey)
+      let baseline = readBaseline(window, ctx)
       const currentMode = ctx.modePreferences.read('global')
       baseline ??= { global: currentMode, profiles: {} }
 
@@ -224,19 +263,19 @@ const plugin: HermesPlugin = {
 
       const discoveryGenerations: Record<string, string | undefined> = Object.fromEntries(
         Object.keys(owners)
-          .filter(id => id !== owner && !id.startsWith(legacyOwnerPrefix))
+          .filter(id => id !== owner && id.startsWith(`${originTag}:`))
           .map(id => [id, generations[id]])
       )
 
       baseline.owners = { ...owners, [owner]: profile }
       baseline.generations = { ...generations, [owner]: ownerGeneration }
-      window.localStorage.setItem(baselineKey, JSON.stringify(baseline))
+      ctx.modePreferences.write('baseline', JSON.stringify(baseline))
 
-      const restoreProfiles = (remaining: Baseline, activeProfiles: string[], hasLegacyOwners: boolean) => {
+      const restoreProfiles = (remaining: Baseline) => {
         const currentModes = readModes()
 
         for (const [profile, previous] of Object.entries(remaining.profiles)) {
-          if (hasLegacyOwners || activeProfiles.includes(profile) || currentModes[profile] !== 'dark') {
+          if (currentModes[profile] !== 'dark') {
             continue
           }
 
@@ -248,12 +287,6 @@ const plugin: HermesPlugin = {
         }
 
         ctx.modePreferences.write('profiles', JSON.stringify(currentModes))
-
-        for (const target of Object.keys(remaining.profiles)) {
-          if (!hasLegacyOwners && !activeProfiles.includes(target)) {
-            delete remaining.profiles[target]
-          }
-        }
       }
 
       const collectReleaseMarkers = (
@@ -293,7 +326,7 @@ const plugin: HermesPlugin = {
         withPaletteTransaction(() => {
         try {
           // Re-read shared ownership before restoring the selected profile.
-          const remaining = readBaseline(window, baselineKey)
+          const remaining = readBaseline(window, ctx)
 
           if (!remaining) { return }
           let removed = false
@@ -315,21 +348,19 @@ const plugin: HermesPlugin = {
             return
           }
 
-          const activeProfiles = Object.values(remaining.owners ?? {})
-          const hasLegacyOwners = Object.keys(remaining.owners ?? {}).some(id => id.startsWith(legacyOwnerPrefix))
-          restoreProfiles(remaining, activeProfiles, hasLegacyOwners)
-
-          if (!activeProfiles.length && !hasLegacyOwners && ctx.modePreferences.read('global') === 'dark') {
-            ctx.modePreferences.write('global', remaining.global)
-          }
-
-          if (activeProfiles.length || hasLegacyOwners) {
-            window.localStorage.setItem(baselineKey, JSON.stringify(remaining))
+          if (Object.keys(remaining.owners ?? {}).length) {
+            ctx.modePreferences.write('baseline', JSON.stringify(remaining))
           } else {
-            window.localStorage.removeItem(baselineKey)
+            restoreProfiles(remaining)
+
+            if (ctx.modePreferences.read('global') === 'dark') {
+              ctx.modePreferences.write('global', remaining.global)
+            }
+
+            ctx.modePreferences.write('baseline', null)
+            window.dispatchEvent(new StorageEvent('storage', { key, newValue: window.localStorage.getItem(key) }))
           }
 
-          window.dispatchEvent(new StorageEvent('storage', { key, newValue: window.localStorage.getItem(key) }))
           markers.forEach(marker => window.localStorage.removeItem(marker))
         } catch (error) {
           console.error('[flexpair-color-palette] Could not restore appearance preferences', error)

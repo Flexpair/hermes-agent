@@ -49,8 +49,10 @@ it('still releases preferences and resets zoom when the release notification can
       releaseNotificationWriteRejected = true
       throw new Error('quota exceeded')
     }
+
     original(key, value)
   })
+
   const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')!
   // Native Storage is an exotic object; use the same own-method shape as
   // the Node fallback so interception is observable in either environment.
@@ -81,7 +83,7 @@ it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-trans
     window.sessionStorage.clear()
     $gatewayState.set('open')
     $activeGatewayProfile.set('work')
-    const key = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+    const key = 'hermes-desktop-flexpair-palette-baseline-v1'
 
     let receive: (message: unknown) => void = () => {}
     const send = vi.fn()
@@ -126,7 +128,7 @@ it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-trans
 
     if (behavior === 'late') { receive(reply) }
     const retained = ['reply', 'dispose', 'no-transport'].includes(behavior)
-    expect(modePref.resolve('work')).toBe(retained ? 'dark' : 'light')
+    expect(modePref.resolve('work')).toBe('dark')
 
     if (behavior === 'dispose') { expect(stop).toHaveBeenCalledTimes(1) }
 
@@ -137,7 +139,7 @@ it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-trans
     }
 
     disposers.splice(0).forEach(dispose => dispose())
-    expect(modePref.resolve('research')).toBe('light')
+    expect(modePref.resolve('research')).toBe(retained ? 'dark' : 'light')
     vi.useRealTimers()
   }
 )
@@ -215,7 +217,7 @@ it('keeps the reloaded owner dark when a peer discovery expires', () => {
     plugin.register(createPluginContext(plugin.id, dispose => owned.push(dispose)))
   }
 
-  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+  const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
   const sessionKey = 'hermes-desktop-plugin-flexpair-color-palette-window-v1'
 
   try {
@@ -242,12 +244,13 @@ it('keeps the reloaded owner dark when a peer discovery expires', () => {
     expect(modePref.resolve('work')).toBe('dark')
     expect(modePref.resolve('research')).toBe('dark')
     const recovered = JSON.parse(firstWindow.localStorage.getItem(baselineKey)!)
-    expect(recovered.owners['stable-window-id:work']).toBe('work')
-    expect(recovered.generations['stable-window-id:work']).not.toBe(original.generations['stable-window-id:work'])
+    expect(recovered.owners['desktop:stable-window-id']).toBe('work')
+    expect(recovered.generations['desktop:stable-window-id']).not.toBe(original.generations['desktop:stable-window-id'])
     firstDisposers.splice(0).forEach(dispose => dispose())
-    expect(modePref.resolve('work')).toBe('light')
+    expect(modePref.resolve('work')).toBe('dark')
     expect(modePref.resolve('research')).toBe('dark')
     secondDisposers.splice(0).forEach(dispose => dispose())
+    expect(modePref.resolve('work')).toBe('light')
     expect(modePref.resolve('research')).toBe('light')
     expect(modePref.resolve('default')).toBe('light')
     expect(firstWindow.localStorage.getItem(baselineKey)).toBeNull()
@@ -271,7 +274,7 @@ it.each(['work', 'research'])('serializes overlapping registrations and releases
   Object.defineProperty(window.navigator, 'locks', { configurable: true, value: { request } })
   const firstDisposers: (() => void)[] = []
   const secondDisposers: (() => void)[] = []
-  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+  const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
 
   const register = (id: string, profile: string, owned: (() => void)[]) => {
     window.sessionStorage.setItem('hermes-desktop-plugin-flexpair-color-palette-window-v1', id)
@@ -303,6 +306,7 @@ it.each(['work', 'research'])('serializes overlapping registrations and releases
     expect(modePref.resolve(secondProfile)).toBe('dark')
     firstDisposers.splice(0).forEach(dispose => dispose())
     await drain()
+    expect(modePref.resolve('work')).toBe('dark')
     expect(modePref.resolve(secondProfile)).toBe('dark')
     secondDisposers.splice(0).forEach(dispose => dispose())
     await drain()
@@ -457,7 +461,7 @@ it('restores shared appearance after a closing renderer loses its queued lock re
 
     expect(modePref.resolve('work')).toBe('light')
     expect(modePref.resolve('default')).toBe('light')
-    expect(firstWindow.localStorage.getItem('hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1')).toBeNull()
+    expect(firstWindow.localStorage.getItem('hermes-desktop-flexpair-palette-baseline-v1')).toBeNull()
   } finally {
     releaseHeldLock?.()
     await heldRequest
@@ -478,8 +482,9 @@ it('preserves legacy profile owners when migrating persisted ownership', () => {
   vi.useFakeTimers()
   window.localStorage.clear()
   window.sessionStorage.clear()
-  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
-  window.localStorage.setItem(baselineKey, JSON.stringify({
+  const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
+  const legacyBaselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+  window.localStorage.setItem(legacyBaselineKey, JSON.stringify({
     global: 'light', profiles: { work: 'light' }, owners: ['work']
   }))
   window.localStorage.setItem('hermes-desktop-mode-v1', 'dark')
@@ -493,6 +498,7 @@ it('preserves legacy profile owners when migrating persisted ownership', () => {
   plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
   const migrated = JSON.parse(window.localStorage.getItem(baselineKey)!)
   expect(migrated.owners).toEqual(expect.objectContaining({ 'legacy:work': 'work' }))
+  expect(window.localStorage.getItem(legacyBaselineKey)).toBeNull()
   vi.advanceTimersByTime(2000)
   expect(modePref.resolve('work')).toBe('dark')
   expect(JSON.parse(window.localStorage.getItem(baselineKey)!).owners)
@@ -509,8 +515,8 @@ it('retains every baseline while a legacy owner profile does not match saved pro
   vi.useFakeTimers()
   window.localStorage.clear()
   window.sessionStorage.clear()
-  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
-  window.localStorage.setItem(baselineKey, JSON.stringify({
+  const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
+  window.localStorage.setItem('hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1', JSON.stringify({
     global: 'light', profiles: { work: 'light' }, owners: ['research']
   }))
   window.localStorage.setItem('hermes-desktop-mode-v1', 'dark')
@@ -623,7 +629,7 @@ it.each(['pagehide', 'beforeunload'])('releases only the closing window on %s wi
   closing.dispatchEvent(new Event(event))
   expect(sharedZoomPercent).toBe(125)
   expect(setPercent.mock.calls).toEqual([[150], [150], [125]])
-  expect(modePref.resolve('work')).toBe('light')
+  expect(modePref.resolve('work')).toBe('dark')
   expect(modePref.resolve('default')).toBe('dark')
   // Late host disposal of the closed renderer must not consume a new owner.
   disposers.shift()!()
@@ -634,6 +640,7 @@ it.each(['pagehide', 'beforeunload'])('releases only the closing window on %s wi
   disposers.splice(0).forEach(dispose => { dispose(); dispose() })
   expect(sharedZoomPercent).toBe(0)
   expect(setPercent.mock.calls).toEqual([[150], [150], [125], [0]])
+  expect(modePref.resolve('work')).toBe('light')
   expect(modePref.resolve('default')).toBe('light')
   vi.unstubAllGlobals()
   remaining.remove()
@@ -662,6 +669,7 @@ it.each(['connecting', 'closed', 'idle'] as const)('uses established work routin
 
 it.each(['work', 'research'])('isolates independent registrations when disposing %s first', first => {
   window.localStorage.clear()
+  window.sessionStorage.clear()
   Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
   $gatewayState.set('open')
   modePref.assign('work', 'light')
@@ -669,6 +677,7 @@ it.each(['work', 'research'])('isolates independent registrations when disposing
   const owned: Record<string, (() => void)[]> = { work: [], research: [] }
 
   for (const profile of ['work', 'research']) {
+    window.sessionStorage.setItem('hermes-desktop-plugin-flexpair-color-palette-window-v1', `${profile}-owner`)
     $activeGatewayProfile.set(profile)
     plugin.register(createPluginContext(plugin.id, dispose => owned[profile].push(dispose)))
     expect(modePref.resolve(profile)).toBe('dark')
@@ -676,7 +685,7 @@ it.each(['work', 'research'])('isolates independent registrations when disposing
 
   const second = first === 'work' ? 'research' : 'work'
   owned[first].splice(0).forEach(dispose => dispose())
-  expect(modePref.resolve(first)).toBe('light')
+  expect(modePref.resolve(first)).toBe('dark')
   expect(modePref.resolve(second)).toBe('dark')
   expect(modePref.resolve('default')).toBe('dark')
   owned[second].splice(0).forEach(dispose => dispose())
