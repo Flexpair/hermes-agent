@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictStr
 
 from hermes_cli import ui_preferences
 
@@ -25,6 +25,12 @@ class PreferencesPatch(BaseModel):
     #: This browser's first contact with the store generation: adds only the keys the store
     #: lacks, never overwriting or deleting one.
     seed: bool = False
+    bases: Optional[dict[str, Optional[StrictStr]]] = None
+
+
+class ConditionalPreferencesPatch(PreferencesPatch):
+    values: dict[str, Optional[str]]
+    bases: dict[str, Optional[StrictStr]]
 
 
 @router.get("/api/ui-preferences")
@@ -38,8 +44,16 @@ def get_ui_preferences() -> dict:
 @router.patch("/api/ui-preferences")
 def patch_ui_preferences(body: PreferencesPatch) -> dict:
     try:
-        return ui_preferences.write_preferences(body.values, seed=body.seed)
+        if "bases" in body.model_fields_set and body.bases is None:
+            raise ui_preferences.PreferencesError("preference bases must be an object")
+        return ui_preferences.write_preferences(body.values, seed=body.seed, bases=body.bases)
     except ui_preferences.PreferencesError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ui_preferences.PreferencesBusy as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.patch("/api/ui-preferences/conditional")
+def patch_conditional_ui_preferences(body: ConditionalPreferencesPatch) -> dict:
+    # A separate endpoint makes an older server reject rather than ignore bases.
+    return patch_ui_preferences(body)

@@ -37,7 +37,7 @@ function memoryStore(initial: null | Record<string, string>) {
 
       doc = { exists: true, generation: doc?.generation ?? 'g1', revision: (doc?.revision ?? 0) + 1, values }
 
-      return snapshot()
+      return payload.bases ? { ...snapshot(), conditional: true as const } : snapshot()
     },
     onChanged: callback => {
       listeners.add(callback)
@@ -108,7 +108,7 @@ describe('machine UI preferences sync', () => {
     writeKey(DRAFT, 'local only')
     await vi.runAllTimersAsync()
 
-    expect(store.writes).toEqual([{ values: { [DENSITY]: 'detailed' } }])
+    expect(store.writes).toEqual([{ bases: { [DENSITY]: null }, values: { [DENSITY]: 'detailed' } }])
     expect(store.snapshot().values).toEqual({ [DENSITY]: 'detailed', [MODE]: 'dark' })
 
     store.external({ [DENSITY]: 'comfortable', [MODE]: 'dark' })

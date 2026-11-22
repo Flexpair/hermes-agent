@@ -154,7 +154,7 @@ export function hydrateFromSnapshot(snapshot: null | undefined | UiPreferencesSn
 function isRefusal(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
 
-  return /^400:|unsupported preference|unsupported value|store is full/.test(message)
+  return /^400:|^404:|unsupported preference|unsupported value|store is full/.test(message)
 }
 
 function announce(key: string, oldValue: null | string, newValue: null | string) {
@@ -173,7 +173,7 @@ function announce(key: string, oldValue: null | string, newValue: null | string)
  * - a change another window, tab or device made lands here live;
  * - a provisional value (a write marked `provisional`) never leaves this origin.
  */
-export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | undefined): () => void {
+export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | undefined, appReady?: Promise<void>): () => void {
   if (!bridge) {
     return () => undefined
   }
@@ -190,6 +190,8 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
   const seenOf = (key: string) => (seen.has(key) ? (seen.get(key) ?? null) : (loaded.get(key) ?? null))
   // Values the store refused, kept in this window until changed again.
   const refused = new Map<string, null | string>()
+  const conflicts = new Map<string, number>()
+  let inFlight = new Set<string>()
   let revision = -1
   let generation: null | string = null
   let flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -229,7 +231,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
       // A change made here and not yet stored outranks an older store value,
       // rebased onto it so the store's other entries survive; so does one a
       // sibling tab has not stored yet.
-      if (rebasePending(key, value)) {
+      if (!inFlight.has(key) && rebasePending(key, value)) {
         save()
       } else if (!pending.has(key) && !siblings.has(key) && !(refused.has(key) && refused.get(key) === readRaw(key))) {
         adopt(key, value, prune, live)
@@ -298,13 +300,62 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
     }
 
     const batch = new Map(pending)
+    const bases = new Map([...batch.keys()].map(key => [key, pendingBase.get(key) ?? null]))
+    inFlight = new Set(batch.keys())
     let retryIn = FLUSH_DELAY_MS
     writing = true
 
     try {
-      const snapshot = await bridge.write({ values: Object.fromEntries(batch) })
+      const snapshot = await bridge.write({ values: Object.fromEntries(batch), bases: Object.fromEntries(bases) })
 
-      settle(batch)
+      if (!snapshot.conditional) {
+        throw new Error('unsupported preference conditional writes')
+      }
+
+      for (const [key, value] of batch) {
+        if (!pending.has(key)) {
+          continue
+        }
+
+        const current = generation === generationOf(snapshot) && revision > snapshot.revision && known.has(key)
+          ? (known.get(key) ?? null)
+          : (snapshot.values[key] ?? null)
+        const latest = pending.get(key) ?? null
+        const changedHere = latest !== value
+
+        if (!changedHere && current === value) {
+          pending.delete(key)
+          pendingBase.delete(key)
+          conflicts.delete(key)
+          continue
+        }
+
+        // A peer changed this key after our base. Keep its scalar choice, and
+        // merge independent JSON edits. A newer edit in this window still wins.
+        const count = (conflicts.get(key) ?? 0) + (current === value ? 0 : 1)
+        const rebased = count > 1 && !changedHere
+          ? current
+          : changedHere
+            ? rebaseWrite(bases.get(key) ?? null, current, latest)
+            : rebaseWrite(bases.get(key) ?? null, value, current)
+
+        if (readRaw(key) === latest && rebased !== latest && writeRaw(key, rebased)) {
+          announce(key, latest, rebased)
+        }
+
+        if (rebased === current) {
+          pending.delete(key)
+          pendingBase.delete(key)
+          conflicts.delete(key)
+        } else {
+          pending.set(key, rebased)
+          pendingBase.set(key, current)
+          conflicts.set(key, count)
+        }
+      }
+
+      inFlight.clear()
+      save()
       writeDelay = RETRY_DELAY_MS
       apply(snapshot, { live: true })
     } catch (error) {
@@ -319,6 +370,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
         writeDelay = Math.min(writeDelay * 2, MAX_RETRY_DELAY_MS)
       }
     } finally {
+      inFlight.clear()
       writing = false
     }
 
@@ -366,10 +418,13 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
     const value = rebaseLocal(event.key, base, current, event.value)
 
     if (!pendingBase.has(event.key)) {
-      pendingBase.set(event.key, current)
+      // A local provisional value may exist while the shared store has no key.
+      // The conditional write must compare against the store's absence, not it.
+      pendingBase.set(event.key, known.has(event.key) && known.get(event.key) === null ? null : current)
     }
 
     refused.delete(event.key)
+    conflicts.delete(event.key)
     pending.set(event.key, value)
     store()
   })
@@ -514,9 +569,29 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
       })
   }
 
-  connect(bridge.snapshot)
+  let waitingForApp = !!appReady
+  let initialSnapshot = bridge.snapshot
 
-  const stopChanges = bridge.onChanged?.(snapshot => apply(snapshot, { live: true })) ?? (() => undefined)
+  if (!appReady) {
+    connect(initialSnapshot)
+  }
+
+  const stopChanges = bridge.onChanged?.(snapshot => {
+    if (waitingForApp) {
+      initialSnapshot = snapshot
+    } else {
+      apply(snapshot, { live: true })
+    }
+  }) ?? (() => undefined)
+
+  if (appReady) {
+    void appReady.then(() => {
+      if (!stopped) {
+        waitingForApp = false
+        connect(initialSnapshot)
+      }
+    })
+  }
 
   return () => {
     stopped = true

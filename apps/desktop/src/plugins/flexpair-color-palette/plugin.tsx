@@ -154,13 +154,12 @@ const plugin: HermesPlugin = {
 
     try {
       const key = 'hermes-desktop-mode-v1'
-      const profilesKey = 'hermes-desktop-profile-modes-v1'
 
       const readModes = (): Record<string, unknown> => {
         let saved: unknown
 
         try {
-          saved = JSON.parse(window.localStorage.getItem(profilesKey) ?? '{}')
+          saved = JSON.parse(ctx.modePreferences.read('profiles') ?? '{}')
         } catch {
           // A failed preference read falls back to a fresh profile record.
           saved = {}
@@ -198,7 +197,7 @@ const plugin: HermesPlugin = {
       try {
       const modes = readModes()
       let baseline = readBaseline(window, baselineKey)
-      const currentMode = window.localStorage.getItem(key)
+      const currentMode = ctx.modePreferences.read('global')
       baseline ??= { global: currentMode, profiles: {} }
 
       // Dark is our outstanding assignment. A different value is a later
@@ -248,7 +247,7 @@ const plugin: HermesPlugin = {
           }
         }
 
-        window.localStorage.setItem(profilesKey, JSON.stringify(currentModes))
+        ctx.modePreferences.write('profiles', JSON.stringify(currentModes))
 
         for (const target of Object.keys(remaining.profiles)) {
           if (!hasLegacyOwners && !activeProfiles.includes(target)) {
@@ -320,12 +319,8 @@ const plugin: HermesPlugin = {
           const hasLegacyOwners = Object.keys(remaining.owners ?? {}).some(id => id.startsWith(legacyOwnerPrefix))
           restoreProfiles(remaining, activeProfiles, hasLegacyOwners)
 
-          if (!activeProfiles.length && !hasLegacyOwners && window.localStorage.getItem(key) === 'dark') {
-            if (remaining.global === null) {
-              window.localStorage.removeItem(key)
-            } else {
-              window.localStorage.setItem(key, remaining.global)
-            }
+          if (!activeProfiles.length && !hasLegacyOwners && ctx.modePreferences.read('global') === 'dark') {
+            ctx.modePreferences.write('global', remaining.global)
           }
 
           if (activeProfiles.length || hasLegacyOwners) {
@@ -346,8 +341,8 @@ const plugin: HermesPlugin = {
         modes[profile] = 'dark'
       }
 
-      window.localStorage.setItem(profilesKey, JSON.stringify(modes))
-      window.localStorage.setItem(key, 'dark')
+      ctx.modePreferences.write('profiles', JSON.stringify(modes))
+      ctx.modePreferences.write('global', 'dark')
       // Repaint even when the global fallback was already dark: the current
       // profile or in-memory manual selection may still be light.
       window.dispatchEvent(new StorageEvent('storage', { key, newValue: 'dark' }))

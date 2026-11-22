@@ -16,7 +16,7 @@ export function createBrowserUiPreferences(api: <T>(request: HermesApiRequest) =
 
   return {
     read,
-    write: payload => api<UiPreferencesSnapshot>({ body: payload, method: 'PATCH', path: PATH, timeoutMs: 10_000 }),
+    write: payload => api<UiPreferencesSnapshot>({ body: payload, method: 'PATCH', path: payload.bases ? `${PATH}/conditional` : PATH, timeoutMs: 10_000 }),
     onChanged: callback => {
       const poll = () => {
         if (document.visibilityState === 'visible') {

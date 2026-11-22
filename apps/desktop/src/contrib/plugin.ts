@@ -58,6 +58,17 @@ export interface PluginStorage {
   remove(key: string): void
 }
 
+/** Raw mode preferences, including absent or older values needed for restoration. */
+export interface PluginModePreferences {
+  read(key: 'global' | 'profiles'): null | string
+  write(key: 'global' | 'profiles', value: null | string): void
+}
+
+const modePreferenceKeys = {
+  global: 'hermes-desktop-mode-v1',
+  profiles: 'hermes-desktop-profile-modes-v1'
+} as const
+
 /** The curated OS door — every way a plugin reaches outside the app window,
  *  in one attributed namespace instead of the raw `window.hermesDesktop`
  *  bridge. Every member resolves a result instead of throwing when the
@@ -182,6 +193,9 @@ export interface PluginContext {
   preview: PluginPreview
   /** Plugin-scoped persistence. */
   storage: PluginStorage
+  /** Mode persistence through the shared-preference sync. The caller announces
+   *  a completed multi-key update to appearance listeners with a storage event. */
+  modePreferences: PluginModePreferences
   /** Folder-scoped file access: this plugin's own data folder plus folders
    *  the user grants it through the app's picker, by relative path. The app
    *  checks every call; nothing outside those folders (or inside Hermes'
@@ -401,6 +415,10 @@ export function createPluginContext(
     listActions: listPluginAppActions,
     preview: createPluginPreview(pluginId, capabilities),
     storage: createPluginStorage(pluginId),
+    modePreferences: {
+      read: key => readKey(modePreferenceKeys[key]),
+      write: (key, value) => writeKey(modePreferenceKeys[key], value)
+    },
     files: createPluginFiles(pluginId),
     i18n: createPluginI18n(pluginId, track)
   }

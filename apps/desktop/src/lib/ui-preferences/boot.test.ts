@@ -7,7 +7,7 @@ import { afterEach, expect, it } from 'vitest'
 import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../../electron/ui-preferences'
 
 import { bootRenderer } from './boot'
-import { startUiPreferencesSync, type UiPreferencesBridge } from './sync'
+import type { UiPreferencesBridge } from './sync'
 
 const FAVORITES = 'hermes.desktop.favorite-models'
 const dirs: string[] = []
@@ -41,11 +41,9 @@ it('no store module evaluates before the machine store hydrated, so its next wri
   window.hermesDesktop = { uiPreferences: bridge } as unknown as typeof window.hermesDesktop
 
   const favorites = await bootRenderer(() => import('@/store/favorite-models'))
-  const stop = startUiPreferencesSync(bridge)
   await tick()
   favorites.toggleFavoriteModel('mine', 'C')
   await tick()
-  stop()
 
   expect(JSON.parse(readUiPreferences(file).values[FAVORITES])).toEqual(['host::A', 'host::B', 'mine::C'])
 })

@@ -162,3 +162,38 @@ def test_the_route_exists_only_on_the_webapp(monkeypatch, webapp_state, surface)
         monkeypatch.setattr(web_server.app.state, "ui_surface", surface, raising=False)
 
     assert _client(token=True).get("/api/ui-preferences").status_code == 404
+
+
+def test_conditional_write_checks_each_key_and_preserves_unconditional_and_seed_semantics(tmp_path):
+    path = tmp_path / "ui-preferences.json"
+    ui_preferences.write_preferences({"hermes-desktop-mode-v1": "system", "hermes.desktop.zoom": "125"}, path=path)
+    result = ui_preferences.write_preferences(
+        {"hermes-desktop-mode-v1": "dark", "hermes.desktop.zoom": "150", "hermes.desktop.new": "yes"},
+        bases={"hermes-desktop-mode-v1": "light", "hermes.desktop.zoom": "125", "hermes.desktop.new": None}, path=path,
+    )
+    assert result["conditional"] is True
+    assert result["values"] == {"hermes-desktop-mode-v1": "system", "hermes.desktop.zoom": "150", "hermes.desktop.new": "yes"}
+    assert ui_preferences.write_preferences({"hermes-desktop-mode-v1": "light"}, path=path)["values"]["hermes-desktop-mode-v1"] == "light"
+    seeded = ui_preferences.write_preferences({"hermes-desktop-mode-v1": "dark", "hermes.desktop.seed": "ok"}, seed=True, path=path)
+    assert seeded["values"]["hermes-desktop-mode-v1"] == "light"
+    assert seeded["values"]["hermes.desktop.seed"] == "ok"
+    with pytest.raises(ui_preferences.PreferencesError):
+        ui_preferences.write_preferences({"hermes.desktop.zoom": "0"}, bases={"hermes.desktop.other": None}, path=path)
+
+
+def test_conditional_webapp_route_validates_bases_and_does_not_silently_write(webapp_state):
+    tab = _client(token=True)
+    mode = "hermes-desktop-mode-v1"
+    assert tab.patch("/api/ui-preferences", json={"values": {mode: "system"}}).status_code == 200
+    for payload in [
+        {"values": {mode: "dark"}},
+        {"values": {mode: "dark"}, "bases": None},
+        {"values": {mode: "dark"}, "bases": {mode: 2}},
+        {"values": {mode: "dark"}, "bases": {"hermes.desktop.other": None}},
+    ]:
+        assert tab.patch("/api/ui-preferences/conditional", json=payload).status_code in (400, 422)
+    assert tab.patch("/api/ui-preferences", json={"values": {mode: "dark"}, "bases": None}).status_code == 400
+    result = tab.patch("/api/ui-preferences/conditional", json={"values": {mode: "dark"}, "bases": {mode: "light"}})
+    assert result.status_code == 200
+    assert result.json()["conditional"] is True
+    assert result.json()["values"][mode] == "system"

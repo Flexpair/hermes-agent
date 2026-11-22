@@ -31,6 +31,8 @@ const WATCH_INTERVAL_MS = 1500
 
 export interface UiPreferencesSnapshot {
   exists: boolean
+  /** Confirms that this response came from a conditional write. */
+  conditional?: true
   /** One store's lifetime; a replaced (deleted or corrupt) store gets a new one. */
   generation?: string
   revision: number
@@ -39,6 +41,7 @@ export interface UiPreferencesSnapshot {
 
 export interface UiPreferencesWrite {
   seed?: boolean
+  bases?: Record<string, null | string>
   values: Record<string, null | string>
 }
 
@@ -127,6 +130,10 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
   const values = { ...current }
 
   for (const [key, value] of Object.entries(write.values)) {
+    if (write.bases && Object.hasOwn(write.bases, key) && (current[key] ?? null) !== write.bases[key]) {
+      continue
+    }
+
     if (write.seed) {
       // A client's first contact: fill what the store lacks, never overwrite or delete.
       if (value !== null && !(key in values)) {
@@ -144,8 +151,9 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
 
 /** The IPC payload, validated: anything else from a renderer is refused whole. */
 export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
-  const { seed, values } = (payload && typeof payload === 'object' ? payload : {}) as {
+  const { seed, values, bases } = (payload && typeof payload === 'object' ? payload : {}) as {
     seed?: unknown
+    bases?: unknown
     values?: unknown
   }
 
@@ -163,7 +171,19 @@ export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
     }
   }
 
-  return { seed: seed === true, values: values as Record<string, null | string> }
+  if (bases !== undefined) {
+    if (!bases || typeof bases !== 'object' || Array.isArray(bases)) {
+      throw new Error('ui preferences bases must be an object')
+    }
+
+    for (const [key, value] of Object.entries(bases)) {
+      if (!Object.hasOwn(values, key) || (value !== null && (typeof value !== 'string' || value.length > MAX_VALUE_CHARS))) {
+        throw new Error(`unsupported preference base: ${key}`)
+      }
+    }
+  }
+
+  return { seed: seed === true, values: values as Record<string, null | string>, ...(bases !== undefined && { bases: bases as Record<string, null | string> }) }
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -265,7 +285,7 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
       }
 
       if (JSON.stringify(values) === JSON.stringify(current.values) && (current.exists || entries.length === 0)) {
-        return current
+        return write.bases ? { ...current, conditional: true as const } : current
       }
 
       const revision = current.revision + 1
@@ -284,7 +304,7 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
 
       await replaceAtomically(file, `${JSON.stringify({ version: 1, generation, revision, values }, null, 2)}\n`)
 
-      return { exists: true, generation, revision, values }
+      return { exists: true, generation, revision, values, ...(write.bases && { conditional: true as const }) }
     })
   })
 

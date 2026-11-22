@@ -9,8 +9,9 @@
 // asks the server that serves it, bounded so an unreachable host never holds
 // the first paint for long (then it boots on its local cache).
 import { browserApi, browserBootstrap } from '@/lib/browser-transport'
+import { createBrowserUiPreferences } from '@/lib/browser-ui-preferences'
 
-import { captureOwnPreferences, hydrateFromSnapshot, type UiPreferencesSnapshot } from './sync'
+import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync, type UiPreferencesSnapshot } from './sync'
 
 const BROWSER_FIRST_READ_MS = 1500
 
@@ -35,7 +36,26 @@ async function browserSnapshot(): Promise<null | UiPreferencesSnapshot> {
 export async function bootRenderer<T>(loadApp: () => Promise<T>): Promise<T> {
   if (typeof window !== 'undefined') {
     captureOwnPreferences()
-    hydrateFromSnapshot(window.hermesDesktop?.uiPreferences?.snapshot ?? (await browserSnapshot()))
+    const native = window.hermesDesktop?.uiPreferences
+    const bootstrap = native ? null : browserBootstrap()
+    const snapshot = native?.snapshot ?? (await browserSnapshot())
+    hydrateFromSnapshot(snapshot)
+    const bridge = native ?? (bootstrap ? createBrowserUiPreferences(request => browserApi(bootstrap, request)) : null)
+    // Observe plugin writes during module evaluation, but wait for stores to
+    // classify cached defaults before importing this origin into the machine.
+    let release: () => void = () => undefined
+    const appReady = new Promise<void>(resolve => { release = resolve })
+    const stop = startUiPreferencesSync(bridge && { ...bridge, snapshot }, appReady)
+
+    try {
+      const app = await loadApp()
+      release()
+
+      return app
+    } catch (error) {
+      stop()
+      throw error
+    }
   }
 
   return loadApp()

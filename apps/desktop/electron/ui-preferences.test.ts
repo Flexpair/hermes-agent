@@ -172,3 +172,28 @@ test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     assert.equal(fs.readFileSync(file, 'utf8'), before)
   }
 )
+
+test('conditional writes check each base without changing ordinary or seed writes', async () => {
+  const file = uiPreferencesPath(scratchHome())
+  const mode = 'hermes-desktop-mode-v1'
+  const zoom = 'hermes.desktop.zoom'
+  await writeUiPreferences(file, { values: { [mode]: 'system', [zoom]: '125' } })
+  const result = await writeUiPreferences(file, {
+    values: { [mode]: 'dark', [zoom]: '150', 'hermes.desktop.added': 'yes' },
+    bases: { [mode]: 'light', [zoom]: '125', 'hermes.desktop.added': null }
+  })
+  assert.equal(result.conditional, true)
+  assert.deepEqual(result.values, { [mode]: 'system', [zoom]: '150', 'hermes.desktop.added': 'yes' })
+  const ordinary = await writeUiPreferences(file, { values: { [mode]: 'light' } })
+  assert.equal(ordinary.values[mode], 'light')
+  const seeded = await writeUiPreferences(file, { seed: true, values: { [mode]: 'dark', 'hermes.desktop.seed': 'ok' } })
+  assert.equal(seeded.values[mode], 'light')
+  assert.equal(seeded.values['hermes.desktop.seed'], 'ok')
+})
+
+test('the IPC refuses malformed conditional bases', async () => {
+  const { parseUiPreferencesWrite } = await import('./ui-preferences')
+  for (const bases of [null, [], { 'hermes.desktop.zoom': 42 }, { 'hermes.desktop.other': null }]) {
+    assert.throws(() => parseUiPreferencesWrite({ values: { 'hermes.desktop.zoom': '150' }, bases }))
+  }
+})

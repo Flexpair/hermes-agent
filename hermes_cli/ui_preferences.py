@@ -187,9 +187,12 @@ def _store_lock(path: Path) -> Iterator[Callable[[], bool]]:
             _release(lock_dir, token)
 
 
-def _merge(current: Mapping[str, str], changes: Mapping[str, Optional[str]], seed: bool) -> dict[str, str]:
+def _merge(current: Mapping[str, str], changes: Mapping[str, Optional[str]], seed: bool,
+           bases: Optional[Mapping[str, Optional[str]]]) -> dict[str, str]:
     values = dict(current)
     for key, value in changes.items():
+        if bases is not None and key in bases and current.get(key) != bases[key]:
+            continue
         if seed:
             # A client's first contact: fill what the store lacks, never overwrite or delete.
             if value is not None:
@@ -202,23 +205,31 @@ def _merge(current: Mapping[str, str], changes: Mapping[str, Optional[str]], see
 
 
 def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = False,
-                      path: Optional[Path] = None) -> dict:
+                      path: Optional[Path] = None, bases: Optional[Mapping[str, Optional[str]]] = None) -> dict:
     """Merge *changes* per key (``None`` deletes) and return the resulting snapshot.
+
+    ``bases`` conditionally applies each named key only if its current value matches.
 
     ``seed=True`` is a client's first contact with this store generation: it only adds the keys
     the store lacks (and creates no store from nothing), so a client that has data fills a store
     an empty client created and no client's values are overwritten or deleted.
     """
     _validate(changes)
+    if bases is not None:
+        if not isinstance(bases, Mapping):
+            raise PreferencesError("preference bases must be an object")
+        _validate(bases)
+        if not bases.keys() <= changes.keys():
+            raise PreferencesError("preference bases must name changed keys")
     path = path or store_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with _store_lock(path) as still_ours:
         current, corrupt = _read(path)
-        values = _merge(current["values"], changes, seed)
+        values = _merge(current["values"], changes, seed, bases)
         if len(values) > MAX_KEYS or sum(len(k) + len(v) for k, v in values.items()) > MAX_TOTAL_CHARS:
             raise PreferencesError("preferences store is full")
         if values == current["values"] and (current["exists"] or not values):
-            return current
+            return dict(current, conditional=True) if bases is not None else current
         revision = current["revision"] + 1
         generation = current.get("generation") or secrets.token_hex(8)
         if not still_ours():
@@ -230,4 +241,7 @@ def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = Fals
             shutil.copy2(path, path.with_name(f"{path.name}.corrupt-{int(time.time() * 1000)}"))
         atomic_json_write(path, {"version": 1, "generation": generation, "revision": revision,
                                  "values": values}, mode=0o600)
-    return {"exists": True, "revision": revision, "values": values, "generation": generation}
+    result = {"exists": True, "revision": revision, "values": values, "generation": generation}
+    if bases is not None:
+        result["conditional"] = True
+    return result

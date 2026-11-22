@@ -13,6 +13,7 @@ export type {
   PluginFilesResult,
   PluginFolder,
   PluginNativeNotificationInput,
+  PluginModePreferences,
   PluginNotificationAction,
   PluginOs,
   PluginPet,
