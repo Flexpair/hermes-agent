@@ -150,13 +150,7 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
 }
 
 /** The IPC payload, validated: anything else from a renderer is refused whole. */
-export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
-  const { seed, values, bases } = (payload && typeof payload === 'object' ? payload : {}) as {
-    seed?: unknown
-    bases?: unknown
-    values?: unknown
-  }
-
+function validatePreferenceValues(values: unknown): asserts values is Record<string, null | string> {
   if (!values || typeof values !== 'object' || Array.isArray(values)) {
     throw new Error('ui preferences write needs a values object')
   }
@@ -170,7 +164,9 @@ export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
       throw new Error(`unsupported value for ${key}`)
     }
   }
+}
 
+function validatePreferenceBases(bases: unknown, values: Record<string, null | string>): void {
   if (bases !== undefined) {
     if (!bases || typeof bases !== 'object' || Array.isArray(bases)) {
       throw new Error('ui preferences bases must be an object')
@@ -182,7 +178,17 @@ export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
       }
     }
   }
+}
 
+export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
+  const { seed, values, bases } = (payload && typeof payload === 'object' ? payload : {}) as {
+    seed?: unknown
+    bases?: unknown
+    values?: unknown
+  }
+
+  validatePreferenceValues(values)
+  validatePreferenceBases(bases, values)
   return { seed: seed === true, values: values as Record<string, null | string>, ...(bases !== undefined && { bases: bases as Record<string, null | string> }) }
 }
 

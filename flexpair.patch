@@ -1,689 +1,1390 @@
-diff --git a/agent/runtime_session_compression.py b/agent/runtime_session_compression.py
-index 4f77b9e41b..de6387c650 100644
---- a/agent/runtime_session_compression.py
-+++ b/agent/runtime_session_compression.py
-@@ -85,6 +85,11 @@ class RuntimeSessionCompressionMixin:
-             model_config_patch=model_config_patch, watermark=watermark, lock_holder=lock_holder,
-             tail_count=tail_count, carried_messages=carried, covered_ids=covered_ids,
-             unresolved_held=unresolved, held_for_cas=cas))
-+        if result.get('stale_held_rows'):
-+            # _apply has durably cleared the receipted entry before the caller discards its pass.
-+            from hermes_state_errors import HeldRowRewrittenError
-+            raise HeldRowRewrittenError(
-+                f'a held row of session {session_id} was rewritten in place before the commit')
-         from agent.runtime_session_store import apply_row_annotations
-         apply_row_annotations(compacted_messages, result['annotations'])
-         return result['value']
-diff --git a/apps/desktop/src/contrib/radio-plugin.test.ts b/apps/desktop/src/contrib/radio-plugin.test.ts
-index 1f88a47428..678d764b76 100644
---- a/apps/desktop/src/contrib/radio-plugin.test.ts
-+++ b/apps/desktop/src/contrib/radio-plugin.test.ts
-@@ -32,9 +32,15 @@ afterEach(async () => {
- })
- 
- describe('bundled Radio plugin', () => {
--  it('inventories off by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
-+  it('starts on by default and follows the ordinary live enable/disable lifecycle without autoplay', async () => {
-     // Other bundled plugins are outside this integration test; Radio has no saved decision.
--    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
-+    $pluginDecisions.set({
-+      accent: false,
-+      kanban: false,
-+      'hermes-bots': false,
-+      'flexpair-color-palette': false,
-+      'provider-card-filter': false
-+    })
-     const fetch = vi.fn()
-     const audio = vi.fn()
-     vi.stubGlobal('fetch', fetch)
-@@ -44,24 +50,49 @@ describe('bundled Radio plugin', () => {
-     const initialStyles = document.head.querySelectorAll('style').length
- 
-     discoverBundledPlugins()
--    expect($pluginRecords.get().radio).toMatchObject({ kind: 'bundled', status: 'disabled' })
-+    expect($pluginRecords.get().radio.status).toBe('loaded')
-+    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(true)
-+    expect(document.head.querySelectorAll('style').length).toBe(initialStyles + 1)
-+    expect(player().status.get()).toBe('paused')
-+    expect(audio).not.toHaveBeenCalled()
-+    expect(fetch).not.toHaveBeenCalled()
+diff --git a/apps/desktop/electron/ui-preferences.test.ts b/apps/desktop/electron/ui-preferences.test.ts
+index 37020cc6..1ae26466 100644
+--- a/apps/desktop/electron/ui-preferences.test.ts
++++ b/apps/desktop/electron/ui-preferences.test.ts
+@@ -172,3 +172,28 @@ test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
+     assert.equal(fs.readFileSync(file, 'utf8'), before)
+   }
+ )
 +
-+    await setPluginEnabled('radio', false)
-     expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
-     expect(document.head.querySelectorAll('style').length).toBe(initialStyles)
-+    expect($pluginDecisions.get().radio).toBe(false)
- 
-     await setPluginEnabled('radio', true)
-     expect($pluginRecords.get().radio.status).toBe('loaded')
-+    expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(true)
-     expect(player().status.get()).toBe('paused')
-     expect(audio).not.toHaveBeenCalled()
-     expect(fetch).not.toHaveBeenCalled()
++test('conditional writes check each base without changing ordinary or seed writes', async () => {
++  const file = uiPreferencesPath(scratchHome())
++  const mode = 'hermes-desktop-mode-v1'
++  const zoom = 'hermes.desktop.zoom'
++  await writeUiPreferences(file, { values: { [mode]: 'system', [zoom]: '125' } })
++  const result = await writeUiPreferences(file, {
++    values: { [mode]: 'dark', [zoom]: '150', 'hermes.desktop.added': 'yes' },
++    bases: { [mode]: 'light', [zoom]: '125', 'hermes.desktop.added': null }
 +  })
- 
--    await setPluginEnabled('radio', false)
-+  it('keeps an explicit disabled decision across bundled rediscovery', async () => {
-+    $pluginDecisions.set({
-+      accent: false,
-+      kanban: false,
-+      'hermes-bots': false,
-+      'flexpair-color-palette': false,
-+      'provider-card-filter': false,
-+      radio: false
-+    })
-+    discoverBundledPlugins()
-+    expect($pluginRecords.get().radio?.status).toBe('disabled')
-     expect(registry.getArea('statusBar.right').some(item => item.source === 'plugin:radio')).toBe(false)
--    expect(document.head.querySelectorAll('style').length).toBe(initialStyles)
--    expect($pluginDecisions.get().radio).toBe(false)
-   })
- 
-   it('releases the stream on disable and ignores late media events from the old player', async () => {
--    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
-+    $pluginDecisions.set({
-+      accent: false,
-+      kanban: false,
-+      'hermes-bots': false,
-+      'flexpair-color-palette': false,
-+      'provider-card-filter': false,
-+      radio: false
-+    })
-     discoverBundledPlugins()
-     // jsdom has no decoder: the actual player and plugin lifecycle run against DOM media events.
-     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
-@@ -88,7 +119,14 @@ describe('bundled Radio plugin', () => {
-   })
- 
-   it('survives external pause without destroying the stream or blocking resume', async () => {
--    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
-+    $pluginDecisions.set({
-+      accent: false,
-+      kanban: false,
-+      'hermes-bots': false,
-+      'flexpair-color-palette': false,
-+      'provider-card-filter': false,
-+      radio: false
-+    })
-     discoverBundledPlugins()
-     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
-     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-@@ -119,7 +157,14 @@ describe('bundled Radio plugin', () => {
-   })
- 
-   it('resumes the preserved stream when dictation text lands in an editable field (#108113)', async () => {
--    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
-+    $pluginDecisions.set({
-+      accent: false,
-+      kanban: false,
-+      'hermes-bots': false,
-+      'flexpair-color-palette': false,
-+      'provider-card-filter': false,
-+      radio: false
-+    })
-     discoverBundledPlugins()
-     const playMock = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
-     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-@@ -152,7 +197,14 @@ describe('bundled Radio plugin', () => {
-   })
- 
-   it('keeps the plugin Pause destructive: no paste resume, and Play reconnects (#108113)', async () => {
--    $pluginDecisions.set({ accent: false, kanban: false, 'hermes-bots': false })
-+    $pluginDecisions.set({
-+      accent: false,
-+      kanban: false,
-+      'hermes-bots': false,
-+      'flexpair-color-palette': false,
-+      'provider-card-filter': false,
-+      radio: false
-+    })
-     discoverBundledPlugins()
-     const playMock = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
-     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-diff --git a/apps/desktop/src/plugins/radio/README.md b/apps/desktop/src/plugins/radio/README.md
-index 59a4cbc1d3..ff7831d218 100644
---- a/apps/desktop/src/plugins/radio/README.md
-+++ b/apps/desktop/src/plugins/radio/README.md
-@@ -1,6 +1,6 @@
- # Radio
- 
--Bundled Hermes Desktop plugin, **off by default**. Enable **Radio** in
-+Bundled Hermes Desktop plugin, **on by default**. You can disable it anytime in
- Capabilities → Plugins. Playback starts only when you press Play.
- 
- ## Controls
-@@ -20,8 +20,9 @@ Pins, station, and volume use plugin-scoped local storage.
- 
- `plugin.js` imports only `@hermes/plugin-sdk`, `react`, and
- `react/jsx-runtime`. Existing bundled discovery finds it automatically;
--`defaultEnabled: false` uses the ordinary live enable toggle. No shell,
--SDK, backend, dependency, or registry changes are needed.
-+`defaultEnabled: true` registers Radio for new users and the ordinary live
-+enable toggle preserves an explicit off choice. No shell, SDK, backend,
-+dependency, or registry changes are needed.
- 
- The same plain-ESM file can be loaded through the runtime plugin door at
- `$HERMES_HOME/desktop-plugins/radio/plugin.js` for development. Do not install
-diff --git a/apps/desktop/src/plugins/radio/plugin.js b/apps/desktop/src/plugins/radio/plugin.js
-index 5ee509d861..85b87b94be 100644
---- a/apps/desktop/src/plugins/radio/plugin.js
-+++ b/apps/desktop/src/plugins/radio/plugin.js
-@@ -685,7 +685,7 @@ export default {
-   id: ID,
-   name: 'Radio',
-   description: 'Free live radio with pinned stations, search, and an audio-reactive waveform.',
--  defaultEnabled: false,
-+  defaultEnabled: true,
-   register(ctx) {
-     ctx.i18n.register(LOCALES)
-     const style = document.createElement('style')
-diff --git a/gateway/session_tui_reads.py b/gateway/session_tui_reads.py
-index c779cad633..fcc50cb510 100644
---- a/gateway/session_tui_reads.py
-+++ b/gateway/session_tui_reads.py
-@@ -200,9 +200,12 @@ def _stored_breakdown(row, conversation, usage) -> dict:
- 
- 
- def _agent_context_marks(agent) -> tuple:
--    """What the breakdown reads off the agent besides the transcript: model, toolset size, window,
-+    """What the breakdown reads off the agent besides the transcript: model, tool schemas, window,
-     measured prompt tokens, compressions and the usage anchors."""
-     comp = getattr(agent, 'context_compressor', None)
--    return (getattr(agent, 'model', None), getattr(agent, 'provider', None), len(getattr(agent, 'tools', None) or ()),
-+    # Match the cost estimator's JSON input, including nested in-place schema edits.
-+    # This is only a read-cache mark; never refresh the resident toolset or prompt.
-+    tools = json.dumps(list(getattr(agent, 'tools', None) or []), ensure_ascii=False)
-+    return (getattr(agent, 'model', None), getattr(agent, 'provider', None), tools,
-             *(getattr(comp, name, None) for name in ('context_length', 'last_prompt_tokens', 'compression_count')),
-             repr(getattr(agent, '_turn_base_usage_anchor', None)), repr(getattr(agent, '_usage_anchor', None)))
-diff --git a/hermes_state_common.py b/hermes_state_common.py
-index c31526f02c..d5fab9cd98 100644
---- a/hermes_state_common.py
-+++ b/hermes_state_common.py
-@@ -423,9 +423,7 @@ def emit_session_deleted(db, deleted_ids, *, reason, primary=None, sessions_dir=
-         return
-     try:
-         from hermes_cli.lifecycle import invoke_hook
--        from hermes_constants import (
--            get_hermes_home, profile_name_for_home, reset_hermes_home_override, set_hermes_home_override,
--        )
-+        from hermes_constants import profile_name_for_home
- 
-         home = os.path.dirname(os.path.abspath(os.fspath(db.db_path)))
-         profile = profile_name_for_home(home)
-@@ -434,13 +432,22 @@ def emit_session_deleted(db, deleted_ids, *, reason, primary=None, sessions_dir=
-             payload["deleted_ids"] = ids
-         if sessions_dir is not None:
-             payload["sessions_dir"] = str(sessions_dir)
--        rebind = profile is not None and os.path.realpath(home) != os.path.realpath(get_hermes_home())
--        token = set_hermes_home_override(home) if rebind else None
--        try:
-+        scope = contextlib.nullcontext()
-+        if profile is not None:
-+            from pathlib import Path
-+            from gateway.run import _profile_runtime_scope
++  assert.equal(result.conditional, true)
++  assert.deepEqual(result.values, { [mode]: 'system', [zoom]: '150', 'hermes.desktop.added': 'yes' })
++  const ordinary = await writeUiPreferences(file, { values: { [mode]: 'light' } })
++  assert.equal(ordinary.values[mode], 'light')
++  const seeded = await writeUiPreferences(file, { seed: true, values: { [mode]: 'dark', 'hermes.desktop.seed': 'ok' } })
++  assert.equal(seeded.values[mode], 'light')
++  assert.equal(seeded.values['hermes.desktop.seed'], 'ok')
++})
 +
-+            from hermes_constants import get_routing_process_hermes_home, hermes_home_key
-+            from tui_gateway.launch_profile_policy import launch_profile_runtime_scope
-+
-+            # Rebind even at the same ambient home: its credentials/policy may be stale.
-+            # Only the process's own profile may inherit its trusted launch-env policy.
-+            if hermes_home_key(home) == hermes_home_key(get_routing_process_hermes_home()):
-+                scope = launch_profile_runtime_scope(Path(home))
-+            else:
-+                scope = _profile_runtime_scope(Path(home))
-+        with scope:
-             invoke_hook("on_session_delete", **payload)
--        finally:
--            if token is not None:
--                reset_hermes_home_override(token)
-     except Exception:
-         logger.warning("on_session_delete dispatch failed", exc_info=True)
- 
-diff --git a/hermes_state_worker_compression.py b/hermes_state_worker_compression.py
-index 5b301db727..5391f423ae 100644
---- a/hermes_state_worker_compression.py
-+++ b/hermes_state_worker_compression.py
-@@ -279,9 +279,15 @@ def worker_archive(db, conn, sid, payload):
-         raise RuntimeStoreError('invalid_params')
-     if type(payload['tail_count']) is not int or payload['tail_count'] < 0:
-         raise RuntimeStoreError('invalid_params')
--    value = archive_on_connection(db, conn, sid, payload['messages'], model_config_patch=patch,
--        watermark=payload['watermark'], lock_holder=payload['lock_holder'], tail_count=payload['tail_count'],
--        carried_messages=carried, covered_ids=covered, unresolved_held=unresolved, held_for_cas=cas)
-+    from hermes_state_errors import HeldRowRewrittenError
-+    try:
-+        value = archive_on_connection(db, conn, sid, payload['messages'], model_config_patch=patch,
-+            watermark=payload['watermark'], lock_holder=payload['lock_holder'], tail_count=payload['tail_count'],
-+            carried_messages=carried, covered_ids=covered, unresolved_held=unresolved, held_for_cas=cas)
-+    except HeldRowRewrittenError:
-+        # The fence runs before any row moves. Receipt this no-op so its sequence is consumed
-+        # and exact retries cannot publish stale rows or wedge the worker's pending journal.
-+        return {'value': None, 'annotations': [], 'stale_held_rows': True}
-     from hermes_state_runtime import row_annotations
-     return {'value': value, 'annotations': row_annotations(payload['messages'])}
- 
-diff --git a/scripts/install.ps1 b/scripts/install.ps1
-index 9bcdfb29bd..7558b0f5ad 100644
---- a/scripts/install.ps1
-+++ b/scripts/install.ps1
-@@ -22,7 +22,7 @@
- #                         `hermes update --set-channel`
- [CmdletBinding(PositionalBinding=$false)]
- param(
--    [string]$Branch = "main",
-+    [string]$Branch = "@BRANCH@",
-     [string]$Commit = "",
-     [string]$Channel = $(if ($env:HERMES_INSTALL_CHANNEL) { $env:HERMES_INSTALL_CHANNEL } else { "" }),
-     [string]$HermesHome = $(if ($env:HERMES_HOME) { $env:HERMES_HOME } else { "$env:LOCALAPPDATA\hermes" }),
-@@ -76,7 +76,7 @@ $script:BoundParams = $PSBoundParameters
- # Under iex, script scope is the caller's session and outlives a run; start
- # each run without the previous run's answer (see Set-LauncherUserPath).
- $script:BinDirOnCallerPath = $null
--$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/NousResearch/hermes-agent.git" }
-+$RepoUrl = if ($env:HERMES_REPO_URL) { $env:HERMES_REPO_URL } else { "https://github.com/Flexpair/hermes-agent.git" }
- 
- # --- BEGIN GENERATED: bootstrap pins (scripts/gen-bootstrap-pins.py) ---
- # Derived from pm/lock.json. DO NOT EDIT BY HAND:
-@@ -960,6 +960,27 @@ function Confirm-StableUnreachable([string]$What) {
++test('the IPC refuses malformed conditional bases', async () => {
++  const { parseUiPreferencesWrite } = await import('./ui-preferences')
++  for (const bases of [null, [], { 'hermes.desktop.zoom': 42 }, { 'hermes.desktop.other': null }]) {
++    assert.throws(() => parseUiPreferencesWrite({ values: { 'hermes.desktop.zoom': '150' }, bases }))
++  }
++})
+diff --git a/apps/desktop/electron/ui-preferences.ts b/apps/desktop/electron/ui-preferences.ts
+index d95c16b0..20586987 100644
+--- a/apps/desktop/electron/ui-preferences.ts
++++ b/apps/desktop/electron/ui-preferences.ts
+@@ -31,6 +31,8 @@ const WATCH_INTERVAL_MS = 1500
+
+ export interface UiPreferencesSnapshot {
+   exists: boolean
++  /** Confirms that this response came from a conditional write. */
++  conditional?: true
+   /** One store's lifetime; a replaced (deleted or corrupt) store gets a new one. */
+   generation?: string
+   revision: number
+@@ -39,6 +41,7 @@ export interface UiPreferencesSnapshot {
+
+ export interface UiPreferencesWrite {
+   seed?: boolean
++  bases?: Record<string, null | string>
+   values: Record<string, null | string>
  }
- 
- function Stage-Repository {
-+    if ($Branch -ceq '@BRANCH@') {
-+        if ($Commit -or $Channel) { Fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch }
-+        if (Test-Path (Join-Path $InstallDir '.git')) {
-+            if (-not (Ensure-Git)) { Fail "Git unavailable" unsupported_platform }
-+            $source = "$(Invoke-Native { git -C $InstallDir config --get remote.origin.url })".Trim()
-+            if ($LASTEXITCODE -or $source -cne $RepoUrl) { Fail "refusing a different repository" dir_not_checkout }
-+            $dirty = Invoke-Native { git -C $InstallDir status --porcelain }
-+            if ($LASTEXITCODE -or $dirty) { Fail "commit or move local changes before updating" local_changes_blocked }
-+            Invoke-Logged "Fetching origin/$Branch" { git -C $InstallDir fetch origin "+refs/heads/${Branch}:refs/remotes/origin/${Branch}" }
-+            if ($LASTEXITCODE) { Fail "git fetch failed" git_fetch_failed }
-+            Invoke-Logged "Checking out $Branch" { git -C $InstallDir checkout $Branch }
-+            if ($LASTEXITCODE) { Fail "git checkout failed" git_checkout_failed }
-+            Invoke-Logged "Fast-forwarding $Branch" { git -C $InstallDir merge --ff-only "origin/$Branch" }
-+            if ($LASTEXITCODE) { Fail "cannot fast-forward deploy branch" git_checkout_failed }
-+            $head = Invoke-Native { git -C $InstallDir rev-parse HEAD }
-+            if ($LASTEXITCODE) { Fail "cannot read HEAD" git_checkout_failed }
-+            $target = Invoke-Native { git -C $InstallDir rev-parse "origin/$Branch" }
-+            if ($LASTEXITCODE -or "$head" -cne "$target") { Fail "local branch is ahead of deploy HEAD" git_checkout_failed }
-+            return
-+        }
+
+@@ -127,6 +130,10 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
+   const values = { ...current }
+
+   for (const [key, value] of Object.entries(write.values)) {
++    if (write.bases && Object.hasOwn(write.bases, key) && (current[key] ?? null) !== write.bases[key]) {
++      continue
 +    }
-     $pinned = $false
-     # Not $channel: variables are case-insensitive, and the helpers below read the -Channel
-     # parameter through this scope.
-diff --git a/scripts/install.sh b/scripts/install.sh
-index eb7308c17f..fd53b9b2ce 100755
---- a/scripts/install.sh
-+++ b/scripts/install.sh
-@@ -20,8 +20,8 @@ set -u
- # hygiene can't break the locked sync the way it used to before pm owned it.
- export UV_NO_CONFIG=1
- 
--REPO_URL="${HERMES_REPO_URL:-https://github.com/NousResearch/hermes-agent.git}"
--BRANCH="main"
-+REPO_URL="${HERMES_REPO_URL:-https://github.com/Flexpair/hermes-agent.git}"
-+BRANCH="@BRANCH@"
- INSTALL_COMMIT=""
- # The update channel to install: stable (the latest published release, the default for the
- # official repository's main line) or main (every commit). An explicit choice is persisted.
-@@ -708,6 +708,22 @@ stable_unreachable() {
++
+     if (write.seed) {
+       // A client's first contact: fill what the store lacks, never overwrite or delete.
+       if (value !== null && !(key in values)) {
+@@ -143,12 +150,7 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
  }
- 
- stage_repository() {
-+    # The distribution follows the explicitly selected deploy branch, never a release pin.
-+    if [ "$BRANCH" = @BRANCH@ ]; then
-+        [ -z "$INSTALL_COMMIT$CHANNEL" ] || fail "Flexpair installs branch HEAD; commit/channel pins are not supported" commit_not_on_branch
-+        if [ -e "$INSTALL_DIR/.git" ]; then
-+            local source dirty
-+            source="$(git -C "$INSTALL_DIR" config --get remote.origin.url)" || fail "cannot read origin" git_fetch_failed
-+            [ "$source" = "$REPO_URL" ] || fail "refusing a different repository" dir_not_checkout
-+            dirty="$(git -C "$INSTALL_DIR" status --porcelain)" || fail "cannot inspect local changes" local_changes_blocked
-+            [ -z "$dirty" ] || fail "commit or move local changes before updating" local_changes_blocked
-+            run_logged "Fetching origin/$BRANCH" git -C "$INSTALL_DIR" fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || fail "git fetch failed" git_fetch_failed
-+            run_logged "Checking out $BRANCH" git -C "$INSTALL_DIR" checkout "$BRANCH" || fail "git checkout failed" git_checkout_failed
-+            run_logged "Fast-forwarding $BRANCH" git -C "$INSTALL_DIR" merge --ff-only "origin/$BRANCH" || fail "cannot fast-forward deploy branch" git_checkout_failed
-+            [ "$(git -C "$INSTALL_DIR" rev-parse HEAD)" = "$(git -C "$INSTALL_DIR" rev-parse "origin/$BRANCH")" ] || fail "local branch is ahead of deploy HEAD" git_checkout_failed
-+            return 0
-+        fi
-+    fi
-     local pinned=false channel="" release="" origin
-     # An interrupted clone from an older installer can leave a .git with no
-     # initial commit, where stash/checkout abort ("You do not have the
-diff --git a/tests/gateway/test_tui_session_reads.py b/tests/gateway/test_tui_session_reads.py
-index 6255884297..7d7ec75dfe 100644
---- a/tests/gateway/test_tui_session_reads.py
-+++ b/tests/gateway/test_tui_session_reads.py
-@@ -15,6 +15,10 @@ import pytest_asyncio
- 
- @pytest_asyncio.fixture
- async def owner(tmp_path, monkeypatch):
-+    # Source checkouts have no installed payload manifest; do not probe a parent
-+    # under the real Hermes home when this checkout lives in its scratch cache.
-+    from pm import environments
-+    monkeypatch.setattr(environments, '_payload_manifest', lambda root: None)
-     from gateway import run
-     from gateway.config import GatewayConfig
-     from gateway.session import SessionStore
-@@ -299,3 +303,46 @@ async def test_context_breakdown_follows_an_in_place_row_rewrite(owner, monkeypa
-     assert db.set_user_message_content(stored, row_id, expanded) == 1
-     after = await owner.call('session.context_breakdown', session_id=sid)
-     assert after['estimated_total'] == len(expanded) > before['estimated_total']
+
+ /** The IPC payload, validated: anything else from a renderer is refused whole. */
+-export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
+-  const { seed, values } = (payload && typeof payload === 'object' ? payload : {}) as {
+-    seed?: unknown
+-    values?: unknown
+-  }
+-
++function validatePreferenceValues(values: unknown): asserts values is Record<string, null | string> {
+   if (!values || typeof values !== 'object' || Array.isArray(values)) {
+     throw new Error('ui preferences write needs a values object')
+   }
+@@ -162,8 +164,32 @@ export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
+       throw new Error(`unsupported value for ${key}`)
+     }
+   }
++}
 +
++function validatePreferenceBases(bases: unknown, values: Record<string, null | string>): void {
++  if (bases !== undefined) {
++    if (!bases || typeof bases !== 'object' || Array.isArray(bases)) {
++      throw new Error('ui preferences bases must be an object')
++    }
 +
-+@pytest.mark.asyncio
-+@pytest.mark.parametrize('change', ['replacement', 'description', 'schema'])
-+async def test_context_breakdown_refreshes_equal_count_tool_content(owner, monkeypatch, change):
-+    """Cost reads follow resident schemas without rebuilding an unchanged prompt snapshot."""
-+    from copy import deepcopy
-+    from unittest.mock import Mock
-+    from agent import context_breakdown, context_file_sources, system_prompt
++    for (const [key, value] of Object.entries(bases)) {
++      if (!Object.hasOwn(values, key) || (value !== null && (typeof value !== 'string' || value.length > MAX_VALUE_CHARS))) {
++        throw new Error(`unsupported preference base: ${key}`)
++      }
++    }
++  }
++}
 +
-+    sid = (await owner.call('session.create', request_id='tools', source='cli',
-+                            cwd=str(owner.workdir)))['session_id']
-+    agent = SimpleNamespace(model='fake-model', provider='custom', tools=[{
-+        'type': 'function', 'function': {'name': 'mcp_example_search', 'description': 'Search',
-+                                       'parameters': {'type': 'object', 'properties': {}}}}])
-+    owner.authority.runner._cached_agent_for = lambda route: agent
-+    prompt = Mock(return_value={'stable': 'Fixed system prompt', 'volatile': '', 'context': ''})
-+    monkeypatch.setattr(system_prompt, 'build_system_prompt_parts', prompt)
-+    monkeypatch.setattr(context_file_sources, 'context_file_sources_for_agent', lambda a: [])
-+    compute = Mock(wraps=context_breakdown.compute_session_context_breakdown)
-+    monkeypatch.setattr(context_breakdown, 'compute_session_context_breakdown', compute)
-+
-+    first = await owner.call('session.context_breakdown', session_id=sid)
-+    assert await owner.call('session.context_breakdown', session_id=sid) == first
-+    assert compute.call_count == prompt.call_count == 1
-+    if change == 'replacement':
-+        agent.tools = deepcopy(agent.tools)
-+        agent.tools[0]['function']['description'] = 'Replacement documentation ' * 200
-+    elif change == 'description':
-+        agent.tools[0]['function']['description'] += ' Extended documentation ' * 200
-+    else:
-+        agent.tools[0]['function']['parameters']['properties']['query'] = {
-+            'type': 'string', 'description': 'Detailed query documentation ' * 200}
-+    resident_tools = agent.tools
-+    snapshot = deepcopy(resident_tools)
-+    after = await owner.call('session.context_breakdown', session_id=sid)
-+    before_mcp = next(cat['tokens'] for cat in first['categories'] if cat['id'] == 'mcp')
-+    after_mcp = next(cat['tokens'] for cat in after['categories'] if cat['id'] == 'mcp')
-+    assert after_mcp > before_mcp
-+    assert after['estimated_total'] > first['estimated_total']
-+    assert await owner.call('session.context_breakdown', session_id=sid) == after
-+    assert compute.call_count == prompt.call_count == 2
-+    assert agent.tools is resident_tools and agent.tools == snapshot
-diff --git a/tests/hermes_state/test_runtime_worker_archive_staleness.py b/tests/hermes_state/test_runtime_worker_archive_staleness.py
++export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
++  const { seed, values, bases } = (payload && typeof payload === 'object' ? payload : {}) as {
++    seed?: unknown
++    bases?: unknown
++    values?: unknown
++  }
+
+-  return { seed: seed === true, values: values as Record<string, null | string> }
++  validatePreferenceValues(values)
++  validatePreferenceBases(bases, values)
++  return { seed: seed === true, values: values as Record<string, null | string>, ...(bases !== undefined && { bases: bases as Record<string, null | string> }) }
+ }
+
+ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+@@ -265,7 +291,7 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
+       }
+
+       if (JSON.stringify(values) === JSON.stringify(current.values) && (current.exists || entries.length === 0)) {
+-        return current
++        return write.bases ? { ...current, conditional: true as const } : current
+       }
+
+       const revision = current.revision + 1
+@@ -284,7 +310,7 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
+
+       await replaceAtomically(file, `${JSON.stringify({ version: 1, generation, revision, values }, null, 2)}\n`)
+
+-      return { exists: true, generation, revision, values }
++      return { exists: true, generation, revision, values, ...(write.bases && { conditional: true as const }) }
+     })
+   })
+
+diff --git a/apps/desktop/src/contrib/flexpair-inflight-preferences.test.tsx b/apps/desktop/src/contrib/flexpair-inflight-preferences.test.tsx
 new file mode 100644
-index 0000000000..7c8f2d57b8
+index 00000000..642f0d3f
 --- /dev/null
-+++ b/tests/hermes_state/test_runtime_worker_archive_staleness.py
-@@ -0,0 +1,73 @@
-+"""Held-row CAS rejection is a durable worker no-op, not a failed transport."""
-+import json
-+from types import SimpleNamespace
++++ b/apps/desktop/src/contrib/flexpair-inflight-preferences.test.tsx
+@@ -0,0 +1,100 @@
++import { spawn } from 'node:child_process'
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++import { pathToFileURL } from 'node:url'
 +
-+import pytest
++import { expect, it } from 'vitest'
 +
-+from agent.micro_compaction import MicroCompactionMixin
-+import hermes_bootstrap  # Activate dependencies before the home I/O guard.
-+from hermes_state_errors import HeldRowRewrittenError
++import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../electron/ui-preferences'
++import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync } from '../lib/ui-preferences/sync'
++import plugin from '../plugins/flexpair-color-palette/plugin'
++import { $activeGatewayProfile } from '../store/profile'
++import { $gatewayState } from '../store/session'
 +
++import { createPluginContext } from './plugin'
 +
-+def test_archive_cas_miss_is_receipted_and_future_writes_finish(worker):
-+    db, store = worker
-+    store.append_messages_batch('owned', [{'role': 'user', 'content': 'old'}])
-+    held = store.get_messages_as_conversation('owned', include_row_ids=True)
-+    db.set_user_message_content('owned', held[0]['_row_id'], 'winner')
-+    revision = db.get_session('owned')['runtime_revision']
-+    sequence = store.journal['next_sequence']
-+    replacement = [{'role': 'assistant', 'content': 'stale summary'}]
-+    calls = []
-+    rpc = store.rpc
++const MODE = 'hermes-desktop-mode-v1'
++const PROFILES = 'hermes-desktop-profile-modes-v1'
++const ZOOM = 'hermes.desktop.zoom'
 +
-+    def boundary(method, **params):
-+        calls.append((method, params))
-+        return rpc(method, **params)
++async function until(check: () => boolean) {
++  const deadline = Date.now() + 5000
++  while (!check()) {
++    if (Date.now() > deadline) throw new Error('timed out waiting for preference writer')
++    await new Promise(resolve => setTimeout(resolve, 10))
++  }
++}
 +
-+    store.rpc = boundary
-+    with pytest.raises(HeldRowRewrittenError):
-+        store.archive_and_compact('owned', replacement, held_for_cas=held,
-+                                  model_config_patch={'_proactive_prune_rearm_tokens': 99})
-+    receipt = json.loads(db._read_one(
-+        'SELECT result_json FROM worker_receipts WHERE execution_id=? AND sequence=?',
-+        ('worker', sequence))[0])
-+    assert receipt == {'value': None, 'annotations': [], 'stale_held_rows': True}
-+    assert db.get_session('owned')['runtime_revision'] == revision
-+    assert db._read_one('SELECT last_sequence FROM worker_executions')[0] == sequence
-+    assert store.failure is None and store.journal['pending'] == []
-+    assert store.journal['next_sequence'] == sequence + 1
-+    assert json.loads(store.path.read_text()) == store.journal
-+    assert '_row_id' not in replacement[0]
-+    assert rpc(calls[-1][0], **calls[-1][1]) == receipt  # exact replay is the same no-op
-+    assert [m['content'] for m in db.get_messages_as_conversation('owned')] == ['winner']
-+    assert db.get_session_model_config_value('owned', '_proactive_prune_rearm_tokens') is None
-+    store.append_messages_batch('owned', [{'role': 'assistant', 'content': 'after'}])
-+    store.finish()
-+    assert db._read_one('SELECT status FROM worker_executions')[0] == 'terminal'
-+    assert [m['content'] for m in db.get_messages_as_conversation('owned')] == ['winner', 'after']
-+    assert store.failure is None and store.journal['pending'] == []
++it('rebases a startup write blocked by a real peer holding the store lock', async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-inflight-'))
++  const file = path.join(dir, 'preferences.json')
++  const ready = path.join(dir, 'ready')
++  const release = path.join(dir, 'release')
++  const disposers: (() => void)[] = []
++  let stop = () => {}
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
++  $activeGatewayProfile.set('work')
++  $gatewayState.set('open')
++  await writeUiPreferences(file, { values: { [MODE]: 'light', [PROFILES]: JSON.stringify({ work: 'light', other: 'light' }), [ZOOM]: '125' } })
++  const snapshot = readUiPreferences(file)
++  captureOwnPreferences()
++  hydrateFromSnapshot(snapshot)
 +
-+
-+def test_micro_compaction_discards_commit_window_cas_miss(worker):
-+    db, store = worker
-+    store.append_messages_batch('owned', [{'role': 'user', 'content': 'old'}])
-+    held = store.get_messages_as_conversation('owned', include_row_ids=True)
-+    watermark = store.get_active_message_watermark('owned')
-+    rpc = store.rpc
-+
-+    def boundary(method, **params):
-+        if params['operation'] == 'compression.archive':
-+            db.set_user_message_content('owned', held[0]['_row_id'], 'winner')
-+        return rpc(method, **params)
-+
-+    store.rpc = boundary
-+    marker = {'role': 'assistant', 'content': 'stale summary', '_micro_compact_marker': True}
-+    assert MicroCompactionMixin._sync_micro_compact_to_db(
-+        SimpleNamespace(_session_db=store, _session_id='owned'), [marker],
-+        held=held, start_watermark=watermark) is False
-+    assert '_db_persisted' not in marker and '_row_id' not in marker
-+    assert store.failure is None and store.journal['pending'] == []
-+    assert [m['content'] for m in db.get_messages_as_conversation('owned')] == ['winner']
-+    store.append_messages_batch('owned', [{'role': 'assistant', 'content': 'after'}])
-+    store.finish()
-+    assert db._read_one('SELECT status FROM worker_executions')[0] == 'terminal'
-diff --git a/tests/hermes_state/test_session_delete_hook.py b/tests/hermes_state/test_session_delete_hook.py
-index f9f805aa4c..c359f85cf6 100644
---- a/tests/hermes_state/test_session_delete_hook.py
-+++ b/tests/hermes_state/test_session_delete_hook.py
-@@ -4,6 +4,7 @@ Real ``SessionDB`` + the real plugin hook registry. The callback reads the row b
- also proves dispatch ran AFTER the commit, never before.
- """
- 
-+import hermes_bootstrap  # Activate dependencies before the home I/O guard.
- import pytest
- 
- import hermes_state_runtime as rt
-diff --git a/tests/hermes_state/test_session_delete_profile_scope.py b/tests/hermes_state/test_session_delete_profile_scope.py
++  // The child pauses inside the real writer's locked read. This guarantees the
++  // startup write is already in flight while another process changes the file.
++  const peerScript = `
++    import fs from 'node:fs';
++    const [moduleUrl, file, ready, release] = process.argv.slice(1);
++    const { writeUiPreferences } = await import(moduleUrl);
++    const read = fs.readFileSync;
++    fs.readFileSync = function (name, ...args) {
++      if (name === file && !fs.existsSync(ready)) {
++        fs.writeFileSync(ready, 'locked');
++        while (!fs.existsSync(release)) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
++      }
++      return read.call(this, name, ...args);
++    };
++    await writeUiPreferences(file, { values: {
++      '${MODE}': 'system', '${PROFILES}': JSON.stringify({ work: 'light', other: 'dark' }), '${ZOOM}': '140'
++    }});
++  `
++  const moduleUrl = pathToFileURL(path.resolve('electron/ui-preferences.ts')).href
++  const child = spawn(process.execPath, ['--experimental-strip-types', '--input-type=module', '-e', peerScript, moduleUrl, file, ready, release], { stdio: ['ignore', 'ignore', 'pipe'] })
++  let childError = ''
++  child.stderr.on('data', chunk => { childError += String(chunk) })
++  const exited = new Promise<number | null>(resolve => child.on('exit', resolve))
++  let attempted = false
++  try {
++    await until(() => fs.existsSync(ready) || child.exitCode !== null)
++    expect(child.exitCode, childError).toBeNull()
++    stop = startUiPreferencesSync({
++      snapshot,
++      read: async () => readUiPreferences(file),
++      write: payload => {
++        if (!payload.seed) attempted = true
++        return writeUiPreferences(file, parseUiPreferencesWrite(payload))
++      }
++    })
++    plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
++    await until(() => attempted)
++    fs.writeFileSync(release, 'go')
++    expect(await exited, childError).toBe(0)
++    await until(() => {
++      const values = readUiPreferences(file).values
++      return values[MODE] === 'system' && JSON.parse(values[PROFILES]).work === 'dark' && JSON.parse(values[PROFILES]).other === 'dark'
++    })
++    expect(readUiPreferences(file).values[ZOOM]).toBe('140')
++    expect(window.localStorage.getItem(MODE)).toBe('system')
++  } finally {
++    fs.writeFileSync(release, 'go')
++    await exited
++    stop()
++    disposers.forEach(dispose => dispose())
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++}, 15_000)
+diff --git a/apps/desktop/src/contrib/flexpair-native-store-probe.test.tsx b/apps/desktop/src/contrib/flexpair-native-store-probe.test.tsx
 new file mode 100644
-index 0000000000..cd979e8506
+index 00000000..a72ed9b4
 --- /dev/null
-+++ b/tests/hermes_state/test_session_delete_profile_scope.py
-@@ -0,0 +1,154 @@
-+"""Deletion hooks bind the store owner's complete scope, including lazy discovery."""
++++ b/apps/desktop/src/contrib/flexpair-native-store-probe.test.tsx
+@@ -0,0 +1,140 @@
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
 +
-+from pathlib import Path
-+from types import SimpleNamespace
++import { act, cleanup, render } from '@testing-library/react'
++import { expect, it, vi } from 'vitest'
 +
-+import hermes_bootstrap  # Activate dependencies before the home I/O guard.
-+import pytest
++import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../electron/ui-preferences'
++import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync } from '../lib/ui-preferences/sync'
++import plugin from '../plugins/flexpair-color-palette/plugin'
++import { $activeGatewayProfile } from '../store/profile'
++import { $gatewayState } from '../store/session'
++import { ThemeProvider, useTheme } from '../themes/context'
 +
-+from agent.secret_scope import get_secret, reset_secret_scope, set_secret_scope
-+from hermes_constants import get_hermes_home, reset_hermes_home_override, set_hermes_home_override
-+from hermes_state_common import emit_session_deleted
-+from tools.terminal_scope import reset_terminal_scope, set_terminal_scope, terminal_env
++import { createPluginContext } from './plugin'
++
++it.each([false, true])('native stored light survives plugin boot and reapplies on sync (native pin=%s)', async nativePin => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-theme-probe-'))
++  const file = path.join(dir, 'ui-preferences.json')
++  const modeKey = 'hermes-desktop-mode-v1'
++  const disposers: (() => void)[] = []
++  const setPercent = vi.fn()
++  const setNativeTheme = vi.fn()
++  let stop = () => {}
++  try {
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    $activeGatewayProfile.set('default')
++    $gatewayState.set('open')
++    await writeUiPreferences(file, { values: { [modeKey]: 'light' } })
++    const snapshot = readUiPreferences(file)
++    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent }, setNativeTheme } })
++    captureOwnPreferences()
++    hydrateFromSnapshot(snapshot)
++    stop = startUiPreferencesSync({
++      snapshot,
++      read: async () => readUiPreferences(file),
++      write: payload => writeUiPreferences(file, parseUiPreferencesWrite(payload)),
++    })
++    plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
++    if (nativePin) { window.hermesDesktop?.setNativeTheme?.('dark') }
++    expect(window.localStorage.getItem(modeKey)).toBe('dark')
++    let theme!: ReturnType<typeof useTheme>
++    function Probe() { theme = useTheme(); return null }
++    render(<ThemeProvider><Probe /></ThemeProvider>)
++    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
++    console.log('REAL_NATIVE_STORE', JSON.stringify({ nativePin, mode: theme.mode, stored: window.localStorage.getItem(modeKey), nativeStored: readUiPreferences(file).values[modeKey], zoomCalls: setPercent.mock.calls, nativeCalls: setNativeTheme.mock.calls }))
++    expect(theme.mode).toBe('dark')
++    expect(readUiPreferences(file).values[modeKey]).toBe('dark')
++  } finally {
++    cleanup()
++    stop()
++    disposers.forEach(dispose => dispose())
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++})
++
++it.each(['absent', 'light'])('checks startup against a %s native preference', async original => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-theme-control-'))
++  const file = path.join(dir, 'ui-preferences.json')
++  const modeKey = 'hermes-desktop-mode-v1'
++  const disposers: (() => void)[] = []
++  const setPercent = vi.fn()
++  let stop = () => {}
++  try {
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    $activeGatewayProfile.set('default')
++    $gatewayState.set('open')
++    if (original === 'light') { await writeUiPreferences(file, { values: { [modeKey]: 'light' } }) }
++    const snapshot = readUiPreferences(file)
++    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent } } })
++    captureOwnPreferences()
++    hydrateFromSnapshot(snapshot)
++    stop = startUiPreferencesSync({
++      snapshot,
++      read: async () => readUiPreferences(file),
++      write: payload => writeUiPreferences(file, parseUiPreferencesWrite(payload)),
++    })
++    plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
++    let theme!: ReturnType<typeof useTheme>
++    function Probe() { theme = useTheme(); return null }
++    render(<ThemeProvider><Probe /></ThemeProvider>)
++    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
++    console.log('CONTROL', JSON.stringify({ original, mode: theme.mode, stored: window.localStorage.getItem(modeKey), nativeStored: readUiPreferences(file).values[modeKey] ?? null, zoomCalls: setPercent.mock.calls }))
++    expect(theme.mode).toBe('dark')
++    expect(readUiPreferences(file).values[modeKey]).toBe('dark')
++  } finally {
++    cleanup()
++    stop()
++    disposers.forEach(dispose => dispose())
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++})
++
++it('persists the plugin startup without a native desktop bridge', async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-theme-control-'))
++  const file = path.join(dir, 'ui-preferences.json')
++  const modeKey = 'hermes-desktop-mode-v1'
++  const disposers: (() => void)[] = []
++  let stop = () => {}
++  try {
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    $activeGatewayProfile.set('default')
++    $gatewayState.set('open')
++    await writeUiPreferences(file, { values: { [modeKey]: 'light' } })
++    const snapshot = readUiPreferences(file)
++    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
++    captureOwnPreferences()
++    hydrateFromSnapshot(snapshot)
++    stop = startUiPreferencesSync({
++      snapshot,
++      read: async () => readUiPreferences(file),
++      write: payload => writeUiPreferences(file, parseUiPreferencesWrite(payload)),
++    })
++    let theme!: ReturnType<typeof useTheme>
++    function Probe() { theme = useTheme(); return null }
++    render(<ThemeProvider><Probe /></ThemeProvider>)
++    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
++    act(() => {
++      plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
++    })
++    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
++    console.log('HOST_OBSERVED', JSON.stringify({ mode: theme.mode, stored: window.localStorage.getItem(modeKey), nativeStored: readUiPreferences(file).values[modeKey] }))
++    expect(theme.mode).toBe('dark')
++    expect(readUiPreferences(file).values[modeKey]).toBe('dark')
++  } finally {
++    cleanup()
++    stop()
++    disposers.forEach(dispose => dispose())
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++})
+diff --git a/apps/desktop/src/contrib/flexpair-race-temporary.test.tsx b/apps/desktop/src/contrib/flexpair-race-temporary.test.tsx
+new file mode 100644
+index 00000000..e0b74c85
+--- /dev/null
++++ b/apps/desktop/src/contrib/flexpair-race-temporary.test.tsx
+@@ -0,0 +1,49 @@
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++import { expect, it } from 'vitest'
++import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../electron/ui-preferences'
++import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync } from '../lib/ui-preferences/sync'
++import plugin from '../plugins/flexpair-color-palette/plugin'
++import { $activeGatewayProfile } from '../store/profile'
++import { $gatewayState } from '../store/session'
++import { createPluginContext } from './plugin'
++
++it('does not overwrite an unseen peer update while its startup write is in flight', async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-race-'))
++  const file = path.join(dir, 'preferences.json')
++  const mode = 'hermes-desktop-mode-v1'
++  const profiles = 'hermes-desktop-profile-modes-v1'
++  const disposers: (() => void)[] = []
++  let release = () => {}
++  const gate = new Promise<void>(resolve => { release = resolve })
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
++  $activeGatewayProfile.set('work')
++  $gatewayState.set('open')
++  await writeUiPreferences(file, { values: { [mode]: 'light', [profiles]: JSON.stringify({ work: 'light', other: 'light' }) } })
++  const snapshot = readUiPreferences(file)
++  captureOwnPreferences()
++  hydrateFromSnapshot(snapshot)
++  const stop = startUiPreferencesSync({
++    snapshot, read: async () => readUiPreferences(file),
++    write: async payload => { if (!payload.seed) { await gate }; return writeUiPreferences(file, parseUiPreferencesWrite(payload)) }
++  })
++  try {
++    plugin.register(createPluginContext(plugin.id, d => disposers.push(d)))
++    await new Promise(resolve => setTimeout(resolve, 250))
++    await writeUiPreferences(file, { values: { [mode]: 'system', [profiles]: JSON.stringify({ work: 'light', other: 'dark' }) } })
++    release()
++    await new Promise(resolve => setTimeout(resolve, 500))
++    expect(readUiPreferences(file).values[mode]).toBe('system')
++    expect(JSON.parse(readUiPreferences(file).values[profiles]).other).toBe('dark')
++  } finally {
++    release()
++    stop()
++    disposers.forEach(dispose => dispose())
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++})
+diff --git a/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx b/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx
+new file mode 100644
+index 00000000..bb03bc9f
+--- /dev/null
++++ b/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx
+@@ -0,0 +1,121 @@
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++
++import { act, cleanup, render } from '@testing-library/react'
++import { expect, it, vi } from 'vitest'
++
++import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../electron/ui-preferences'
++import { bootRenderer } from '../lib/ui-preferences/boot'
++import type { UiPreferencesSnapshot } from '../lib/ui-preferences/sync'
++
++const MODE = 'hermes-desktop-mode-v1'
++const PROFILES = 'hermes-desktop-profile-modes-v1'
++const tick = () => new Promise(resolve => setTimeout(resolve, 500))
++
++it('loads the bundled plugin before sync settles, merges peer profiles and respects manual mode changes', async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-shared-'))
++  const file = path.join(dir, 'preferences.json')
++  const setPercent = vi.fn()
++  let notify: (snapshot: UiPreferencesSnapshot) => void = () => {}
++  let releaseWrites = () => {}
++  const gate = new Promise<void>(resolve => { releaseWrites = resolve })
++
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  window.localStorage.setItem('hermes.desktop.pluginDecisions.v2', JSON.stringify({
++    'provider-card-filter': false, 'hermes-bots': false, kanban: false, radio: false
++  }))
++  await writeUiPreferences(file, { values: {
++    [MODE]: 'light', [PROFILES]: JSON.stringify({ work: 'system', research: 'light', other: 'light' })
++  } })
++  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
++    localSkin: { profile: 'work' }, zoom: { setPercent }, logLine: vi.fn(),
++    onPreviewFileChanged: () => () => undefined,
++    desktopPluginsRoot: async () => '/isolated-empty-plugins',
++    readDir: async () => ({ entries: [] }),
++    watchDirectory: async () => ({ id: 'empty-root-watch' }),
++    uiPreferences: {
++      snapshot: readUiPreferences(file),
++      read: async () => readUiPreferences(file),
++      write: async (payload: Parameters<typeof parseUiPreferencesWrite>[0]) => {
++        if (!parseUiPreferencesWrite(payload).seed) { await gate }
++        return writeUiPreferences(file, parseUiPreferencesWrite(payload))
++      },
++      onChanged: (listener: typeof notify) => { notify = listener; return () => {} }
++    }
++  } })
++
++  try {
++    const app = await bootRenderer(async () => {
++      const loader = await import('./plugins')
++      const store = await import('./plugins-store')
++      const profile = await import('../store/profile')
++      const session = await import('../store/session')
++      const context = await import('../themes/context')
++      const plugin = (await import('../plugins/flexpair-color-palette/plugin')).default
++      const { createPluginContext } = await import('./plugin')
++      profile.$activeGatewayProfile.set('work')
++      session.$gatewayState.set('open')
++      loader.discoverBundledPlugins()
++      return { context, createPluginContext, plugin, profile, store }
++    })
++    expect(app.store.$pluginRecords.get()['flexpair-color-palette'].status).toBe('loaded')
++    let theme!: ReturnType<typeof app.context.useTheme>
++    function Probe() { theme = app.context.useTheme(); return null }
++    render(<app.context.ThemeProvider><Probe /></app.context.ThemeProvider>)
++    expect(theme.mode).toBe('dark')
++    expect(setPercent.mock.calls).toEqual([[150]])
++
++    // This renderer has an unsent work edit when a peer changes another
++    // profile. The pending JSON record must be rebased, not replaced whole.
++    const peer = await writeUiPreferences(file, { values: {
++      [PROFILES]: JSON.stringify({ work: 'system', research: 'light', other: 'dark', peer: 'system' })
++    } })
++    act(() => notify(peer))
++    releaseWrites()
++    await act(tick)
++    expect(JSON.parse(readUiPreferences(file).values[PROFILES])).toEqual({
++      work: 'dark', research: 'light', other: 'dark', peer: 'system'
++    })
++    expect(readUiPreferences(file).values[MODE]).toBe('dark')
++
++    // A second renderer owns research; disabling work must leave it alone.
++    const peerDisposers: (() => void)[] = []
++    window.sessionStorage.clear()
++    app.profile.$activeGatewayProfile.set('research')
++    act(() => app.plugin.register(app.createPluginContext(app.plugin.id, dispose => peerDisposers.push(dispose))))
++    await act(async () => { await app.store.setPluginEnabled(app.plugin.id, false) })
++    await act(tick)
++    expect(JSON.parse(readUiPreferences(file).values[PROFILES])).toEqual({
++      work: 'system', research: 'dark', other: 'dark', peer: 'system'
++    })
++    expect(readUiPreferences(file).values[MODE]).toBe('dark')
++    act(() => peerDisposers.forEach(dispose => dispose()))
++    await act(tick)
++    expect(readUiPreferences(file).values[MODE]).toBe('light')
++    expect(JSON.parse(readUiPreferences(file).values[PROFILES])).toEqual({
++      work: 'system', research: 'light', other: 'dark', peer: 'system'
++    })
++
++    app.profile.$activeGatewayProfile.set('work')
++    await act(async () => { await app.store.setPluginEnabled(app.plugin.id, true) })
++    expect(theme.mode).toBe('dark')
++    act(() => theme.setMode('light'))
++    await act(tick)
++    expect(theme.mode).toBe('light')
++    expect(readUiPreferences(file).values[MODE]).toBe('light')
++    expect(setPercent.mock.calls.filter(([value]) => value === 150)).toHaveLength(3)
++    await act(async () => { await app.store.setPluginEnabled(app.plugin.id, false) })
++    await act(tick)
++    expect(readUiPreferences(file).values[MODE]).toBe('light')
++    expect(JSON.parse(readUiPreferences(file).values[PROFILES]).work).toBe('light')
++  } finally {
++    releaseWrites()
++    cleanup()
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    Reflect.deleteProperty(window, 'hermesDesktop')
++    fs.rmSync(dir, { force: true, recursive: true })
++  }
++}, 30_000)
+diff --git a/apps/desktop/src/contrib/flexpair-theme-sync-probe.test.tsx b/apps/desktop/src/contrib/flexpair-theme-sync-probe.test.tsx
+new file mode 100644
+index 00000000..3dd4e35d
+--- /dev/null
++++ b/apps/desktop/src/contrib/flexpair-theme-sync-probe.test.tsx
+@@ -0,0 +1,94 @@
++import { act, cleanup, render } from '@testing-library/react'
++import { expect, it, vi } from 'vitest'
++
++import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync, type UiPreferencesSnapshot } from '../lib/ui-preferences/sync'
++import plugin from '../plugins/flexpair-color-palette/plugin'
++import { $activeGatewayProfile } from '../store/profile'
++import { $gatewayState } from '../store/session'
++import { ThemeProvider, useTheme } from '../themes/context'
++
++import { createPluginContext } from './plugin'
++
++const modeKey = 'hermes-desktop-mode-v1'
++const snapshot: UiPreferencesSnapshot = {
++  exists: true, generation: 'g1', revision: 1, values: { [modeKey]: 'light' }
++}
++
++it.each([false, true])('keeps startup dark when sync connects (native pin=%s)', async nativePin => {
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  $activeGatewayProfile.set('default')
++  $gatewayState.set('open')
++  const disposers: (() => void)[] = []
++  const setPercent = vi.fn()
++  const setNativeTheme = vi.fn()
++  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent }, setNativeTheme } })
++  captureOwnPreferences()
++  hydrateFromSnapshot(snapshot)
++  const stop = startUiPreferencesSync({
++    snapshot,
++    read: async () => snapshot,
++    write: async () => snapshot,
++  })
++  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
++  if (nativePin) { window.hermesDesktop?.setNativeTheme?.('dark') }
++  expect(window.localStorage.getItem(modeKey)).toBe('dark')
++  let theme!: ReturnType<typeof useTheme>
++  function Probe() { theme = useTheme(); return null }
++  try {
++    render(<ThemeProvider><Probe /></ThemeProvider>)
++    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
++    console.log('OBSERVED', JSON.stringify({ nativePin, mode: theme.mode, stored: window.localStorage.getItem(modeKey), zoomCalls: setPercent.mock.calls, nativeCalls: setNativeTheme.mock.calls }))
++    expect(theme.mode).toBe('dark')
++    expect(window.localStorage.getItem(modeKey)).toBe('dark')
++  } finally {
++    cleanup()
++    stop()
++    disposers.forEach(dispose => dispose())
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++  }
++})
++
++it.each([false, true])('keeps startup dark after another preference updates (native pin=%s)', async nativePin => {
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  $activeGatewayProfile.set('default')
++  $gatewayState.set('open')
++  const disposers: (() => void)[] = []
++  const setPercent = vi.fn()
++  const setNativeTheme = vi.fn()
++  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent }, setNativeTheme } })
++  captureOwnPreferences()
++  hydrateFromSnapshot(snapshot)
++  let onChanged: (next: UiPreferencesSnapshot) => void = () => {}
++  const stop = startUiPreferencesSync({
++    snapshot,
++    read: async () => snapshot,
++    write: async () => snapshot,
++    onChanged: listener => { onChanged = listener; return () => {} },
++  })
++  let theme!: ReturnType<typeof useTheme>
++  function Probe() { theme = useTheme(); return null }
++  try {
++    render(<ThemeProvider><Probe /></ThemeProvider>)
++    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
++    act(() => {
++      plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
++      if (nativePin) { window.hermesDesktop?.setNativeTheme?.('dark') }
++    })
++    expect(theme.mode).toBe('dark')
++    expect(window.localStorage.getItem(modeKey)).toBe('dark')
++    act(() => onChanged({ ...snapshot, revision: 2, values: {
++      [modeKey]: 'light', 'hermes.desktop.sessionListDensity': 'detailed'
++    } }))
++    console.log('UPDATE', JSON.stringify({ nativePin, mode: theme.mode, stored: window.localStorage.getItem(modeKey), zoomCalls: setPercent.mock.calls, nativeCalls: setNativeTheme.mock.calls }))
++    expect(theme.mode).toBe('dark')
++  } finally {
++    cleanup()
++    stop()
++    disposers.forEach(dispose => dispose())
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++  }
++})
+diff --git a/apps/desktop/src/contrib/plugin.ts b/apps/desktop/src/contrib/plugin.ts
+index 9fe4bbe1..abcac1c5 100644
+--- a/apps/desktop/src/contrib/plugin.ts
++++ b/apps/desktop/src/contrib/plugin.ts
+@@ -58,6 +58,17 @@ export interface PluginStorage {
+   remove(key: string): void
+ }
+
++/** Raw mode preferences, including absent or older values needed for restoration. */
++export interface PluginModePreferences {
++  read(key: 'global' | 'profiles'): null | string
++  write(key: 'global' | 'profiles', value: null | string): void
++}
++
++const modePreferenceKeys = {
++  global: 'hermes-desktop-mode-v1',
++  profiles: 'hermes-desktop-profile-modes-v1'
++} as const
++
+ /** The curated OS door — every way a plugin reaches outside the app window,
+  *  in one attributed namespace instead of the raw `window.hermesDesktop`
+  *  bridge. Every member resolves a result instead of throwing when the
+@@ -182,6 +193,9 @@ export interface PluginContext {
+   preview: PluginPreview
+   /** Plugin-scoped persistence. */
+   storage: PluginStorage
++  /** Mode persistence through the shared-preference sync. The caller announces
++   *  a completed multi-key update to appearance listeners with a storage event. */
++  modePreferences: PluginModePreferences
+   /** Folder-scoped file access: this plugin's own data folder plus folders
+    *  the user grants it through the app's picker, by relative path. The app
+    *  checks every call; nothing outside those folders (or inside Hermes'
+@@ -401,6 +415,10 @@ export function createPluginContext(
+     listActions: listPluginAppActions,
+     preview: createPluginPreview(pluginId, capabilities),
+     storage: createPluginStorage(pluginId),
++    modePreferences: {
++      read: key => readKey(modePreferenceKeys[key]),
++      write: (key, value) => writeKey(modePreferenceKeys[key], value)
++    },
+     files: createPluginFiles(pluginId),
+     i18n: createPluginI18n(pluginId, track)
+   }
+diff --git a/apps/desktop/src/lib/browser-ui-preferences.ts b/apps/desktop/src/lib/browser-ui-preferences.ts
+index 62e62508..1dd007e3 100644
+--- a/apps/desktop/src/lib/browser-ui-preferences.ts
++++ b/apps/desktop/src/lib/browser-ui-preferences.ts
+@@ -16,7 +16,7 @@ export function createBrowserUiPreferences(api: <T>(request: HermesApiRequest) =
+
+   return {
+     read,
+-    write: payload => api<UiPreferencesSnapshot>({ body: payload, method: 'PATCH', path: PATH, timeoutMs: 10_000 }),
++    write: payload => api<UiPreferencesSnapshot>({ body: payload, method: 'PATCH', path: payload.bases ? `${PATH}/conditional` : PATH, timeoutMs: 10_000 }),
+     onChanged: callback => {
+       const poll = () => {
+         if (document.visibilityState === 'visible') {
+diff --git a/apps/desktop/src/lib/ui-preferences/boot.test.ts b/apps/desktop/src/lib/ui-preferences/boot.test.ts
+index 613823e2..6c1403a1 100644
+--- a/apps/desktop/src/lib/ui-preferences/boot.test.ts
++++ b/apps/desktop/src/lib/ui-preferences/boot.test.ts
+@@ -7,7 +7,7 @@ import { afterEach, expect, it } from 'vitest'
+ import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../../electron/ui-preferences'
+
+ import { bootRenderer } from './boot'
+-import { startUiPreferencesSync, type UiPreferencesBridge } from './sync'
++import type { UiPreferencesBridge } from './sync'
+
+ const FAVORITES = 'hermes.desktop.favorite-models'
+ const dirs: string[] = []
+@@ -41,11 +41,9 @@ it('no store module evaluates before the machine store hydrated, so its next wri
+   window.hermesDesktop = { uiPreferences: bridge } as unknown as typeof window.hermesDesktop
+
+   const favorites = await bootRenderer(() => import('@/store/favorite-models'))
+-  const stop = startUiPreferencesSync(bridge)
+   await tick()
+   favorites.toggleFavoriteModel('mine', 'C')
+   await tick()
+-  stop()
+
+   expect(JSON.parse(readUiPreferences(file).values[FAVORITES])).toEqual(['host::A', 'host::B', 'mine::C'])
+ })
+diff --git a/apps/desktop/src/lib/ui-preferences/boot.ts b/apps/desktop/src/lib/ui-preferences/boot.ts
+index 0adbcdf0..c7b9176d 100644
+--- a/apps/desktop/src/lib/ui-preferences/boot.ts
++++ b/apps/desktop/src/lib/ui-preferences/boot.ts
+@@ -9,8 +9,9 @@
+ // asks the server that serves it, bounded so an unreachable host never holds
+ // the first paint for long (then it boots on its local cache).
+ import { browserApi, browserBootstrap } from '@/lib/browser-transport'
++import { createBrowserUiPreferences } from '@/lib/browser-ui-preferences'
+
+-import { captureOwnPreferences, hydrateFromSnapshot, type UiPreferencesSnapshot } from './sync'
++import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync, type UiPreferencesSnapshot } from './sync'
+
+ const BROWSER_FIRST_READ_MS = 1500
+
+@@ -35,7 +36,26 @@ async function browserSnapshot(): Promise<null | UiPreferencesSnapshot> {
+ export async function bootRenderer<T>(loadApp: () => Promise<T>): Promise<T> {
+   if (typeof window !== 'undefined') {
+     captureOwnPreferences()
+-    hydrateFromSnapshot(window.hermesDesktop?.uiPreferences?.snapshot ?? (await browserSnapshot()))
++    const native = window.hermesDesktop?.uiPreferences
++    const bootstrap = native ? null : browserBootstrap()
++    const snapshot = native?.snapshot ?? (await browserSnapshot())
++    hydrateFromSnapshot(snapshot)
++    const bridge = native ?? (bootstrap ? createBrowserUiPreferences(request => browserApi(bootstrap, request)) : null)
++    // Observe plugin writes during module evaluation, but wait for stores to
++    // classify cached defaults before importing this origin into the machine.
++    let release: () => void = () => undefined
++    const appReady = new Promise<void>(resolve => { release = resolve })
++    const stop = startUiPreferencesSync(bridge && { ...bridge, snapshot }, appReady)
++
++    try {
++      const app = await loadApp()
++      release()
++
++      return app
++    } catch (error) {
++      stop()
++      throw error
++    }
+   }
+
+   return loadApp()
+diff --git a/apps/desktop/src/lib/ui-preferences/flexpair-early-seed.test.ts b/apps/desktop/src/lib/ui-preferences/flexpair-early-seed.test.ts
+new file mode 100644
+index 00000000..b029af2d
+--- /dev/null
++++ b/apps/desktop/src/lib/ui-preferences/flexpair-early-seed.test.ts
+@@ -0,0 +1,112 @@
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++import { expect, it, vi } from 'vitest'
++import { readUiPreferences, writeUiPreferences, parseUiPreferencesWrite } from '../../../electron/ui-preferences'
++
++it('does not seed old default keybinds before stores classify them as provisional', async () => {
++  vi.resetModules()
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-early-seed-'))
++  const file = path.join(dir, 'prefs.json')
++  const key = 'hermes.desktop.keybinds'
++  window.localStorage.setItem(key, '{}')
++  window.hermesDesktop = { uiPreferences: {
++    snapshot: readUiPreferences(file),
++    read: async () => readUiPreferences(file),
++    write: async (payload: Parameters<typeof parseUiPreferencesWrite>[0]) =>
++      writeUiPreferences(file, parseUiPreferencesWrite(payload))
++  } } as unknown as typeof window.hermesDesktop
++  try {
++    const { bootRenderer } = await import('./boot')
++    await bootRenderer(async () => {
++      // Module loading can yield before keybinds evaluates.
++      await new Promise(resolve => setTimeout(resolve, 100))
++      await import('@/store/keybinds')
++    })
++    await new Promise(resolve => setTimeout(resolve, 500))
++    expect(readUiPreferences(file).values[key]).toBeUndefined()
++  } finally {
++    Reflect.deleteProperty(window, 'hermesDesktop')
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++})
++
++it('queues startup writes and incoming changes until the app graph has loaded', async () => {
++  vi.resetModules()
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-startup-writes-'))
++  const file = path.join(dir, 'prefs.json')
++  const mode = 'hermes-desktop-mode-v1'
++  const profiles = 'hermes-desktop-profile-modes-v1'
++  await writeUiPreferences(file, { values: { [mode]: 'light', [profiles]: '{"work":"light","peer":"light"}' } })
++  let notify: (snapshot: ReturnType<typeof readUiPreferences>) => void = () => undefined
++  const write = vi.fn(async (payload: Parameters<typeof parseUiPreferencesWrite>[0]) =>
++    writeUiPreferences(file, parseUiPreferencesWrite(payload)))
++  window.hermesDesktop = { uiPreferences: {
++    snapshot: readUiPreferences(file),
++    read: async () => readUiPreferences(file),
++    write,
++    onChanged: (listener: typeof notify) => { notify = listener; return () => undefined }
++  } } as unknown as typeof window.hermesDesktop
++
++  try {
++    const { bootRenderer } = await import('./boot')
++    await bootRenderer(async () => {
++      const { readKey, writeKey } = await import('../storage')
++      readKey(profiles)
++      writeKey(profiles, '{"work":"dark","peer":"light"}')
++      writeKey(mode, 'dark')
++      const peer = await writeUiPreferences(file, { values: { [profiles]: '{"work":"light","peer":"dark"}' } })
++      notify(peer)
++      await new Promise(resolve => setTimeout(resolve, 50))
++      expect(window.localStorage.getItem(profiles)).toBe('{"work":"dark","peer":"light"}')
++      expect(write).not.toHaveBeenCalled()
++    })
++    await new Promise(resolve => setTimeout(resolve, 500))
++    expect(readUiPreferences(file).values[mode]).toBe('dark')
++    expect(JSON.parse(readUiPreferences(file).values[profiles])).toEqual({ work: 'dark', peer: 'dark' })
++  } finally {
++    Reflect.deleteProperty(window, 'hermesDesktop')
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++})
++
++it('stops listening without contacting the store if app loading fails', async () => {
++  vi.resetModules()
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-failed-boot-'))
++  const file = path.join(dir, 'prefs.json')
++  const read = vi.fn(async () => readUiPreferences(file))
++  const write = vi.fn(async (payload: Parameters<typeof parseUiPreferencesWrite>[0]) =>
++    writeUiPreferences(file, parseUiPreferencesWrite(payload)))
++  const unsubscribe = vi.fn()
++  window.hermesDesktop = { uiPreferences: {
++    snapshot: readUiPreferences(file), read, write, onChanged: () => unsubscribe
++  } } as unknown as typeof window.hermesDesktop
++
++  try {
++    const { bootRenderer } = await import('./boot')
++    await expect(bootRenderer(async () => {
++      const { writeKey } = await import('../storage')
++      writeKey('hermes-desktop-mode-v1', 'dark')
++      throw new Error('load failed')
++    })).rejects.toThrow('load failed')
++    await new Promise(resolve => setTimeout(resolve, 200))
++    expect(unsubscribe).toHaveBeenCalledOnce()
++    expect(read).not.toHaveBeenCalled()
++    expect(write).not.toHaveBeenCalled()
++  } finally {
++    Reflect.deleteProperty(window, 'hermesDesktop')
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++})
+diff --git a/apps/desktop/src/lib/ui-preferences/sync.test.ts b/apps/desktop/src/lib/ui-preferences/sync.test.ts
+index 49790be2..28665962 100644
+--- a/apps/desktop/src/lib/ui-preferences/sync.test.ts
++++ b/apps/desktop/src/lib/ui-preferences/sync.test.ts
+@@ -37,7 +37,7 @@ function memoryStore(initial: null | Record<string, string>) {
+
+       doc = { exists: true, generation: doc?.generation ?? 'g1', revision: (doc?.revision ?? 0) + 1, values }
+
+-      return snapshot()
++      return payload.bases ? { ...snapshot(), conditional: true as const } : snapshot()
+     },
+     onChanged: callback => {
+       listeners.add(callback)
+@@ -108,7 +108,7 @@ describe('machine UI preferences sync', () => {
+     writeKey(DRAFT, 'local only')
+     await vi.runAllTimersAsync()
+
+-    expect(store.writes).toEqual([{ values: { [DENSITY]: 'detailed' } }])
++    expect(store.writes).toEqual([{ bases: { [DENSITY]: null }, values: { [DENSITY]: 'detailed' } }])
+     expect(store.snapshot().values).toEqual({ [DENSITY]: 'detailed', [MODE]: 'dark' })
+
+     store.external({ [DENSITY]: 'comfortable', [MODE]: 'dark' })
+diff --git a/apps/desktop/src/lib/ui-preferences/sync.ts b/apps/desktop/src/lib/ui-preferences/sync.ts
+index bde14ae3..a04d629b 100644
+--- a/apps/desktop/src/lib/ui-preferences/sync.ts
++++ b/apps/desktop/src/lib/ui-preferences/sync.ts
+@@ -154,7 +154,7 @@ export function hydrateFromSnapshot(snapshot: null | undefined | UiPreferencesSn
+ function isRefusal(error: unknown): boolean {
+   const message = error instanceof Error ? error.message : String(error)
+
+-  return /^400:|unsupported preference|unsupported value|store is full/.test(message)
++  return /^400:|^404:|unsupported preference|unsupported value|store is full/.test(message)
+ }
+
+ function announce(key: string, oldValue: null | string, newValue: null | string) {
+@@ -163,6 +163,82 @@ function announce(key: string, oldValue: null | string, newValue: null | string)
+   window.dispatchEvent(new StorageEvent('storage', { key, newValue, oldValue }))
+ }
+
++function reconciledCurrent(
++  key: string,
++  snapshot: UiPreferencesSnapshot,
++  known: Map<string, null | string>,
++  generation: null | string,
++  revision: number
++): null | string {
++  if (generation === generationOf(snapshot) && revision > snapshot.revision && known.has(key)) {
++    return known.get(key) ?? null
++  }
++  return snapshot.values[key] ?? null
++}
++
++function reconciledValue(
++  count: number,
++  changedHere: boolean,
++  base: null | string,
++  current: null | string,
++  value: null | string,
++  latest: null | string
++): null | string {
++  if (count > 1 && !changedHere) {
++    return current
++  }
++  if (changedHere) {
++    return rebaseWrite(base, current, latest)
++  }
++  return rebaseWrite(base, value, current)
++}
++
++function reconcileWriteBatch(
++  batch: Map<string, null | string>,
++  bases: Map<string, null | string>,
++  pending: Map<string, null | string>,
++  pendingBase: Map<string, null | string>,
++  conflicts: Map<string, number>,
++  snapshot: UiPreferencesSnapshot,
++  known: Map<string, null | string>,
++  generation: null | string,
++  revision: number
++): void {
++  for (const [key, value] of batch) {
++    if (!pending.has(key)) {
++      continue
++    }
++
++    const current = reconciledCurrent(key, snapshot, known, generation, revision)
++    const latest = pending.get(key) ?? null
++    const changedHere = latest !== value
++
++    if (!changedHere && current === value) {
++      pending.delete(key)
++      pendingBase.delete(key)
++      conflicts.delete(key)
++      continue
++    }
++
++    const count = (conflicts.get(key) ?? 0) + (current === value ? 0 : 1)
++    const rebased = reconciledValue(count, changedHere, bases.get(key) ?? null, current, value, latest)
++
++    if (readRaw(key) === latest && rebased !== latest && writeRaw(key, rebased)) {
++      announce(key, latest, rebased)
++    }
++
++    if (rebased === current) {
++      pending.delete(key)
++      pendingBase.delete(key)
++      conflicts.delete(key)
++    } else {
++      pending.set(key, rebased)
++      pendingBase.set(key, current)
++      conflicts.set(key, count)
++    }
++  }
++}
++
+ /**
+  * Keep this window's shared preferences and the machine store in step:
+  * - first contact with a store generation (or with no store) imports this
+@@ -173,7 +249,7 @@ function announce(key: string, oldValue: null | string, newValue: null | string)
+  * - a change another window, tab or device made lands here live;
+  * - a provisional value (a write marked `provisional`) never leaves this origin.
+  */
+-export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | undefined): () => void {
++export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | undefined, appReady?: Promise<void>): () => void {
+   if (!bridge) {
+     return () => undefined
+   }
+@@ -190,6 +266,8 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+   const seenOf = (key: string) => (seen.has(key) ? (seen.get(key) ?? null) : (loaded.get(key) ?? null))
+   // Values the store refused, kept in this window until changed again.
+   const refused = new Map<string, null | string>()
++  const conflicts = new Map<string, number>()
++  let inFlight = new Set<string>()
+   let revision = -1
+   let generation: null | string = null
+   let flushTimer: ReturnType<typeof setTimeout> | null = null
+@@ -229,7 +307,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+       // A change made here and not yet stored outranks an older store value,
+       // rebased onto it so the store's other entries survive; so does one a
+       // sibling tab has not stored yet.
+-      if (rebasePending(key, value)) {
++      if (!inFlight.has(key) && rebasePending(key, value)) {
+         save()
+       } else if (!pending.has(key) && !siblings.has(key) && !(refused.has(key) && refused.get(key) === readRaw(key))) {
+         adopt(key, value, prune, live)
+@@ -298,13 +376,22 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+     }
+
+     const batch = new Map(pending)
++    const bases = new Map([...batch.keys()].map(key => [key, pendingBase.get(key) ?? null]))
++    inFlight = new Set(batch.keys())
+     let retryIn = FLUSH_DELAY_MS
+     writing = true
+
+     try {
+-      const snapshot = await bridge.write({ values: Object.fromEntries(batch) })
++      const snapshot = await bridge.write({ values: Object.fromEntries(batch), bases: Object.fromEntries(bases) })
+
+-      settle(batch)
++      if (!snapshot.conditional) {
++        throw new Error('unsupported preference conditional writes')
++      }
++
++      reconcileWriteBatch(batch, bases, pending, pendingBase, conflicts, snapshot, known, generation, revision)
++
++      inFlight.clear()
++      save()
+       writeDelay = RETRY_DELAY_MS
+       apply(snapshot, { live: true })
+     } catch (error) {
+@@ -319,6 +406,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+         writeDelay = Math.min(writeDelay * 2, MAX_RETRY_DELAY_MS)
+       }
+     } finally {
++      inFlight.clear()
+       writing = false
+     }
+
+@@ -366,10 +454,13 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+     const value = rebaseLocal(event.key, base, current, event.value)
+
+     if (!pendingBase.has(event.key)) {
+-      pendingBase.set(event.key, current)
++      // A local provisional value may exist while the shared store has no key.
++      // The conditional write must compare against the store's absence, not it.
++      pendingBase.set(event.key, known.has(event.key) && known.get(event.key) === null ? null : current)
+     }
+
+     refused.delete(event.key)
++    conflicts.delete(event.key)
+     pending.set(event.key, value)
+     store()
+   })
+@@ -514,9 +605,29 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+       })
+   }
+
+-  connect(bridge.snapshot)
++  let waitingForApp = !!appReady
++  let initialSnapshot = bridge.snapshot
+
+-  const stopChanges = bridge.onChanged?.(snapshot => apply(snapshot, { live: true })) ?? (() => undefined)
++  if (!appReady) {
++    connect(initialSnapshot)
++  }
++
++  const stopChanges = bridge.onChanged?.(snapshot => {
++    if (waitingForApp) {
++      initialSnapshot = snapshot
++    } else {
++      apply(snapshot, { live: true })
++    }
++  }) ?? (() => undefined)
++
++  if (appReady) {
++    void appReady.then(() => {
++      if (!stopped) {
++        waitingForApp = false
++        connect(initialSnapshot)
++      }
++    })
++  }
+
+   return () => {
+     stopped = true
+diff --git a/apps/desktop/src/main.tsx b/apps/desktop/src/main.tsx
+index ce347fd1..5aee0737 100644
+--- a/apps/desktop/src/main.tsx
++++ b/apps/desktop/src/main.tsx
+@@ -39,7 +39,6 @@ import { queryClient } from './lib/query-client'
+ import { installRendererAnimationPauseState } from './lib/renderer-loop-pause'
+ import { installSelectionCopyColorGuard } from './lib/selection-copy-colors'
+ import { isTransparentWindow } from './lib/transparent-windows'
+-import { startUiPreferencesSync } from './lib/ui-preferences/sync'
+ import { installBrowserTabTitle } from './store/browser-tab-title'
+ import { ThemeProvider } from './themes/context'
+
+@@ -50,8 +49,6 @@ installClipboardShim()
+ installSelectionCopyColorGuard()
+ // Browser host only: the tab carries session status while the user is away.
+ installBrowserTabTitle()
+-// One preferences store per machine, shared by native Desktop and its Webapp (#145213).
+-startUiPreferencesSync(window.hermesDesktop?.uiPreferences)
+
+ // The perf probe ships in dev, and in a production build ONLY when explicitly
+ // opted in (VITE_PERF_PROBE=1) — this lets the perf harness measure a real,
+diff --git a/apps/desktop/src/plugins/flexpair-color-palette/README.md b/apps/desktop/src/plugins/flexpair-color-palette/README.md
+index 32eef2f1..7175efbf 100644
+--- a/apps/desktop/src/plugins/flexpair-color-palette/README.md
++++ b/apps/desktop/src/plugins/flexpair-color-palette/README.md
+@@ -6,6 +6,8 @@ Enabled by default. Every enabled registration sets the appearance preference to
+
+ Fixed accents follow the painted mode. A plugin-owned persistent restoration baseline survives renderer restarts without disposal; a later non-dark manual preference becomes the next activation's baseline. Each activation broadcasts a plugin-scoped UUID presence request through the existing optional Electron window relay. Previously recorded owners that do not reply within 2 seconds are released; responding peers keep their profile and global baseline. Only owners present at discovery start are candidates, and late replies cannot revive them. The listener remains available to answer other windows until close or disposal, which cancels pending discovery. This is a single bounded handshake, not polling or a timer lease. Suspended or heavily delayed renderers can be falsely treated as closed; without a relay (or when sending fails), owners are conservatively retained and abandoned-owner recovery is unavailable. Renderer reload on the same window/profile replaces the same session-storage UUID slot. Legacy profile-name owners from older baseline records are migrated to synthetic `legacy:<profile>` owners and never expire automatically: their original renderer identity cannot be proven from a UUID reply, so the legacy baseline remains protected until manually cleared.
+
++Mode changes use the host's mode-preference persistence door, so startup and restoration join machine preference sync. Choosing a different mode while active is respected; zoom is set only at activation and reset on disable.
++
+ Disposal and window close restore outstanding assignments only when no remaining owner needs them, preserving later manual edits and unrelated profiles. Window close never writes shared native zoom; explicit disposal resets host-default zoom once. Established SDK routing, including `host.activeConnectionId()` during reconnect, takes precedence over boot hints; only the initial default placeholder uses the pinned `?profile=` or Electron boot profile and saved fallback. The optional existing Electron zoom bridge is not a plugin SDK API; older hosts without it retain appearance behavior. SDK, theme implementation, Electron and plugin loading remain unchanged. These defaults are applied during initialization, not guaranteed before the first native window paint. Unavailable storage or native zoom cannot guarantee 150%.
+
+ Official Vite bundled discovery enables fresh defaults; stored explicit disablement takes precedence across restarts and app updates.
+diff --git a/apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx b/apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx
+index 408ca49b..4858c484 100644
+--- a/apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx
++++ b/apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx
+@@ -154,13 +154,12 @@ const plugin: HermesPlugin = {
+
+     try {
+       const key = 'hermes-desktop-mode-v1'
+-      const profilesKey = 'hermes-desktop-profile-modes-v1'
+
+       const readModes = (): Record<string, unknown> => {
+         let saved: unknown
+
+         try {
+-          saved = JSON.parse(window.localStorage.getItem(profilesKey) ?? '{}')
++          saved = JSON.parse(ctx.modePreferences.read('profiles') ?? '{}')
+         } catch {
+           // A failed preference read falls back to a fresh profile record.
+           saved = {}
+@@ -198,7 +197,7 @@ const plugin: HermesPlugin = {
+       try {
+       const modes = readModes()
+       let baseline = readBaseline(window, baselineKey)
+-      const currentMode = window.localStorage.getItem(key)
++      const currentMode = ctx.modePreferences.read('global')
+       baseline ??= { global: currentMode, profiles: {} }
+
+       // Dark is our outstanding assignment. A different value is a later
+@@ -248,7 +247,7 @@ const plugin: HermesPlugin = {
+           }
+         }
+
+-        window.localStorage.setItem(profilesKey, JSON.stringify(currentModes))
++        ctx.modePreferences.write('profiles', JSON.stringify(currentModes))
+
+         for (const target of Object.keys(remaining.profiles)) {
+           if (!hasLegacyOwners && !activeProfiles.includes(target)) {
+@@ -320,12 +319,8 @@ const plugin: HermesPlugin = {
+           const hasLegacyOwners = Object.keys(remaining.owners ?? {}).some(id => id.startsWith(legacyOwnerPrefix))
+           restoreProfiles(remaining, activeProfiles, hasLegacyOwners)
+
+-          if (!activeProfiles.length && !hasLegacyOwners && window.localStorage.getItem(key) === 'dark') {
+-            if (remaining.global === null) {
+-              window.localStorage.removeItem(key)
+-            } else {
+-              window.localStorage.setItem(key, remaining.global)
+-            }
++          if (!activeProfiles.length && !hasLegacyOwners && ctx.modePreferences.read('global') === 'dark') {
++            ctx.modePreferences.write('global', remaining.global)
+           }
+
+           if (activeProfiles.length || hasLegacyOwners) {
+@@ -346,8 +341,8 @@ const plugin: HermesPlugin = {
+         modes[profile] = 'dark'
+       }
+
+-      window.localStorage.setItem(profilesKey, JSON.stringify(modes))
+-      window.localStorage.setItem(key, 'dark')
++      ctx.modePreferences.write('profiles', JSON.stringify(modes))
++      ctx.modePreferences.write('global', 'dark')
+       // Repaint even when the global fallback was already dark: the current
+       // profile or in-memory manual selection may still be light.
+       window.dispatchEvent(new StorageEvent('storage', { key, newValue: 'dark' }))
+diff --git a/apps/desktop/src/sdk/plugin-contract.ts b/apps/desktop/src/sdk/plugin-contract.ts
+index 9a1ec067..5b8a4186 100644
+--- a/apps/desktop/src/sdk/plugin-contract.ts
++++ b/apps/desktop/src/sdk/plugin-contract.ts
+@@ -13,6 +13,7 @@ export type {
+   PluginFilesResult,
+   PluginFolder,
+   PluginNativeNotificationInput,
++  PluginModePreferences,
+   PluginNotificationAction,
+   PluginOs,
+   PluginPet,
+diff --git a/hermes_cli/ui_preferences.py b/hermes_cli/ui_preferences.py
+index 966a59ef..5c7bea43 100644
+--- a/hermes_cli/ui_preferences.py
++++ b/hermes_cli/ui_preferences.py
+@@ -187,9 +187,12 @@ def _store_lock(path: Path) -> Iterator[Callable[[], bool]]:
+             _release(lock_dir, token)
+
+
+-def _merge(current: Mapping[str, str], changes: Mapping[str, Optional[str]], seed: bool) -> dict[str, str]:
++def _merge(current: Mapping[str, str], changes: Mapping[str, Optional[str]], seed: bool,
++           bases: Optional[Mapping[str, Optional[str]]]) -> dict[str, str]:
+     values = dict(current)
+     for key, value in changes.items():
++        if bases is not None and key in bases and current.get(key) != bases[key]:
++            continue
+         if seed:
+             # A client's first contact: fill what the store lacks, never overwrite or delete.
+             if value is not None:
+@@ -202,23 +205,31 @@ def _merge(current: Mapping[str, str], changes: Mapping[str, Optional[str]], see
+
+
+ def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = False,
+-                      path: Optional[Path] = None) -> dict:
++                      path: Optional[Path] = None, bases: Optional[Mapping[str, Optional[str]]] = None) -> dict:
+     """Merge *changes* per key (``None`` deletes) and return the resulting snapshot.
+
++    ``bases`` conditionally applies each named key only if its current value matches.
++
+     ``seed=True`` is a client's first contact with this store generation: it only adds the keys
+     the store lacks (and creates no store from nothing), so a client that has data fills a store
+     an empty client created and no client's values are overwritten or deleted.
+     """
+     _validate(changes)
++    if bases is not None:
++        if not isinstance(bases, Mapping):
++            raise PreferencesError("preference bases must be an object")
++        _validate(bases)
++        if not bases.keys() <= changes.keys():
++            raise PreferencesError("preference bases must name changed keys")
+     path = path or store_path()
+     path.parent.mkdir(parents=True, exist_ok=True)
+     with _store_lock(path) as still_ours:
+         current, corrupt = _read(path)
+-        values = _merge(current["values"], changes, seed)
++        values = _merge(current["values"], changes, seed, bases)
+         if len(values) > MAX_KEYS or sum(len(k) + len(v) for k, v in values.items()) > MAX_TOTAL_CHARS:
+             raise PreferencesError("preferences store is full")
+         if values == current["values"] and (current["exists"] or not values):
+-            return current
++            return dict(current, conditional=True) if bases is not None else current
+         revision = current["revision"] + 1
+         generation = current.get("generation") or secrets.token_hex(8)
+         if not still_ours():
+@@ -230,4 +241,7 @@ def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = Fals
+             shutil.copy2(path, path.with_name(f"{path.name}.corrupt-{int(time.time() * 1000)}"))
+         atomic_json_write(path, {"version": 1, "generation": generation, "revision": revision,
+                                  "values": values}, mode=0o600)
+-    return {"exists": True, "revision": revision, "values": values, "generation": generation}
++    result = {"exists": True, "revision": revision, "values": values, "generation": generation}
++    if bases is not None:
++        result["conditional"] = True
++    return result
+diff --git a/hermes_cli/web_routers/ui_preferences.py b/hermes_cli/web_routers/ui_preferences.py
+index c3271076..a9cc80b1 100644
+--- a/hermes_cli/web_routers/ui_preferences.py
++++ b/hermes_cli/web_routers/ui_preferences.py
+@@ -12,7 +12,7 @@ from __future__ import annotations
+ from typing import Optional
+
+ from fastapi import APIRouter, HTTPException
+-from pydantic import BaseModel, Field
++from pydantic import BaseModel, Field, StrictStr
+
+ from hermes_cli import ui_preferences
+
+@@ -25,6 +25,12 @@ class PreferencesPatch(BaseModel):
+     #: This browser's first contact with the store generation: adds only the keys the store
+     #: lacks, never overwriting or deleting one.
+     seed: bool = False
++    bases: Optional[dict[str, Optional[StrictStr]]] = None
 +
 +
-+@pytest.mark.parametrize("same_home", [False, True])
-+@pytest.mark.parametrize("failure", [None, "discovery", "delivery"])
-+def test_owner_scope_and_restore(tmp_path, monkeypatch, same_home, failure):
-+    from hermes_cli import lifecycle, plugins
-+
-+    launch = tmp_path / ".hermes"
-+    target = launch / "profiles" / "repair"
-+    target.mkdir(parents=True)
-+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-+    monkeypatch.setenv("HERMES_HOME", str(launch))
-+    (target / ".env").write_text("OPENAI_API_KEY=test-owner-only\n")
-+    (target / "config.yaml").write_text("terminal:\n  env: local\n  cwd: /test-owner\n")
-+    monkeypatch.setattr(lifecycle, "_observe", lambda *a, **kw: None)
-+    seen = []
-+
-+    def snapshot(stage):
-+        seen.append((stage, get_hermes_home(), get_secret("OPENAI_API_KEY"),
-+                     terminal_env("TERMINAL_CWD")))
-+        if failure == stage:
-+            raise RuntimeError("test callback failure")
-+
-+    class Manager:
-+        _discovered = False
-+
-+        def discover_and_load(self):
-+            snapshot("discovery")
-+            self._discovered = True
-+
-+        def invoke_hook(self, name, **payload):
-+            assert name == "on_session_delete"
-+            assert payload["profile"] == "repair"
-+            snapshot("delivery")
-+            return []
-+
-+    monkeypatch.setattr(plugins, "get_plugin_manager", lambda: Manager())
-+    monkeypatch.setattr(plugins, "_join_background_discovery", lambda: None)
-+    ambient_home = target if same_home else launch
-+    home_token = set_hermes_home_override(str(ambient_home))
-+    secret_token = set_secret_scope({"OPENAI_API_KEY": "test-launch-only"}, profile_home=str(launch))
-+    terminal_token = set_terminal_scope({"TERMINAL_CWD": "/test-launch"})
-+    try:
-+        emit_session_deleted(SimpleNamespace(db_path=target / "state.db"), ["s"], reason="delete")
-+        expected_stages = ["discovery"] if failure == "discovery" else ["discovery", "delivery"]
-+        assert seen == [(stage, target, "test-owner-only", "/test-owner") for stage in expected_stages]
-+        assert get_hermes_home() == ambient_home
-+        assert get_secret("OPENAI_API_KEY") == "test-launch-only"
-+        assert terminal_env("TERMINAL_CWD") == "/test-launch"
-+    finally:
-+        reset_terminal_scope(terminal_token)
-+        reset_secret_scope(secret_token)
-+        reset_hermes_home_override(home_token)
++class ConditionalPreferencesPatch(PreferencesPatch):
++    values: dict[str, Optional[str]]
++    bases: dict[str, Optional[StrictStr]]
+
+
+ @router.get("/api/ui-preferences")
+@@ -38,8 +44,16 @@ def get_ui_preferences() -> dict:
+ @router.patch("/api/ui-preferences")
+ def patch_ui_preferences(body: PreferencesPatch) -> dict:
+     try:
+-        return ui_preferences.write_preferences(body.values, seed=body.seed)
++        if "bases" in body.model_fields_set and body.bases is None:
++            raise ui_preferences.PreferencesError("preference bases must be an object")
++        return ui_preferences.write_preferences(body.values, seed=body.seed, bases=body.bases)
+     except ui_preferences.PreferencesError as exc:
+         raise HTTPException(status_code=400, detail=str(exc)) from exc
+     except ui_preferences.PreferencesBusy as exc:
+         raise HTTPException(status_code=503, detail=str(exc)) from exc
 +
 +
-+@pytest.mark.parametrize("own_profile", [True, False])
-+@pytest.mark.parametrize("mirrored_home", [False, True])
-+def test_launch_env_only_terminal_policy_is_owner_only(tmp_path, monkeypatch, own_profile, mirrored_home):
-+    from agent import secret_scope
-+    import hermes_constants
-+    from hermes_cli import lifecycle, plugins
-+    from tui_gateway import launch_profile_policy
-+
-+    launch = tmp_path / ".hermes" / "profiles" / "launcher"
-+    other = launch.parent / "repair"
-+    launch.mkdir(parents=True)
-+    other.mkdir()
-+    target = launch if own_profile else other
-+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-+    monkeypatch.setenv("HERMES_HOME", str(launch))
-+    monkeypatch.setattr(hermes_constants, "_PINNED_PROCESS_HERMES_HOME", str(launch))
-+    monkeypatch.setattr(launch_profile_policy, "_snapshot", None)
-+    monkeypatch.setattr(secret_scope, "_MULTIPLEX_ACTIVE", False)
-+    monkeypatch.setenv("TERMINAL_ENV", "ssh")
-+    monkeypatch.setenv("TERMINAL_SSH_HOST", "launch-only.invalid")
-+    monkeypatch.setenv("OPENAI_API_KEY", "test-launch-env-only")
-+    (other / ".env").write_text("OPENAI_API_KEY=test-other-only\n")
-+    (other / "config.yaml").write_text("terminal:\n  env: local\n")
-+    launch_profile_policy.activate_multi_profile_hosting()
-+    # A hosted turn may mirror its home into environ after the launch snapshot.
-+    if mirrored_home:
-+        monkeypatch.setenv("HERMES_HOME", str(target))
-+    monkeypatch.setenv("TERMINAL_ENV", "local")
-+    monkeypatch.setenv("TERMINAL_SSH_HOST", "stale-ambient.invalid")
-+    monkeypatch.setattr(lifecycle, "_observe", lambda *a, **kw: None)
-+    seen = []
-+
-+    def snapshot(stage):
-+        seen.append((stage, get_hermes_home(), get_secret("OPENAI_API_KEY"),
-+                     terminal_env("TERMINAL_ENV"), terminal_env("TERMINAL_SSH_HOST")))
-+
-+    class Manager:
-+        _discovered = False
-+
-+        def discover_and_load(self):
-+            snapshot("discovery")
-+            self._discovered = True
-+
-+        def invoke_hook(self, name, **payload):
-+            assert name == "on_session_delete"
-+            assert payload["profile"] == ("launcher" if own_profile else "repair")
-+            snapshot("delivery")
-+            return []
-+
-+    monkeypatch.setattr(plugins, "get_plugin_manager", lambda: Manager())
-+    monkeypatch.setattr(plugins, "_join_background_discovery", lambda: None)
-+    home_token = set_hermes_home_override(str(target))
-+    secret_token = set_secret_scope({"OPENAI_API_KEY": "test-stale-only"}, profile_home=str(other))
-+    terminal_token = set_terminal_scope({"TERMINAL_ENV": "local", "TERMINAL_SSH_HOST": "stale-scope.invalid"})
-+    try:
-+        emit_session_deleted(SimpleNamespace(db_path=target / "state.db"), ["s"], reason="delete")
-+        expected = ("test-launch-env-only", "ssh", "launch-only.invalid") if own_profile else (
-+            "test-other-only", "local", "")
-+        assert seen == [(stage, target, *expected) for stage in ("discovery", "delivery")]
-+        assert get_hermes_home() == target
-+        assert get_secret("OPENAI_API_KEY") == "test-stale-only"
-+        assert terminal_env("TERMINAL_ENV") == "local"
-+        assert terminal_env("TERMINAL_SSH_HOST") == "stale-scope.invalid"
-+    finally:
-+        reset_terminal_scope(terminal_token)
-+        reset_secret_scope(secret_token)
-+        reset_hermes_home_override(home_token)
++@router.patch("/api/ui-preferences/conditional")
++def patch_conditional_ui_preferences(body: ConditionalPreferencesPatch) -> dict:
++    # A separate endpoint makes an older server reject rather than ignore bases.
++    return patch_ui_preferences(body)
+diff --git a/tests/hermes_cli/test_ui_preferences.py b/tests/hermes_cli/test_ui_preferences.py
+index 9bfc575c..292e00d5 100644
+--- a/tests/hermes_cli/test_ui_preferences.py
++++ b/tests/hermes_cli/test_ui_preferences.py
+@@ -162,3 +162,38 @@ def test_the_route_exists_only_on_the_webapp(monkeypatch, webapp_state, surface)
+         monkeypatch.setattr(web_server.app.state, "ui_surface", surface, raising=False)
+
+     assert _client(token=True).get("/api/ui-preferences").status_code == 404
 +
 +
-+def test_unknown_store_home_keeps_ambient_scope(tmp_path, monkeypatch):
-+    from hermes_cli import lifecycle
++def test_conditional_write_checks_each_key_and_preserves_unconditional_and_seed_semantics(tmp_path):
++    path = tmp_path / "ui-preferences.json"
++    ui_preferences.write_preferences({"hermes-desktop-mode-v1": "system", "hermes.desktop.zoom": "125"}, path=path)
++    result = ui_preferences.write_preferences(
++        {"hermes-desktop-mode-v1": "dark", "hermes.desktop.zoom": "150", "hermes.desktop.new": "yes"},
++        bases={"hermes-desktop-mode-v1": "light", "hermes.desktop.zoom": "125", "hermes.desktop.new": None}, path=path,
++    )
++    assert result["conditional"] is True
++    assert result["values"] == {"hermes-desktop-mode-v1": "system", "hermes.desktop.zoom": "150", "hermes.desktop.new": "yes"}
++    assert ui_preferences.write_preferences({"hermes-desktop-mode-v1": "light"}, path=path)["values"]["hermes-desktop-mode-v1"] == "light"
++    seeded = ui_preferences.write_preferences({"hermes-desktop-mode-v1": "dark", "hermes.desktop.seed": "ok"}, seed=True, path=path)
++    assert seeded["values"]["hermes-desktop-mode-v1"] == "light"
++    assert seeded["values"]["hermes.desktop.seed"] == "ok"
++    with pytest.raises(ui_preferences.PreferencesError):
++        ui_preferences.write_preferences({"hermes.desktop.zoom": "0"}, bases={"hermes.desktop.other": None}, path=path)
 +
-+    launch = tmp_path / ".hermes"
-+    launch.mkdir()
-+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
-+    monkeypatch.setenv("HERMES_HOME", str(launch))
-+    seen = []
-+    monkeypatch.setattr(lifecycle, "invoke_hook", lambda name, **kw: seen.append(
-+        (get_hermes_home(), get_secret("OPENAI_API_KEY"), terminal_env("TERMINAL_CWD"), kw["profile"])))
-+    secret_token = set_secret_scope({"OPENAI_API_KEY": "test-launch-only"}, profile_home=str(launch))
-+    terminal_token = set_terminal_scope({"TERMINAL_CWD": "/test-launch"})
-+    try:
-+        emit_session_deleted(SimpleNamespace(db_path=tmp_path / "other" / "state.db"), ["s"], reason="delete")
-+        assert seen == [(launch, "test-launch-only", "/test-launch", None)]
-+    finally:
-+        reset_terminal_scope(terminal_token)
-+        reset_secret_scope(secret_token)
-diff --git a/website/docs/reference/optional-skills-catalog.md b/website/docs/reference/optional-skills-catalog.md
-index 835f842e32..ad3d9035df 100644
---- a/website/docs/reference/optional-skills-catalog.md
-+++ b/website/docs/reference/optional-skills-catalog.md
-@@ -101,6 +101,7 @@ hermes skills uninstall <skill-name>
- |-------|-------------|
- | [**actual-setup**](../user-guide/skills/optional/devops/devops-actual-setup.md) | Set up Actual Computer (actual.inc) inference in Hermes. |
- | [**docker-management**](../user-guide/skills/optional/devops/devops-docker-management.md) | Manage Docker containers, images, volumes, and Compose. |
-+| [**flexpair-hermes-distribution**](../user-guide/skills/optional/devops/devops-flexpair-hermes-distribution.md) | Prepare and verify the Flexpair Hermes fork. |
- | [**hermes-s6-container-supervision**](../user-guide/skills/optional/devops/devops-hermes-s6-container-supervision.md) | Modify or debug s6 services in the Hermes Docker image. |
- | [**inference-sh-cli**](../user-guide/skills/optional/devops/devops-inference-sh-cli.md) | Run 150+ AI apps (image, video, LLM) via inference.sh CLI. |
- | [**pinggy-tunnel**](../user-guide/skills/optional/devops/devops-pinggy-tunnel.md) | Zero-install localhost tunnels over SSH via Pinggy. |
-diff --git a/website/sidebars.ts b/website/sidebars.ts
-index 0b6a05597f..4432c46e70 100644
---- a/website/sidebars.ts
-+++ b/website/sidebars.ts
-@@ -415,6 +415,7 @@ const sidebars: SidebarsConfig = {
-                   items: [
-                     'user-guide/skills/optional/devops/devops-actual-setup',
-                     'user-guide/skills/optional/devops/devops-docker-management',
-+                    'user-guide/skills/optional/devops/devops-flexpair-hermes-distribution',
-                     'user-guide/skills/optional/devops/devops-hermes-s6-container-supervision',
-                     'user-guide/skills/optional/devops/devops-inference-sh-cli',
-                     'user-guide/skills/optional/devops/devops-pinggy-tunnel',
++
++def test_conditional_webapp_route_validates_bases_and_does_not_silently_write(webapp_state):
++    tab = _client(token=True)
++    mode = "hermes-desktop-mode-v1"
++    assert tab.patch("/api/ui-preferences", json={"values": {mode: "system"}}).status_code == 200
++    for payload in [
++        {"values": {mode: "dark"}},
++        {"values": {mode: "dark"}, "bases": None},
++        {"values": {mode: "dark"}, "bases": {mode: 2}},
++        {"values": {mode: "dark"}, "bases": {"hermes.desktop.other": None}},
++    ]:
++        assert tab.patch("/api/ui-preferences/conditional", json=payload).status_code in (400, 422)
++    assert tab.patch("/api/ui-preferences", json={"values": {mode: "dark"}, "bases": None}).status_code == 400
++    result = tab.patch("/api/ui-preferences/conditional", json={"values": {mode: "dark"}, "bases": {mode: "light"}})
++    assert result.status_code == 200
++    assert result.json()["conditional"] is True
++    assert result.json()["values"][mode] == "system"

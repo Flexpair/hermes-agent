@@ -163,6 +163,82 @@ function announce(key: string, oldValue: null | string, newValue: null | string)
   window.dispatchEvent(new StorageEvent('storage', { key, newValue, oldValue }))
 }
 
+function reconciledCurrent(
+  key: string,
+  snapshot: UiPreferencesSnapshot,
+  known: Map<string, null | string>,
+  generation: null | string,
+  revision: number
+): null | string {
+  if (generation === generationOf(snapshot) && revision > snapshot.revision && known.has(key)) {
+    return known.get(key) ?? null
+  }
+  return snapshot.values[key] ?? null
+}
+
+function reconciledValue(
+  count: number,
+  changedHere: boolean,
+  base: null | string,
+  current: null | string,
+  value: null | string,
+  latest: null | string
+): null | string {
+  if (count > 1 && !changedHere) {
+    return current
+  }
+  if (changedHere) {
+    return rebaseWrite(base, current, latest)
+  }
+  return rebaseWrite(base, value, current)
+}
+
+function reconcileWriteBatch(
+  batch: Map<string, null | string>,
+  bases: Map<string, null | string>,
+  pending: Map<string, null | string>,
+  pendingBase: Map<string, null | string>,
+  conflicts: Map<string, number>,
+  snapshot: UiPreferencesSnapshot,
+  known: Map<string, null | string>,
+  generation: null | string,
+  revision: number
+): void {
+  for (const [key, value] of batch) {
+    if (!pending.has(key)) {
+      continue
+    }
+
+    const current = reconciledCurrent(key, snapshot, known, generation, revision)
+    const latest = pending.get(key) ?? null
+    const changedHere = latest !== value
+
+    if (!changedHere && current === value) {
+      pending.delete(key)
+      pendingBase.delete(key)
+      conflicts.delete(key)
+      continue
+    }
+
+    const count = (conflicts.get(key) ?? 0) + (current === value ? 0 : 1)
+    const rebased = reconciledValue(count, changedHere, bases.get(key) ?? null, current, value, latest)
+
+    if (readRaw(key) === latest && rebased !== latest && writeRaw(key, rebased)) {
+      announce(key, latest, rebased)
+    }
+
+    if (rebased === current) {
+      pending.delete(key)
+      pendingBase.delete(key)
+      conflicts.delete(key)
+    } else {
+      pending.set(key, rebased)
+      pendingBase.set(key, current)
+      conflicts.set(key, count)
+    }
+  }
+}
+
 /**
  * Keep this window's shared preferences and the machine store in step:
  * - first contact with a store generation (or with no store) imports this
@@ -312,47 +388,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
         throw new Error('unsupported preference conditional writes')
       }
 
-      for (const [key, value] of batch) {
-        if (!pending.has(key)) {
-          continue
-        }
-
-        const current = generation === generationOf(snapshot) && revision > snapshot.revision && known.has(key)
-          ? (known.get(key) ?? null)
-          : (snapshot.values[key] ?? null)
-        const latest = pending.get(key) ?? null
-        const changedHere = latest !== value
-
-        if (!changedHere && current === value) {
-          pending.delete(key)
-          pendingBase.delete(key)
-          conflicts.delete(key)
-          continue
-        }
-
-        // A peer changed this key after our base. Keep its scalar choice, and
-        // merge independent JSON edits. A newer edit in this window still wins.
-        const count = (conflicts.get(key) ?? 0) + (current === value ? 0 : 1)
-        const rebased = count > 1 && !changedHere
-          ? current
-          : changedHere
-            ? rebaseWrite(bases.get(key) ?? null, current, latest)
-            : rebaseWrite(bases.get(key) ?? null, value, current)
-
-        if (readRaw(key) === latest && rebased !== latest && writeRaw(key, rebased)) {
-          announce(key, latest, rebased)
-        }
-
-        if (rebased === current) {
-          pending.delete(key)
-          pendingBase.delete(key)
-          conflicts.delete(key)
-        } else {
-          pending.set(key, rebased)
-          pendingBase.set(key, current)
-          conflicts.set(key, count)
-        }
-      }
+      reconcileWriteBatch(batch, bases, pending, pendingBase, conflicts, snapshot, known, generation, revision)
 
       inFlight.clear()
       save()
