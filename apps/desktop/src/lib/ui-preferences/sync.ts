@@ -176,69 +176,6 @@ function reconciledCurrent(
   return snapshot.values[key] ?? null
 }
 
-function reconciledValue(
-  count: number,
-  changedHere: boolean,
-  base: null | string,
-  current: null | string,
-  value: null | string,
-  latest: null | string
-): null | string {
-  if (count > 1 && !changedHere) {
-    return current
-  }
-  if (changedHere) {
-    return rebaseWrite(base, current, latest)
-  }
-  return rebaseWrite(base, value, current)
-}
-
-function reconcileWriteBatch(
-  batch: Map<string, null | string>,
-  bases: Map<string, null | string>,
-  pending: Map<string, null | string>,
-  pendingBase: Map<string, null | string>,
-  conflicts: Map<string, number>,
-  snapshot: UiPreferencesSnapshot,
-  known: Map<string, null | string>,
-  generation: null | string,
-  revision: number
-): void {
-  for (const [key, value] of batch) {
-    if (!pending.has(key)) {
-      continue
-    }
-
-    const current = reconciledCurrent(key, snapshot, known, generation, revision)
-    const latest = pending.get(key) ?? null
-    const changedHere = latest !== value
-
-    if (!changedHere && current === value) {
-      pending.delete(key)
-      pendingBase.delete(key)
-      conflicts.delete(key)
-      continue
-    }
-
-    const count = (conflicts.get(key) ?? 0) + (current === value ? 0 : 1)
-    const rebased = reconciledValue(count, changedHere, bases.get(key) ?? null, current, value, latest)
-
-    if (readRaw(key) === latest && rebased !== latest && writeRaw(key, rebased)) {
-      announce(key, latest, rebased)
-    }
-
-    if (rebased === current) {
-      pending.delete(key)
-      pendingBase.delete(key)
-      conflicts.delete(key)
-    } else {
-      pending.set(key, rebased)
-      pendingBase.set(key, current)
-      conflicts.set(key, count)
-    }
-  }
-}
-
 /**
  * Keep this window's shared preferences and the machine store in step:
  * - first contact with a store generation (or with no store) imports this
@@ -266,7 +203,6 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
   const seenOf = (key: string) => (seen.has(key) ? (seen.get(key) ?? null) : (loaded.get(key) ?? null))
   // Values the store refused, kept in this window until changed again.
   const refused = new Map<string, null | string>()
-  const conflicts = new Map<string, number>()
   let inFlight = new Set<string>()
   let revision = -1
   let generation: null | string = null
@@ -313,10 +249,9 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
       const value = snapshot.values[key] ?? null
       known.set(key, value)
 
-      // A change made here and not yet stored outranks an older store value,
-      // rebased onto it so the store's other entries survive; so does one a
-      // sibling tab has not stored yet.
-      if (!inFlight.has(key) && rebasePending(key, value)) {
+      if (pending.has(key) && !inFlight.has(key)) {
+        const localValue = pending.get(key) ?? null
+        resolvePending(key, pendingBase.get(key) ?? null, value, localValue, false)
         save()
       } else if (!pending.has(key) && !siblings.has(key) && !(refused.has(key) && refused.get(key) === readRaw(key))) {
         adopt(key, value, prune, live)
@@ -328,15 +263,71 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
     }
   }
 
-  function rebasePending(key: string, current: null | string): boolean {
-    if (!pending.has(key) || !pendingBase.has(key) || pendingBase.get(key) === current) {
-      return false
+  function resolveConflict(
+    base: null | string,
+    storeValue: null | string,
+    localValue: null | string,
+    changedHere: boolean
+  ): null | string {
+    if (storeValue === base || changedHere) {
+      return localValue
     }
 
-    pending.set(key, rebaseLocal(key, pendingBase.get(key) ?? null, current, pending.get(key) ?? null))
-    pendingBase.set(key, current)
+    const isJsonObject = (value: null | string) => {
+      if (value === null) {
+        return false
+      }
 
-    return true
+      try {
+        const parsed = JSON.parse(value) as unknown
+        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      } catch {
+        return false
+      }
+    }
+
+    return isJsonObject(storeValue) && isJsonObject(localValue)
+      ? rebaseWrite(base, storeValue, localValue)
+      : storeValue
+  }
+
+  function resolvePending(
+    key: string,
+    base: null | string,
+    storeValue: null | string,
+    localValue: null | string,
+    changedHere: boolean
+  ): void {
+    const resolved = resolveConflict(base, storeValue, localValue, changedHere)
+
+    if (resolved === storeValue) {
+      pending.delete(key)
+      pendingBase.delete(key)
+    } else {
+      pending.set(key, resolved)
+      pendingBase.set(key, storeValue)
+    }
+
+    if (readRaw(key) === localValue && resolved !== localValue && writeRaw(key, resolved)) {
+      announce(key, localValue, resolved)
+    }
+  }
+
+  function reconcileWriteBatch(
+    batch: Map<string, null | string>,
+    bases: Map<string, null | string>,
+    snapshot: UiPreferencesSnapshot
+  ): void {
+    for (const [key, value] of batch) {
+      if (!pending.has(key)) {
+        continue
+      }
+
+      const current = reconciledCurrent(key, snapshot, known, generation, revision)
+      const latest = pending.get(key) ?? null
+      const changedHere = latest !== value
+      resolvePending(key, bases.get(key) ?? null, current, changedHere ? latest : value, changedHere)
+    }
   }
 
   // Another tab took this tab's unsent changes over (this one was frozen past
@@ -417,7 +408,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
           throw new Error('unsupported preference conditional writes')
         }
 
-        reconcileWriteBatch(batch, bases, pending, pendingBase, conflicts, snapshot, known, generation, revision)
+        reconcileWriteBatch(batch, bases, snapshot)
 
         inFlight.clear()
         save()
@@ -497,7 +488,6 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
     }
 
     refused.delete(event.key)
-    conflicts.delete(event.key)
     pending.set(event.key, value)
     store()
   })
@@ -532,7 +522,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
           }
 
           if (ready && known.has(key)) {
-            rebasePending(key, known.get(key) ?? null)
+            resolvePending(key, adopted.bases.get(key) ?? null, known.get(key) ?? null, value, false)
           }
         }
       }

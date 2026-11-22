@@ -253,4 +253,77 @@ describe('machine UI preferences sync', () => {
     expect(store.writes).toEqual([{ bases: { [DENSITY]: 'compact' }, values: { [DENSITY]: 'detailed' } }])
     expect(store.snapshot().values[DENSITY]).toBe('detailed')
   })
+
+  it('peer scalar arriving within the flush delay wins', async () => {
+    const store = memoryStore({ [MODE]: 'light' })
+    window.localStorage.setItem(JOINED, 'g1')
+
+    stop = startUiPreferencesSync(store.bridge)
+    await vi.runAllTimersAsync()
+    writeKey(MODE, 'dark')
+    store.external({ [MODE]: 'system' })
+    await vi.runAllTimersAsync()
+
+    expect(store.writes.some(write => MODE in write.values)).toBe(false)
+    expect(window.localStorage.getItem(MODE)).toBe('system')
+  })
+
+  it('peer scalar arriving while in flight wins', async () => {
+    const store = memoryStore({ [MODE]: 'light' })
+    const write = store.bridge.write
+    let release: () => void = () => undefined
+    let started: () => void = () => undefined
+    const requestStarted = new Promise<void>(resolve => { started = resolve })
+    window.localStorage.setItem(JOINED, 'g1')
+    store.bridge.write = payload => new Promise(resolve => {
+      started()
+      release = () => resolve(write(payload))
+    })
+
+    stop = startUiPreferencesSync(store.bridge)
+    await vi.runAllTimersAsync()
+    writeKey(MODE, 'dark')
+    await vi.advanceTimersByTimeAsync(200)
+    await requestStarted
+    store.external({ [MODE]: 'system' })
+    release()
+    await vi.runAllTimersAsync()
+
+    expect(store.snapshot().values[MODE]).toBe('system')
+    expect(window.localStorage.getItem(MODE)).toBe('system')
+    expect(store.writes).toHaveLength(1)
+  })
+
+  it('local edit after a peer update wins', async () => {
+    const store = memoryStore({ [MODE]: 'light' })
+    window.localStorage.setItem(JOINED, 'g1')
+
+    stop = startUiPreferencesSync(store.bridge)
+    await vi.runAllTimersAsync()
+    store.external({ [MODE]: 'system' })
+    writeKey(MODE, 'light')
+    await vi.runAllTimersAsync()
+
+    expect(store.writes).toEqual([{ bases: { [MODE]: 'system' }, values: { [MODE]: 'light' } }])
+    expect(store.snapshot().values[MODE]).toBe('light')
+  })
+
+  it('JSON keys are merged key-wise', async () => {
+    const base = '{"a":"0","b":"1"}'
+    const local = '{"a":"1","b":"1"}'
+    const peer = '{"a":"0","b":"2","c":"3"}'
+    const merged = '{"a":"1","b":"2","c":"3"}'
+    const store = memoryStore({ [MODE]: base })
+    window.localStorage.setItem(JOINED, 'g1')
+
+    stop = startUiPreferencesSync(store.bridge)
+    await vi.runAllTimersAsync()
+    writeKey(MODE, local)
+    store.external({ [MODE]: peer })
+    await vi.runAllTimersAsync()
+
+    expect(store.writes).toEqual([{ bases: { [MODE]: peer }, values: { [MODE]: merged } }])
+    expect(window.localStorage.getItem(MODE)).toBe(merged)
+    expect(store.snapshot().values[MODE]).toBe(merged)
+  })
 })
