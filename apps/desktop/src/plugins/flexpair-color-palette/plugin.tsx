@@ -6,6 +6,18 @@ interface Baseline { global: string | null, profiles: Record<string, unknown>, o
 const legacyOwnerPrefix = 'legacy:'
 const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
 const legacyBaselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+type PreferenceClaimsWindow = Window & { __hermesPreferenceClaims?: Map<string, string> }
+
+function claimPreference(window: Window, key: string, value: string): void {
+  const claimsWindow = window as PreferenceClaimsWindow
+  const claims = claimsWindow.__hermesPreferenceClaims ?? new Map<string, string>()
+  claimsWindow.__hermesPreferenceClaims = claims
+  claims.set(key, value)
+}
+
+function releasePreference(window: Window, key: string): void {
+  (window as PreferenceClaimsWindow).__hermesPreferenceClaims?.delete(key)
+}
 
 function registrationOwner(window: Window): string {
   const key = 'hermes-desktop-plugin-flexpair-color-palette-window-v1'
@@ -139,6 +151,8 @@ const plugin: HermesPlugin = {
 
     let stopReleaseNotifications = () => {}
 
+    let stopModePreferenceObservation = () => {}
+
     // Serialize the complete shared baseline and mode transaction across renderers.
     // Hosts without Web Locks retain the synchronous single-window path.
     const withPaletteTransaction = (run: () => void) => {
@@ -190,9 +204,33 @@ const plugin: HermesPlugin = {
     // Each enabled registration starts in dark using the existing preference format.
     // Later manual changes remain available until the next activation.
     let restoreMode = () => {}
+    let ownedBaseline: Baseline | null = null
 
     try {
       const key = 'hermes-desktop-mode-v1'
+
+      const onModeStorage = (event: StorageEvent) => {
+        if (event.key === key && ctx.modePreferences.read('global') !== 'dark') {
+          releasePreference(window, key)
+        }
+
+        if (event.key === baselineKey) {
+          const raw = ctx.modePreferences.read('baseline')
+          const current = raw === null ? undefined : parseBaseline(raw)
+
+          if (current) {
+            ownedBaseline = current
+          } else if (!disposed && raw === null && ownedBaseline) {
+            ctx.modePreferences.write('baseline', JSON.stringify(ownedBaseline))
+          }
+        }
+      }
+
+      window.addEventListener('storage', onModeStorage)
+
+      stopModePreferenceObservation = () => {
+        window.removeEventListener('storage', onModeStorage)
+      }
 
       const readModes = (): Record<string, unknown> => {
         let saved: unknown
@@ -259,6 +297,8 @@ const plugin: HermesPlugin = {
           .map(legacyProfile => [`${legacyOwnerPrefix}${legacyProfile}`, legacyProfile]))
         : baseline.owners ?? {}
 
+      const hadOwners = Object.keys(owners).length > 0
+
       const generations = baseline.generations ?? {}
 
       const discoveryGenerations: Record<string, string | undefined> = Object.fromEntries(
@@ -269,9 +309,11 @@ const plugin: HermesPlugin = {
 
       baseline.owners = { ...owners, [owner]: profile }
       baseline.generations = { ...generations, [owner]: ownerGeneration }
+      ownedBaseline = baseline
       ctx.modePreferences.write('baseline', JSON.stringify(baseline))
 
       const restoreProfiles = (remaining: Baseline) => {
+        releasePreference(window, key)
         const currentModes = readModes()
 
         for (const [profile, previous] of Object.entries(remaining.profiles)) {
@@ -374,11 +416,20 @@ const plugin: HermesPlugin = {
 
       ctx.modePreferences.write('profiles', JSON.stringify(modes))
       ctx.modePreferences.write('global', 'dark')
+
+      if (currentMode === 'dark' || !hadOwners) {
+        claimPreference(window, key, 'dark')
+      } else {
+        releasePreference(window, key)
+      }
       // Repaint even when the global fallback was already dark: the current
       // profile or in-memory manual selection may still be light.
+
       window.dispatchEvent(new StorageEvent('storage', { key, newValue: 'dark' }))
 
       restoreMode = () => {
+        releasePreference(window, key)
+
         try {
           window.localStorage.setItem(`${releasePrefix}${ownerGeneration}`,
             JSON.stringify({ owner, generation: ownerGeneration }))
@@ -440,6 +491,7 @@ const plugin: HermesPlugin = {
       disposed = true
       stopPresence()
       stopReleaseNotifications()
+      stopModePreferenceObservation()
       lifecycleWindow.removeEventListener('pagehide', close)
       lifecycleWindow.removeEventListener('beforeunload', close)
       observer.disconnect()

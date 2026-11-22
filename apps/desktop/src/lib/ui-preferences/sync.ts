@@ -24,6 +24,21 @@ const FLUSH_DELAY_MS = 150
 const JOINED_KEY = 'hermes:ui-preferences:generation'
 const RETRY_DELAY_MS = 5000
 const MAX_RETRY_DELAY_MS = 60_000
+type PreferenceClaimsWindow = Window & { __hermesPreferenceClaims?: Map<string, string> }
+
+function releasePreferenceClaim(key: string): void {
+  if (typeof window !== 'undefined') {
+    (window as PreferenceClaimsWindow).__hermesPreferenceClaims?.delete(key)
+  }
+}
+
+export function getPreferenceClaim(key: string): null | string {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  return (window as PreferenceClaimsWindow).__hermesPreferenceClaims?.get(key) ?? null
+}
 
 // The shared keys this window held before the app's module graph evaluated
 // (`captureOwnPreferences`, run by boot.ts): this client's own data. Stores
@@ -186,7 +201,11 @@ function reconciledCurrent(
  * - a change another window, tab or device made lands here live;
  * - a provisional value (a write marked `provisional`) never leaves this origin.
  */
-export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | undefined, appReady?: Promise<void>): () => void {
+export function startUiPreferencesSync(
+  bridge: null | UiPreferencesBridge | undefined,
+  appReady?: Promise<void>,
+  claims?: (key: string) => null | string
+): () => void {
   if (!bridge) {
     return () => undefined
   }
@@ -254,7 +273,16 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
         resolvePending(key, pendingBase.get(key) ?? null, value, localValue, false)
         save()
       } else if (!pending.has(key) && !siblings.has(key) && !(refused.has(key) && refused.get(key) === readRaw(key))) {
-        adopt(key, value, prune, live)
+        const claim = claims?.(key) ?? null
+        const localValue = readRaw(key)
+
+        if (claim !== null && claim === localValue && value !== claim) {
+          pending.set(key, claim)
+          resolvePending(key, value, value, claim, false)
+          store()
+        } else {
+          adopt(key, value, prune, live)
+        }
       }
     }
 
@@ -298,7 +326,11 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
     localValue: null | string,
     changedHere: boolean
   ): void {
-    const resolved = resolveConflict(base, storeValue, localValue, changedHere)
+    const claim = claims?.(key) ?? null
+
+    const resolved = claim !== null && claim === localValue
+      ? localValue
+      : resolveConflict(base, storeValue, localValue, changedHere)
 
     if (resolved === storeValue) {
       pending.delete(key)
@@ -455,6 +487,10 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
   }
 
   const stopListening = onPersistenceEvent(event => {
+    if (event.op !== 'read' && event.key === 'hermes-desktop-mode-v1' && event.value !== 'dark') {
+      releasePreferenceClaim(event.key)
+    }
+
     if (!isSharedPreferenceKey(event.key)) {
       return
     }

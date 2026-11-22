@@ -11,7 +11,13 @@
 import { browserApi, browserBootstrap } from '@/lib/browser-transport'
 import { createBrowserUiPreferences } from '@/lib/browser-ui-preferences'
 
-import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync, type UiPreferencesSnapshot } from './sync'
+import {
+  captureOwnPreferences,
+  getPreferenceClaim,
+  hydrateFromSnapshot,
+  startUiPreferencesSync,
+  type UiPreferencesSnapshot
+} from './sync'
 
 const BROWSER_FIRST_READ_MS = 1500
 
@@ -45,7 +51,7 @@ export async function bootRenderer<T>(loadApp: () => Promise<T>): Promise<T> {
     // classify cached defaults before importing this origin into the machine.
     let release: () => void = () => undefined
     const appReady = new Promise<void>(resolve => { release = resolve })
-    const stop = startUiPreferencesSync(bridge && { ...bridge, snapshot }, appReady)
+    const stop = startUiPreferencesSync(bridge && { ...bridge, snapshot }, appReady, getPreferenceClaim)
 
     try {
       const app = await loadApp()
