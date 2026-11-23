@@ -29,7 +29,6 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router'
 
-import App from './app'
 import { RootErrorBoundary } from './components/error-boundary'
 import { HapticsProvider } from './components/haptics-provider'
 import { RootTooltipProvider } from './components/ui/tooltip'
@@ -52,6 +51,8 @@ installSelectionCopyColorGuard()
 installBrowserTabTitle()
 // One preferences store per machine, shared by native Desktop and its Webapp (#145213).
 startUiPreferencesSync(window.hermesDesktop?.uiPreferences)
+// App module evaluation discovers bundled plugins, so load it after sync subscribes.
+const { default: App } = await import('./app')
 
 // The perf probe ships in dev, and in a production build ONLY when explicitly
 // opted in (VITE_PERF_PROBE=1) — this lets the perf harness measure a real,
