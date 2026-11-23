@@ -234,6 +234,48 @@ export function startUiPreferencesSync(
   // rest of this window's values.
   let ready = false
 
+  const reconcileSnapshotKeys = (
+    snapshot: UiPreferencesSnapshot,
+    prune: boolean,
+    live: boolean,
+    siblings: Set<string>
+  ) => {
+    for (const key of new Set([...localSharedKeys(), ...Object.keys(snapshot.values), ...known.keys()])) {
+      if (!isSharedPreferenceKey(key)) {
+        continue
+      }
+
+      const value = snapshot.values[key] ?? null
+      known.set(key, value)
+
+      if (pending.has(key) && !inFlight.has(key)) {
+        const localValue = pending.get(key) ?? null
+        resolvePending(key, pendingBase.get(key) ?? null, value, localValue, false)
+        save()
+      } else if (!pending.has(key) && !siblings.has(key) && !(refused.has(key) && refused.get(key) === readRaw(key))) {
+        reconcileUnpendingSnapshotKey(key, value, prune, live)
+      }
+    }
+  }
+
+  const reconcileUnpendingSnapshotKey = (
+    key: string,
+    value: null | string,
+    prune: boolean,
+    live: boolean
+  ) => {
+    const claim = claims?.(key) ?? null
+    const localValue = readRaw(key)
+
+    if (claim !== null && claim === localValue && value !== claim) {
+      pending.set(key, claim)
+      resolvePending(key, value, value, claim, false)
+      store()
+    } else {
+      adopt(key, value, prune, live)
+    }
+  }
+
   const apply = (
     snapshot: UiPreferencesSnapshot,
     { live, capabilityKnown = false }: { live: boolean; capabilityKnown?: boolean }
@@ -260,31 +302,7 @@ export function startUiPreferencesSync(
 
     const siblings = siblingPendingKeys()
 
-    for (const key of new Set([...localSharedKeys(), ...Object.keys(snapshot.values), ...known.keys()])) {
-      if (!isSharedPreferenceKey(key)) {
-        continue
-      }
-
-      const value = snapshot.values[key] ?? null
-      known.set(key, value)
-
-      if (pending.has(key) && !inFlight.has(key)) {
-        const localValue = pending.get(key) ?? null
-        resolvePending(key, pendingBase.get(key) ?? null, value, localValue, false)
-        save()
-      } else if (!pending.has(key) && !siblings.has(key) && !(refused.has(key) && refused.get(key) === readRaw(key))) {
-        const claim = claims?.(key) ?? null
-        const localValue = readRaw(key)
-
-        if (claim !== null && claim === localValue && value !== claim) {
-          pending.set(key, claim)
-          resolvePending(key, value, value, claim, false)
-          store()
-        } else {
-          adopt(key, value, prune, live)
-        }
-      }
-    }
+    reconcileSnapshotKeys(snapshot, prune, live, siblings)
 
     if (!prune && ready) {
       rejoin(snapshot)

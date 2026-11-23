@@ -32,19 +32,20 @@ index 37020cc6e3..1ae26466b7 100644
 +  }
 +})
 diff --git a/apps/desktop/electron/ui-preferences.ts b/apps/desktop/electron/ui-preferences.ts
-index d95c16b0d8..20586987fc 100644
+index d95c16b0d8..5020a7efc9 100644
 --- a/apps/desktop/electron/ui-preferences.ts
 +++ b/apps/desktop/electron/ui-preferences.ts
-@@ -31,6 +31,8 @@ const WATCH_INTERVAL_MS = 1500
+@@ -31,6 +31,9 @@ const WATCH_INTERVAL_MS = 1500
 
  export interface UiPreferencesSnapshot {
    exists: boolean
 +  /** Confirms that this response came from a conditional write. */
 +  conditional?: true
++  capabilities?: { conditionalWrites: true }
    /** One store's lifetime; a replaced (deleted or corrupt) store gets a new one. */
    generation?: string
    revision: number
-@@ -39,6 +41,7 @@ export interface UiPreferencesSnapshot {
+@@ -39,6 +42,7 @@ export interface UiPreferencesSnapshot {
 
  export interface UiPreferencesWrite {
    seed?: boolean
@@ -52,7 +53,16 @@ index d95c16b0d8..20586987fc 100644
    values: Record<string, null | string>
  }
 
-@@ -127,6 +130,10 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
+@@ -110,7 +114,7 @@ function readStore(file: string): StoreRead {
+ /** Synchronous so the preload can hand the first paint a hydrated snapshot.
+  *  Throws when the file exists but cannot be read. */
+ export function readUiPreferences(file: string): UiPreferencesSnapshot {
+-  return readStore(file).snapshot
++  return { ...readStore(file).snapshot, capabilities: { conditionalWrites: true } }
+ }
+
+ /** For the paths that must never throw (the preload's first paint, the
+@@ -127,6 +131,10 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
    const values = { ...current }
 
    for (const [key, value] of Object.entries(write.values)) {
@@ -63,7 +73,7 @@ index d95c16b0d8..20586987fc 100644
      if (write.seed) {
        // A client's first contact: fill what the store lacks, never overwrite or delete.
        if (value !== null && !(key in values)) {
-@@ -143,12 +150,7 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
+@@ -143,12 +151,7 @@ function mergeValues(current: Record<string, string>, write: UiPreferencesWrite)
  }
 
  /** The IPC payload, validated: anything else from a renderer is refused whole. */
@@ -77,12 +87,13 @@ index d95c16b0d8..20586987fc 100644
    if (!values || typeof values !== 'object' || Array.isArray(values)) {
      throw new Error('ui preferences write needs a values object')
    }
-@@ -162,8 +164,32 @@ export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
+@@ -162,8 +165,32 @@ export function parseUiPreferencesWrite(payload: unknown): UiPreferencesWrite {
        throw new Error(`unsupported value for ${key}`)
      }
    }
 +}
-+
+
+-  return { seed: seed === true, values: values as Record<string, null | string> }
 +function validatePreferenceBases(bases: unknown, values: Record<string, null | string>): void {
 +  if (bases !== undefined) {
 +    if (!bases || typeof bases !== 'object' || Array.isArray(bases)) {
@@ -103,32 +114,209 @@ index d95c16b0d8..20586987fc 100644
 +    bases?: unknown
 +    values?: unknown
 +  }
-
--  return { seed: seed === true, values: values as Record<string, null | string> }
++
 +  validatePreferenceValues(values)
 +  validatePreferenceBases(bases, values)
 +  return { seed: seed === true, values: values as Record<string, null | string>, ...(bases !== undefined && { bases: bases as Record<string, null | string> }) }
  }
 
  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-@@ -265,7 +291,7 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
+@@ -265,7 +292,11 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
        }
 
        if (JSON.stringify(values) === JSON.stringify(current.values) && (current.exists || entries.length === 0)) {
 -        return current
-+        return write.bases ? { ...current, conditional: true as const } : current
++        return {
++          ...current,
++          capabilities: { conditionalWrites: true as const },
++          ...(write.bases && { conditional: true as const })
++        }
        }
 
        const revision = current.revision + 1
-@@ -284,7 +310,7 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
+@@ -284,7 +315,14 @@ export function writeUiPreferences(file: string, write: UiPreferencesWrite): Pro
 
        await replaceAtomically(file, `${JSON.stringify({ version: 1, generation, revision, values }, null, 2)}\n`)
 
 -      return { exists: true, generation, revision, values }
-+      return { exists: true, generation, revision, values, ...(write.bases && { conditional: true as const }) }
++      return {
++        exists: true,
++        generation,
++        revision,
++        values,
++        capabilities: { conditionalWrites: true as const },
++        ...(write.bases && { conditional: true as const })
++      }
      })
    })
 
+diff --git a/apps/desktop/src/contrib/flexpair-color-palette-startup.test.tsx b/apps/desktop/src/contrib/flexpair-color-palette-startup.test.tsx
+index be30297d73..d0c8895b36 100644
+--- a/apps/desktop/src/contrib/flexpair-color-palette-startup.test.tsx
++++ b/apps/desktop/src/contrib/flexpair-color-palette-startup.test.tsx
+@@ -49,8 +49,10 @@ it('still releases preferences and resets zoom when the release notification can
+       releaseNotificationWriteRejected = true
+       throw new Error('quota exceeded')
+     }
++
+     original(key, value)
+   })
++
+   const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')!
+   // Native Storage is an exotic object; use the same own-method shape as
+   // the Node fallback so interception is observable in either environment.
+@@ -81,7 +83,7 @@ it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-trans
+     window.sessionStorage.clear()
+     $gatewayState.set('open')
+     $activeGatewayProfile.set('work')
+-    const key = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
++    const key = 'hermes-desktop-flexpair-palette-baseline-v1'
+
+     let receive: (message: unknown) => void = () => {}
+     const send = vi.fn()
+@@ -126,7 +128,7 @@ it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-trans
+
+     if (behavior === 'late') { receive(reply) }
+     const retained = ['reply', 'dispose', 'no-transport'].includes(behavior)
+-    expect(modePref.resolve('work')).toBe(retained ? 'dark' : 'light')
++    expect(modePref.resolve('work')).toBe('dark')
+
+     if (behavior === 'dispose') { expect(stop).toHaveBeenCalledTimes(1) }
+
+@@ -137,7 +139,7 @@ it.each(['reply', 'foreign-scope', 'wrong-request', 'late', 'dispose', 'no-trans
+     }
+
+     disposers.splice(0).forEach(dispose => dispose())
+-    expect(modePref.resolve('research')).toBe('light')
++    expect(modePref.resolve('research')).toBe(retained ? 'dark' : 'light')
+     vi.useRealTimers()
+   }
+ )
+@@ -215,7 +217,7 @@ it('keeps the reloaded owner dark when a peer discovery expires', () => {
+     plugin.register(createPluginContext(plugin.id, dispose => owned.push(dispose)))
+   }
+
+-  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
++  const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
+   const sessionKey = 'hermes-desktop-plugin-flexpair-color-palette-window-v1'
+
+   try {
+@@ -242,12 +244,13 @@ it('keeps the reloaded owner dark when a peer discovery expires', () => {
+     expect(modePref.resolve('work')).toBe('dark')
+     expect(modePref.resolve('research')).toBe('dark')
+     const recovered = JSON.parse(firstWindow.localStorage.getItem(baselineKey)!)
+-    expect(recovered.owners['stable-window-id:work']).toBe('work')
+-    expect(recovered.generations['stable-window-id:work']).not.toBe(original.generations['stable-window-id:work'])
++    expect(recovered.owners['desktop:stable-window-id']).toBe('work')
++    expect(recovered.generations['desktop:stable-window-id']).not.toBe(original.generations['desktop:stable-window-id'])
+     firstDisposers.splice(0).forEach(dispose => dispose())
+-    expect(modePref.resolve('work')).toBe('light')
++    expect(modePref.resolve('work')).toBe('dark')
+     expect(modePref.resolve('research')).toBe('dark')
+     secondDisposers.splice(0).forEach(dispose => dispose())
++    expect(modePref.resolve('work')).toBe('light')
+     expect(modePref.resolve('research')).toBe('light')
+     expect(modePref.resolve('default')).toBe('light')
+     expect(firstWindow.localStorage.getItem(baselineKey)).toBeNull()
+@@ -271,7 +274,7 @@ it.each(['work', 'research'])('serializes overlapping registrations and releases
+   Object.defineProperty(window.navigator, 'locks', { configurable: true, value: { request } })
+   const firstDisposers: (() => void)[] = []
+   const secondDisposers: (() => void)[] = []
+-  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
++  const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
+
+   const register = (id: string, profile: string, owned: (() => void)[]) => {
+     window.sessionStorage.setItem('hermes-desktop-plugin-flexpair-color-palette-window-v1', id)
+@@ -303,6 +306,7 @@ it.each(['work', 'research'])('serializes overlapping registrations and releases
+     expect(modePref.resolve(secondProfile)).toBe('dark')
+     firstDisposers.splice(0).forEach(dispose => dispose())
+     await drain()
++    expect(modePref.resolve('work')).toBe('dark')
+     expect(modePref.resolve(secondProfile)).toBe('dark')
+     secondDisposers.splice(0).forEach(dispose => dispose())
+     await drain()
+@@ -457,7 +461,7 @@ it('restores shared appearance after a closing renderer loses its queued lock re
+
+     expect(modePref.resolve('work')).toBe('light')
+     expect(modePref.resolve('default')).toBe('light')
+-    expect(firstWindow.localStorage.getItem('hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1')).toBeNull()
++    expect(firstWindow.localStorage.getItem('hermes-desktop-flexpair-palette-baseline-v1')).toBeNull()
+   } finally {
+     releaseHeldLock?.()
+     await heldRequest
+@@ -478,8 +482,9 @@ it('preserves legacy profile owners when migrating persisted ownership', () => {
+   vi.useFakeTimers()
+   window.localStorage.clear()
+   window.sessionStorage.clear()
+-  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+-  window.localStorage.setItem(baselineKey, JSON.stringify({
++  const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
++  const legacyBaselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
++  window.localStorage.setItem(legacyBaselineKey, JSON.stringify({
+     global: 'light', profiles: { work: 'light' }, owners: ['work']
+   }))
+   window.localStorage.setItem('hermes-desktop-mode-v1', 'dark')
+@@ -493,6 +498,7 @@ it('preserves legacy profile owners when migrating persisted ownership', () => {
+   plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
+   const migrated = JSON.parse(window.localStorage.getItem(baselineKey)!)
+   expect(migrated.owners).toEqual(expect.objectContaining({ 'legacy:work': 'work' }))
++  expect(window.localStorage.getItem(legacyBaselineKey)).toBeNull()
+   vi.advanceTimersByTime(2000)
+   expect(modePref.resolve('work')).toBe('dark')
+   expect(JSON.parse(window.localStorage.getItem(baselineKey)!).owners)
+@@ -509,8 +515,8 @@ it('retains every baseline while a legacy owner profile does not match saved pro
+   vi.useFakeTimers()
+   window.localStorage.clear()
+   window.sessionStorage.clear()
+-  const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+-  window.localStorage.setItem(baselineKey, JSON.stringify({
++  const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
++  window.localStorage.setItem('hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1', JSON.stringify({
+     global: 'light', profiles: { work: 'light' }, owners: ['research']
+   }))
+   window.localStorage.setItem('hermes-desktop-mode-v1', 'dark')
+@@ -623,7 +629,7 @@ it.each(['pagehide', 'beforeunload'])('releases only the closing window on %s wi
+   closing.dispatchEvent(new Event(event))
+   expect(sharedZoomPercent).toBe(125)
+   expect(setPercent.mock.calls).toEqual([[150], [150], [125]])
+-  expect(modePref.resolve('work')).toBe('light')
++  expect(modePref.resolve('work')).toBe('dark')
+   expect(modePref.resolve('default')).toBe('dark')
+   // Late host disposal of the closed renderer must not consume a new owner.
+   disposers.shift()!()
+@@ -634,6 +640,7 @@ it.each(['pagehide', 'beforeunload'])('releases only the closing window on %s wi
+   disposers.splice(0).forEach(dispose => { dispose(); dispose() })
+   expect(sharedZoomPercent).toBe(0)
+   expect(setPercent.mock.calls).toEqual([[150], [150], [125], [0]])
++  expect(modePref.resolve('work')).toBe('light')
+   expect(modePref.resolve('default')).toBe('light')
+   vi.unstubAllGlobals()
+   remaining.remove()
+@@ -662,6 +669,7 @@ it.each(['connecting', 'closed', 'idle'] as const)('uses established work routin
+
+ it.each(['work', 'research'])('isolates independent registrations when disposing %s first', first => {
+   window.localStorage.clear()
++  window.sessionStorage.clear()
+   Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
+   $gatewayState.set('open')
+   modePref.assign('work', 'light')
+@@ -669,6 +677,7 @@ it.each(['work', 'research'])('isolates independent registrations when disposing
+   const owned: Record<string, (() => void)[]> = { work: [], research: [] }
+
+   for (const profile of ['work', 'research']) {
++    window.sessionStorage.setItem('hermes-desktop-plugin-flexpair-color-palette-window-v1', `${profile}-owner`)
+     $activeGatewayProfile.set(profile)
+     plugin.register(createPluginContext(plugin.id, dispose => owned[profile].push(dispose)))
+     expect(modePref.resolve(profile)).toBe('dark')
+@@ -676,7 +685,7 @@ it.each(['work', 'research'])('isolates independent registrations when disposing
+
+   const second = first === 'work' ? 'research' : 'work'
+   owned[first].splice(0).forEach(dispose => dispose())
+-  expect(modePref.resolve(first)).toBe('light')
++  expect(modePref.resolve(first)).toBe('dark')
+   expect(modePref.resolve(second)).toBe('dark')
+   expect(modePref.resolve('default')).toBe('dark')
+   owned[second].splice(0).forEach(dispose => dispose())
 diff --git a/apps/desktop/src/contrib/flexpair-inflight-preferences.test.tsx b/apps/desktop/src/contrib/flexpair-inflight-preferences.test.tsx
 new file mode 100644
 index 0000000000..642f0d3fd3
@@ -237,10 +425,10 @@ index 0000000000..642f0d3fd3
 +}, 15_000)
 diff --git a/apps/desktop/src/contrib/flexpair-native-store-probe.test.tsx b/apps/desktop/src/contrib/flexpair-native-store-probe.test.tsx
 new file mode 100644
-index 0000000000..a72ed9b4b9
+index 0000000000..39f32eaee0
 --- /dev/null
 +++ b/apps/desktop/src/contrib/flexpair-native-store-probe.test.tsx
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,147 @@
 +import fs from 'node:fs'
 +import os from 'node:os'
 +import path from 'node:path'
@@ -249,7 +437,7 @@ index 0000000000..a72ed9b4b9
 +import { expect, it, vi } from 'vitest'
 +
 +import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../electron/ui-preferences'
-+import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync } from '../lib/ui-preferences/sync'
++import { captureOwnPreferences, getPreferenceClaim, hydrateFromSnapshot, startUiPreferencesSync } from '../lib/ui-preferences/sync'
 +import plugin from '../plugins/flexpair-color-palette/plugin'
 +import { $activeGatewayProfile } from '../store/profile'
 +import { $gatewayState } from '../store/session'
@@ -257,191 +445,143 @@ index 0000000000..a72ed9b4b9
 +
 +import { createPluginContext } from './plugin'
 +
-+it.each([false, true])('native stored light survives plugin boot and reapplies on sync (native pin=%s)', async nativePin => {
-+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-theme-probe-'))
++const MODE = 'hermes-desktop-mode-v1'
++
++async function setupProbe(initialMode: null | string, desktopBridge: boolean) {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-native-store-probe-'))
 +  const file = path.join(dir, 'ui-preferences.json')
-+  const modeKey = 'hermes-desktop-mode-v1'
 +  const disposers: (() => void)[] = []
++  const writeOperations: Promise<ReturnType<typeof readUiPreferences>>[] = []
 +  const setPercent = vi.fn()
 +  const setNativeTheme = vi.fn()
-+  let stop = () => {}
++
++  window.localStorage.clear()
++  window.sessionStorage.clear()
++  vi.useFakeTimers()
++  $activeGatewayProfile.set('default')
++  $gatewayState.set('open')
++
++  if (initialMode !== null) {
++    await writeUiPreferences(file, { values: { [MODE]: initialMode } })
++  }
++
++  const snapshot = readUiPreferences(file)
++  Object.defineProperty(window, 'hermesDesktop', {
++    configurable: true,
++    value: desktopBridge ? { zoom: { setPercent }, setNativeTheme } : undefined
++  })
++  captureOwnPreferences()
++  hydrateFromSnapshot(snapshot)
++
++  const stop = startUiPreferencesSync({
++    snapshot,
++    read: async () => readUiPreferences(file),
++    write: payload => {
++      const operation = writeUiPreferences(file, parseUiPreferencesWrite(payload))
++      writeOperations.push(operation)
++
++      return operation
++    }
++  }, undefined, getPreferenceClaim)
++
++  return {
++    file,
++    setNativeTheme,
++    setPercent,
++    register: () => plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose))),
++    settle: async () => {
++      for (let attempt = 0; attempt < 3; attempt++) {
++        await act(async () => {
++          await vi.advanceTimersByTimeAsync(500)
++          await Promise.all(writeOperations.splice(0))
++        })
++      }
++    },
++    cleanup: () => {
++      cleanup()
++      stop()
++      disposers.forEach(dispose => dispose())
++      window.localStorage.clear()
++      window.sessionStorage.clear()
++      Reflect.deleteProperty(window, 'hermesDesktop')
++      vi.clearAllTimers()
++      vi.useRealTimers()
++      fs.rmSync(dir, { recursive: true, force: true })
++    }
++  }
++}
++
++function mountTheme() {
++  let theme!: ReturnType<typeof useTheme>
++
++  function Probe() {
++    theme = useTheme()
++
++    return null
++  }
++
++  render(<ThemeProvider><Probe /></ThemeProvider>)
++
++  return () => theme
++}
++
++it.each([false, true])('native stored light survives plugin boot and reapplies on sync (native pin=%s)', async nativePin => {
++  const probe = await setupProbe('light', true)
++
 +  try {
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+    $activeGatewayProfile.set('default')
-+    $gatewayState.set('open')
-+    await writeUiPreferences(file, { values: { [modeKey]: 'light' } })
-+    const snapshot = readUiPreferences(file)
-+    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent }, setNativeTheme } })
-+    captureOwnPreferences()
-+    hydrateFromSnapshot(snapshot)
-+    stop = startUiPreferencesSync({
-+      snapshot,
-+      read: async () => readUiPreferences(file),
-+      write: payload => writeUiPreferences(file, parseUiPreferencesWrite(payload)),
-+    })
-+    plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
-+    if (nativePin) { window.hermesDesktop?.setNativeTheme?.('dark') }
-+    expect(window.localStorage.getItem(modeKey)).toBe('dark')
-+    let theme!: ReturnType<typeof useTheme>
-+    function Probe() { theme = useTheme(); return null }
-+    render(<ThemeProvider><Probe /></ThemeProvider>)
-+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
-+    console.log('REAL_NATIVE_STORE', JSON.stringify({ nativePin, mode: theme.mode, stored: window.localStorage.getItem(modeKey), nativeStored: readUiPreferences(file).values[modeKey], zoomCalls: setPercent.mock.calls, nativeCalls: setNativeTheme.mock.calls }))
-+    expect(theme.mode).toBe('dark')
-+    expect(readUiPreferences(file).values[modeKey]).toBe('dark')
++    probe.register()
++
++    if (nativePin) {
++      window.hermesDesktop?.setNativeTheme?.('dark')
++    }
++
++    expect(window.localStorage.getItem(MODE)).toBe('dark')
++    const theme = mountTheme()
++    await probe.settle()
++
++    expect(theme().mode).toBe('dark')
++    expect(readUiPreferences(probe.file).values[MODE]).toBe('dark')
 +  } finally {
-+    cleanup()
-+    stop()
-+    disposers.forEach(dispose => dispose())
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+    fs.rmSync(dir, { recursive: true, force: true })
++    probe.cleanup()
 +  }
 +})
 +
-+it.each(['absent', 'light'])('checks startup against a %s native preference', async original => {
-+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-theme-control-'))
-+  const file = path.join(dir, 'ui-preferences.json')
-+  const modeKey = 'hermes-desktop-mode-v1'
-+  const disposers: (() => void)[] = []
-+  const setPercent = vi.fn()
-+  let stop = () => {}
++it.each([['absent', null], ['light', 'light']] as const)('checks startup against a %s native preference', async (_label, initialMode) => {
++  const probe = await setupProbe(initialMode, true)
++
 +  try {
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+    $activeGatewayProfile.set('default')
-+    $gatewayState.set('open')
-+    if (original === 'light') { await writeUiPreferences(file, { values: { [modeKey]: 'light' } }) }
-+    const snapshot = readUiPreferences(file)
-+    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent } } })
-+    captureOwnPreferences()
-+    hydrateFromSnapshot(snapshot)
-+    stop = startUiPreferencesSync({
-+      snapshot,
-+      read: async () => readUiPreferences(file),
-+      write: payload => writeUiPreferences(file, parseUiPreferencesWrite(payload)),
-+    })
-+    plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
-+    let theme!: ReturnType<typeof useTheme>
-+    function Probe() { theme = useTheme(); return null }
-+    render(<ThemeProvider><Probe /></ThemeProvider>)
-+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
-+    console.log('CONTROL', JSON.stringify({ original, mode: theme.mode, stored: window.localStorage.getItem(modeKey), nativeStored: readUiPreferences(file).values[modeKey] ?? null, zoomCalls: setPercent.mock.calls }))
-+    expect(theme.mode).toBe('dark')
-+    expect(readUiPreferences(file).values[modeKey]).toBe('dark')
++    probe.register()
++    const theme = mountTheme()
++    await probe.settle()
++
++    expect(theme().mode).toBe('dark')
++    expect(readUiPreferences(probe.file).values[MODE]).toBe('dark')
 +  } finally {
-+    cleanup()
-+    stop()
-+    disposers.forEach(dispose => dispose())
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+    fs.rmSync(dir, { recursive: true, force: true })
++    probe.cleanup()
 +  }
 +})
 +
 +it('persists the plugin startup without a native desktop bridge', async () => {
-+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-theme-control-'))
-+  const file = path.join(dir, 'ui-preferences.json')
-+  const modeKey = 'hermes-desktop-mode-v1'
-+  const disposers: (() => void)[] = []
-+  let stop = () => {}
-+  try {
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+    $activeGatewayProfile.set('default')
-+    $gatewayState.set('open')
-+    await writeUiPreferences(file, { values: { [modeKey]: 'light' } })
-+    const snapshot = readUiPreferences(file)
-+    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
-+    captureOwnPreferences()
-+    hydrateFromSnapshot(snapshot)
-+    stop = startUiPreferencesSync({
-+      snapshot,
-+      read: async () => readUiPreferences(file),
-+      write: payload => writeUiPreferences(file, parseUiPreferencesWrite(payload)),
-+    })
-+    let theme!: ReturnType<typeof useTheme>
-+    function Probe() { theme = useTheme(); return null }
-+    render(<ThemeProvider><Probe /></ThemeProvider>)
-+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
-+    act(() => {
-+      plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
-+    })
-+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 400)) })
-+    console.log('HOST_OBSERVED', JSON.stringify({ mode: theme.mode, stored: window.localStorage.getItem(modeKey), nativeStored: readUiPreferences(file).values[modeKey] }))
-+    expect(theme.mode).toBe('dark')
-+    expect(readUiPreferences(file).values[modeKey]).toBe('dark')
-+  } finally {
-+    cleanup()
-+    stop()
-+    disposers.forEach(dispose => dispose())
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+    fs.rmSync(dir, { recursive: true, force: true })
-+  }
-+})
-diff --git a/apps/desktop/src/contrib/flexpair-race-temporary.test.tsx b/apps/desktop/src/contrib/flexpair-race-temporary.test.tsx
-new file mode 100644
-index 0000000000..e0b74c8502
---- /dev/null
-+++ b/apps/desktop/src/contrib/flexpair-race-temporary.test.tsx
-@@ -0,0 +1,49 @@
-+import fs from 'node:fs'
-+import os from 'node:os'
-+import path from 'node:path'
-+import { expect, it } from 'vitest'
-+import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../electron/ui-preferences'
-+import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync } from '../lib/ui-preferences/sync'
-+import plugin from '../plugins/flexpair-color-palette/plugin'
-+import { $activeGatewayProfile } from '../store/profile'
-+import { $gatewayState } from '../store/session'
-+import { createPluginContext } from './plugin'
++  const probe = await setupProbe('light', false)
 +
-+it('does not overwrite an unseen peer update while its startup write is in flight', async () => {
-+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-race-'))
-+  const file = path.join(dir, 'preferences.json')
-+  const mode = 'hermes-desktop-mode-v1'
-+  const profiles = 'hermes-desktop-profile-modes-v1'
-+  const disposers: (() => void)[] = []
-+  let release = () => {}
-+  const gate = new Promise<void>(resolve => { release = resolve })
-+  window.localStorage.clear()
-+  window.sessionStorage.clear()
-+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: undefined })
-+  $activeGatewayProfile.set('work')
-+  $gatewayState.set('open')
-+  await writeUiPreferences(file, { values: { [mode]: 'light', [profiles]: JSON.stringify({ work: 'light', other: 'light' }) } })
-+  const snapshot = readUiPreferences(file)
-+  captureOwnPreferences()
-+  hydrateFromSnapshot(snapshot)
-+  const stop = startUiPreferencesSync({
-+    snapshot, read: async () => readUiPreferences(file),
-+    write: async payload => { if (!payload.seed) { await gate }; return writeUiPreferences(file, parseUiPreferencesWrite(payload)) }
-+  })
 +  try {
-+    plugin.register(createPluginContext(plugin.id, d => disposers.push(d)))
-+    await new Promise(resolve => setTimeout(resolve, 250))
-+    await writeUiPreferences(file, { values: { [mode]: 'system', [profiles]: JSON.stringify({ work: 'light', other: 'dark' }) } })
-+    release()
-+    await new Promise(resolve => setTimeout(resolve, 500))
-+    expect(readUiPreferences(file).values[mode]).toBe('system')
-+    expect(JSON.parse(readUiPreferences(file).values[profiles]).other).toBe('dark')
++    const theme = mountTheme()
++    await probe.settle()
++    act(() => probe.register())
++    await probe.settle()
++
++    expect(theme().mode).toBe('dark')
++    expect(readUiPreferences(probe.file).values[MODE]).toBe('dark')
 +  } finally {
-+    release()
-+    stop()
-+    disposers.forEach(dispose => dispose())
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+    fs.rmSync(dir, { recursive: true, force: true })
++    probe.cleanup()
 +  }
 +})
-diff --git a/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx b/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx
+diff --git a/apps/desktop/src/contrib/flexpair-restore-race.test.tsx b/apps/desktop/src/contrib/flexpair-restore-race.test.tsx
 new file mode 100644
-index 0000000000..bb03bc9f65
+index 0000000000..dab353eefb
 --- /dev/null
-+++ b/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx
-@@ -0,0 +1,121 @@
++++ b/apps/desktop/src/contrib/flexpair-restore-race.test.tsx
+@@ -0,0 +1,147 @@
 +import fs from 'node:fs'
 +import os from 'node:os'
 +import path from 'node:path'
@@ -455,15 +595,193 @@ index 0000000000..bb03bc9f65
 +
 +const MODE = 'hermes-desktop-mode-v1'
 +const PROFILES = 'hermes-desktop-profile-modes-v1'
-+const tick = () => new Promise(resolve => setTimeout(resolve, 500))
++const BASELINE = 'hermes-desktop-flexpair-palette-baseline-v1'
++const JOINED = 'hermes:ui-preferences:generation'
++
++it('keeps the active palette dark when a peer restore arrives during startup', async () => {
++  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-restore-race-'))
++  const file = path.join(dir, 'preferences.json')
++  const writeOperations: Promise<UiPreferencesSnapshot>[] = []
++  const disposers: (() => void)[] = []
++  const locksDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'locks')
++
++  let notify: (snapshot: UiPreferencesSnapshot) => void = () => {}
++
++  let releaseWrites = () => {}
++  const gate = new Promise<void>(resolve => { releaseWrites = resolve })
++
++  let writeStarted = () => {}
++  const started = new Promise<void>(resolve => { writeStarted = resolve })
++
++  try {
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    Object.defineProperty(window.navigator, 'locks', { configurable: true, value: undefined })
++    vi.useFakeTimers()
++
++    await writeUiPreferences(file, { values: {
++      [MODE]: 'dark',
++      [PROFILES]: '{}',
++      [BASELINE]: JSON.stringify({
++        global: 'light',
++        profiles: {},
++        owners: { 'desktop:old-window': 'default' },
++        generations: { 'desktop:old-window': 'old-generation' }
++      })
++    } })
++    const snapshot = readUiPreferences(file)
++    window.localStorage.setItem(JOINED, snapshot.generation ?? '')
++
++    const write = (payload: Parameters<typeof parseUiPreferencesWrite>[0]) => {
++      const request = parseUiPreferencesWrite(payload)
++
++      const operation = (async () => {
++        if (!request.seed) {
++          writeStarted()
++          await gate
++        }
++
++        return writeUiPreferences(file, request)
++      })()
++
++      writeOperations.push(operation)
++
++      return operation
++    }
++
++    const bridge = {
++      snapshot,
++      read: async () => readUiPreferences(file),
++      write,
++      onChanged: (listener: typeof notify) => {
++        notify = listener
++
++        return () => {}
++      }
++    }
++
++    Object.defineProperty(window, 'hermesDesktop', {
++      configurable: true,
++      value: { uiPreferences: bridge }
++    })
++
++    const app = await bootRenderer(async () => {
++      const [{ default: plugin }, { createPluginContext }, profile, session, theme] = await Promise.all([
++        import('../plugins/flexpair-color-palette/plugin'),
++        import('./plugin'),
++        import('../store/profile'),
++        import('../store/session'),
++        import('../themes/context')
++      ])
++
++      profile.$activeGatewayProfile.set('default')
++      session.$gatewayState.set('open')
++      plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
++      const restored = await writeUiPreferences(file, { values: { [MODE]: 'light', [BASELINE]: null } })
++      notify(restored)
++
++      return { theme }
++    })
++
++    let currentTheme!: ReturnType<typeof app.theme.useTheme>
++
++    function Probe() {
++      currentTheme = app.theme.useTheme()
++
++      return null
++    }
++
++    render(<app.theme.ThemeProvider><Probe /></app.theme.ThemeProvider>)
++    expect(currentTheme.mode).toBe('dark')
++
++    await act(async () => { await vi.advanceTimersByTimeAsync(200) })
++    await started
++    releaseWrites()
++
++    for (let attempt = 0; attempt < 4; attempt++) {
++      await act(async () => {
++        await vi.advanceTimersByTimeAsync(200)
++        await Promise.all(writeOperations.splice(0))
++      })
++    }
++
++    const stored = readUiPreferences(file).values
++    expect(currentTheme.mode).toBe('dark')
++    expect(window.localStorage.getItem(MODE)).toBe('dark')
++    expect(stored[MODE]).toBe('dark')
++    expect(Object.keys(JSON.parse(stored[BASELINE]).owners).some(owner => owner.startsWith('desktop:'))).toBe(true)
++  } finally {
++    releaseWrites()
++    disposers.forEach(dispose => dispose())
++    cleanup()
++    window.localStorage.clear()
++    window.sessionStorage.clear()
++    Reflect.deleteProperty(window, 'hermesDesktop')
++    vi.clearAllTimers()
++    vi.useRealTimers()
++
++    if (locksDescriptor) {
++      Object.defineProperty(window.navigator, 'locks', locksDescriptor)
++    } else {
++      Reflect.deleteProperty(window.navigator, 'locks')
++    }
++
++    fs.rmSync(dir, { recursive: true, force: true })
++  }
++})
+diff --git a/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx b/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx
+new file mode 100644
+index 0000000000..429463dba4
+--- /dev/null
++++ b/apps/desktop/src/contrib/flexpair-shared-preferences.test.tsx
+@@ -0,0 +1,166 @@
++import fs from 'node:fs'
++import os from 'node:os'
++import path from 'node:path'
++
++import { act, cleanup, render } from '@testing-library/react'
++import { expect, it, vi } from 'vitest'
++
++import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../electron/ui-preferences'
++import { bootRenderer } from '../lib/ui-preferences/boot'
++import type { UiPreferencesSnapshot } from '../lib/ui-preferences/sync'
++
++const MODE = 'hermes-desktop-mode-v1'
++const PROFILES = 'hermes-desktop-profile-modes-v1'
++const BASELINE = 'hermes-desktop-flexpair-palette-baseline-v1'
++const writeOperations: Promise<UiPreferencesSnapshot>[] = []
++
++const advance = async () => {
++  for (let attempt = 0; attempt < 3; attempt++) {
++    await vi.advanceTimersByTimeAsync(500)
++    await Promise.all(writeOperations.splice(0))
++  }
++}
 +
 +it('loads the bundled plugin before sync settles, merges peer profiles and respects manual mode changes', async () => {
++  writeOperations.length = 0
 +  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-shared-'))
 +  const file = path.join(dir, 'preferences.json')
 +  const setPercent = vi.fn()
++
 +  let notify: (snapshot: UiPreferencesSnapshot) => void = () => {}
++
 +  let releaseWrites = () => {}
 +  const gate = new Promise<void>(resolve => { releaseWrites = resolve })
++
++  const write = (payload: Parameters<typeof parseUiPreferencesWrite>[0]) => {
++    const request = parseUiPreferencesWrite(payload)
++
++    const operation = (async () => {
++      if (!request.seed) { await gate }
++
++      return writeUiPreferences(file, request)
++    })()
++
++    writeOperations.push(operation)
++
++    return operation
++  }
 +
 +  window.localStorage.clear()
 +  window.sessionStorage.clear()
@@ -473,6 +791,7 @@ index 0000000000..bb03bc9f65
 +  await writeUiPreferences(file, { values: {
 +    [MODE]: 'light', [PROFILES]: JSON.stringify({ work: 'system', research: 'light', other: 'light' })
 +  } })
++  window.localStorage.setItem('hermes:ui-preferences:generation', readUiPreferences(file).generation!)
 +  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: {
 +    localSkin: { profile: 'work' }, zoom: { setPercent }, logLine: vi.fn(),
 +    onPreviewFileChanged: () => () => undefined,
@@ -482,15 +801,17 @@ index 0000000000..bb03bc9f65
 +    uiPreferences: {
 +      snapshot: readUiPreferences(file),
 +      read: async () => readUiPreferences(file),
-+      write: async (payload: Parameters<typeof parseUiPreferencesWrite>[0]) => {
-+        if (!parseUiPreferencesWrite(payload).seed) { await gate }
-+        return writeUiPreferences(file, parseUiPreferencesWrite(payload))
-+      },
-+      onChanged: (listener: typeof notify) => { notify = listener; return () => {} }
++      write,
++      onChanged: (listener: typeof notify) => { notify = listener;
++
++ return () => {} }
 +    }
 +  } })
++  const desktopBridge = window.hermesDesktop
 +
 +  try {
++    vi.useFakeTimers()
++
 +    const app = await bootRenderer(async () => {
 +      const loader = await import('./plugins')
 +      const store = await import('./plugins-store')
@@ -502,23 +823,31 @@ index 0000000000..bb03bc9f65
 +      profile.$activeGatewayProfile.set('work')
 +      session.$gatewayState.set('open')
 +      loader.discoverBundledPlugins()
++
 +      return { context, createPluginContext, plugin, profile, store }
 +    })
++
 +    expect(app.store.$pluginRecords.get()['flexpair-color-palette'].status).toBe('loaded')
 +    let theme!: ReturnType<typeof app.context.useTheme>
-+    function Probe() { theme = app.context.useTheme(); return null }
++
++    function Probe() { theme = app.context.useTheme();
++
++ return null }
++
 +    render(<app.context.ThemeProvider><Probe /></app.context.ThemeProvider>)
 +    expect(theme.mode).toBe('dark')
 +    expect(setPercent.mock.calls).toEqual([[150]])
++    await act(async () => { await vi.advanceTimersByTimeAsync(100) })
 +
 +    // This renderer has an unsent work edit when a peer changes another
 +    // profile. The pending JSON record must be rebased, not replaced whole.
 +    const peer = await writeUiPreferences(file, { values: {
 +      [PROFILES]: JSON.stringify({ work: 'system', research: 'light', other: 'dark', peer: 'system' })
 +    } })
++
 +    act(() => notify(peer))
 +    releaseWrites()
-+    await act(tick)
++    await act(advance)
 +    expect(JSON.parse(readUiPreferences(file).values[PROFILES])).toEqual({
 +      work: 'dark', research: 'light', other: 'dark', peer: 'system'
 +    })
@@ -528,30 +857,38 @@ index 0000000000..bb03bc9f65
 +    const peerDisposers: (() => void)[] = []
 +    window.sessionStorage.clear()
 +    app.profile.$activeGatewayProfile.set('research')
++    Reflect.deleteProperty(window, 'hermesDesktop')
 +    act(() => app.plugin.register(app.createPluginContext(app.plugin.id, dispose => peerDisposers.push(dispose))))
++    await act(advance)
++    const sharedOwners = JSON.parse(readUiPreferences(file).values[BASELINE]).owners as Record<string, string>
++    expect(Object.keys(sharedOwners).some(owner => owner.startsWith('desktop:'))).toBe(true)
++    expect(Object.keys(sharedOwners).some(owner => owner.startsWith('web:'))).toBe(true)
 +    await act(async () => { await app.store.setPluginEnabled(app.plugin.id, false) })
-+    await act(tick)
++    await act(advance)
 +    expect(JSON.parse(readUiPreferences(file).values[PROFILES])).toEqual({
-+      work: 'system', research: 'dark', other: 'dark', peer: 'system'
++      work: 'dark', research: 'dark', other: 'dark', peer: 'system'
 +    })
 +    expect(readUiPreferences(file).values[MODE]).toBe('dark')
++    expect(Object.keys(JSON.parse(readUiPreferences(file).values[BASELINE]).owners))
++      .toEqual(Object.keys(sharedOwners).filter(owner => owner.startsWith('web:')))
 +    act(() => peerDisposers.forEach(dispose => dispose()))
-+    await act(tick)
++    await act(advance)
 +    expect(readUiPreferences(file).values[MODE]).toBe('light')
 +    expect(JSON.parse(readUiPreferences(file).values[PROFILES])).toEqual({
 +      work: 'system', research: 'light', other: 'dark', peer: 'system'
 +    })
 +
++    Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: desktopBridge })
 +    app.profile.$activeGatewayProfile.set('work')
 +    await act(async () => { await app.store.setPluginEnabled(app.plugin.id, true) })
 +    expect(theme.mode).toBe('dark')
 +    act(() => theme.setMode('light'))
-+    await act(tick)
++    await act(advance)
 +    expect(theme.mode).toBe('light')
 +    expect(readUiPreferences(file).values[MODE]).toBe('light')
-+    expect(setPercent.mock.calls.filter(([value]) => value === 150)).toHaveLength(3)
++    expect(setPercent.mock.calls.filter(([value]) => value === 150)).toHaveLength(2)
 +    await act(async () => { await app.store.setPluginEnabled(app.plugin.id, false) })
-+    await act(tick)
++    await act(advance)
 +    expect(readUiPreferences(file).values[MODE]).toBe('light')
 +    expect(JSON.parse(readUiPreferences(file).values[PROFILES]).work).toBe('light')
 +  } finally {
@@ -560,132 +897,34 @@ index 0000000000..bb03bc9f65
 +    window.localStorage.clear()
 +    window.sessionStorage.clear()
 +    Reflect.deleteProperty(window, 'hermesDesktop')
++    vi.useRealTimers()
 +    fs.rmSync(dir, { force: true, recursive: true })
 +  }
 +}, 30_000)
-diff --git a/apps/desktop/src/contrib/flexpair-theme-sync-probe.test.tsx b/apps/desktop/src/contrib/flexpair-theme-sync-probe.test.tsx
-new file mode 100644
-index 0000000000..3dd4e35d0e
---- /dev/null
-+++ b/apps/desktop/src/contrib/flexpair-theme-sync-probe.test.tsx
-@@ -0,0 +1,94 @@
-+import { act, cleanup, render } from '@testing-library/react'
-+import { expect, it, vi } from 'vitest'
-+
-+import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync, type UiPreferencesSnapshot } from '../lib/ui-preferences/sync'
-+import plugin from '../plugins/flexpair-color-palette/plugin'
-+import { $activeGatewayProfile } from '../store/profile'
-+import { $gatewayState } from '../store/session'
-+import { ThemeProvider, useTheme } from '../themes/context'
-+
-+import { createPluginContext } from './plugin'
-+
-+const modeKey = 'hermes-desktop-mode-v1'
-+const snapshot: UiPreferencesSnapshot = {
-+  exists: true, generation: 'g1', revision: 1, values: { [modeKey]: 'light' }
-+}
-+
-+it.each([false, true])('keeps startup dark when sync connects (native pin=%s)', async nativePin => {
-+  window.localStorage.clear()
-+  window.sessionStorage.clear()
-+  $activeGatewayProfile.set('default')
-+  $gatewayState.set('open')
-+  const disposers: (() => void)[] = []
-+  const setPercent = vi.fn()
-+  const setNativeTheme = vi.fn()
-+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent }, setNativeTheme } })
-+  captureOwnPreferences()
-+  hydrateFromSnapshot(snapshot)
-+  const stop = startUiPreferencesSync({
-+    snapshot,
-+    read: async () => snapshot,
-+    write: async () => snapshot,
-+  })
-+  plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
-+  if (nativePin) { window.hermesDesktop?.setNativeTheme?.('dark') }
-+  expect(window.localStorage.getItem(modeKey)).toBe('dark')
-+  let theme!: ReturnType<typeof useTheme>
-+  function Probe() { theme = useTheme(); return null }
-+  try {
-+    render(<ThemeProvider><Probe /></ThemeProvider>)
-+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
-+    console.log('OBSERVED', JSON.stringify({ nativePin, mode: theme.mode, stored: window.localStorage.getItem(modeKey), zoomCalls: setPercent.mock.calls, nativeCalls: setNativeTheme.mock.calls }))
-+    expect(theme.mode).toBe('dark')
-+    expect(window.localStorage.getItem(modeKey)).toBe('dark')
-+  } finally {
-+    cleanup()
-+    stop()
-+    disposers.forEach(dispose => dispose())
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+  }
-+})
-+
-+it.each([false, true])('keeps startup dark after another preference updates (native pin=%s)', async nativePin => {
-+  window.localStorage.clear()
-+  window.sessionStorage.clear()
-+  $activeGatewayProfile.set('default')
-+  $gatewayState.set('open')
-+  const disposers: (() => void)[] = []
-+  const setPercent = vi.fn()
-+  const setNativeTheme = vi.fn()
-+  Object.defineProperty(window, 'hermesDesktop', { configurable: true, value: { zoom: { setPercent }, setNativeTheme } })
-+  captureOwnPreferences()
-+  hydrateFromSnapshot(snapshot)
-+  let onChanged: (next: UiPreferencesSnapshot) => void = () => {}
-+  const stop = startUiPreferencesSync({
-+    snapshot,
-+    read: async () => snapshot,
-+    write: async () => snapshot,
-+    onChanged: listener => { onChanged = listener; return () => {} },
-+  })
-+  let theme!: ReturnType<typeof useTheme>
-+  function Probe() { theme = useTheme(); return null }
-+  try {
-+    render(<ThemeProvider><Probe /></ThemeProvider>)
-+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
-+    act(() => {
-+      plugin.register(createPluginContext(plugin.id, dispose => disposers.push(dispose)))
-+      if (nativePin) { window.hermesDesktop?.setNativeTheme?.('dark') }
-+    })
-+    expect(theme.mode).toBe('dark')
-+    expect(window.localStorage.getItem(modeKey)).toBe('dark')
-+    act(() => onChanged({ ...snapshot, revision: 2, values: {
-+      [modeKey]: 'light', 'hermes.desktop.sessionListDensity': 'detailed'
-+    } }))
-+    console.log('UPDATE', JSON.stringify({ nativePin, mode: theme.mode, stored: window.localStorage.getItem(modeKey), zoomCalls: setPercent.mock.calls, nativeCalls: setNativeTheme.mock.calls }))
-+    expect(theme.mode).toBe('dark')
-+  } finally {
-+    cleanup()
-+    stop()
-+    disposers.forEach(dispose => dispose())
-+    window.localStorage.clear()
-+    window.sessionStorage.clear()
-+  }
-+})
 diff --git a/apps/desktop/src/contrib/plugin.ts b/apps/desktop/src/contrib/plugin.ts
-index 9fe4bbe1a4..abcac1c565 100644
+index 9fe4bbe1a4..6990f14d7f 100644
 --- a/apps/desktop/src/contrib/plugin.ts
 +++ b/apps/desktop/src/contrib/plugin.ts
-@@ -58,6 +58,17 @@ export interface PluginStorage {
+@@ -58,6 +58,18 @@ export interface PluginStorage {
    remove(key: string): void
  }
 
 +/** Raw mode preferences, including absent or older values needed for restoration. */
 +export interface PluginModePreferences {
-+  read(key: 'global' | 'profiles'): null | string
-+  write(key: 'global' | 'profiles', value: null | string): void
++  read(key: 'global' | 'profiles' | 'baseline'): null | string
++  write(key: 'global' | 'profiles' | 'baseline', value: null | string): void
 +}
 +
 +const modePreferenceKeys = {
 +  global: 'hermes-desktop-mode-v1',
-+  profiles: 'hermes-desktop-profile-modes-v1'
++  profiles: 'hermes-desktop-profile-modes-v1',
++  baseline: 'hermes-desktop-flexpair-palette-baseline-v1'
 +} as const
 +
  /** The curated OS door — every way a plugin reaches outside the app window,
   *  in one attributed namespace instead of the raw `window.hermesDesktop`
   *  bridge. Every member resolves a result instead of throwing when the
-@@ -182,6 +193,9 @@ export interface PluginContext {
+@@ -182,6 +194,9 @@ export interface PluginContext {
    preview: PluginPreview
    /** Plugin-scoped persistence. */
    storage: PluginStorage
@@ -695,7 +934,7 @@ index 9fe4bbe1a4..abcac1c565 100644
    /** Folder-scoped file access: this plugin's own data folder plus folders
     *  the user grants it through the app's picker, by relative path. The app
     *  checks every call; nothing outside those folders (or inside Hermes'
-@@ -401,6 +415,10 @@ export function createPluginContext(
+@@ -401,6 +416,10 @@ export function createPluginContext(
      listActions: listPluginAppActions,
      preview: createPluginPreview(pluginId, capabilities),
      storage: createPluginStorage(pluginId),
@@ -745,21 +984,27 @@ index 613823e2a2..6c1403a185 100644
    expect(JSON.parse(readUiPreferences(file).values[FAVORITES])).toEqual(['host::A', 'host::B', 'mine::C'])
  })
 diff --git a/apps/desktop/src/lib/ui-preferences/boot.ts b/apps/desktop/src/lib/ui-preferences/boot.ts
-index 0adbcdf0bf..c7b9176de4 100644
+index 0adbcdf0bf..0d1c394acb 100644
 --- a/apps/desktop/src/lib/ui-preferences/boot.ts
 +++ b/apps/desktop/src/lib/ui-preferences/boot.ts
-@@ -9,8 +9,9 @@
+@@ -9,8 +9,15 @@
  // asks the server that serves it, bounded so an unreachable host never holds
  // the first paint for long (then it boots on its local cache).
  import { browserApi, browserBootstrap } from '@/lib/browser-transport'
 +import { createBrowserUiPreferences } from '@/lib/browser-ui-preferences'
 
 -import { captureOwnPreferences, hydrateFromSnapshot, type UiPreferencesSnapshot } from './sync'
-+import { captureOwnPreferences, hydrateFromSnapshot, startUiPreferencesSync, type UiPreferencesSnapshot } from './sync'
++import {
++  captureOwnPreferences,
++  getPreferenceClaim,
++  hydrateFromSnapshot,
++  startUiPreferencesSync,
++  type UiPreferencesSnapshot
++} from './sync'
 
  const BROWSER_FIRST_READ_MS = 1500
 
-@@ -35,7 +36,26 @@ async function browserSnapshot(): Promise<null | UiPreferencesSnapshot> {
+@@ -35,7 +42,26 @@ async function browserSnapshot(): Promise<null | UiPreferencesSnapshot> {
  export async function bootRenderer<T>(loadApp: () => Promise<T>): Promise<T> {
    if (typeof window !== 'undefined') {
      captureOwnPreferences()
@@ -773,7 +1018,7 @@ index 0adbcdf0bf..c7b9176de4 100644
 +    // classify cached defaults before importing this origin into the machine.
 +    let release: () => void = () => undefined
 +    const appReady = new Promise<void>(resolve => { release = resolve })
-+    const stop = startUiPreferencesSync(bridge && { ...bridge, snapshot }, appReady)
++    const stop = startUiPreferencesSync(bridge && { ...bridge, snapshot }, appReady, getPreferenceClaim)
 +
 +    try {
 +      const app = await loadApp()
@@ -789,17 +1034,49 @@ index 0adbcdf0bf..c7b9176de4 100644
    return loadApp()
 diff --git a/apps/desktop/src/lib/ui-preferences/flexpair-early-seed.test.ts b/apps/desktop/src/lib/ui-preferences/flexpair-early-seed.test.ts
 new file mode 100644
-index 0000000000..b029af2db2
+index 0000000000..3c650334c1
 --- /dev/null
 +++ b/apps/desktop/src/lib/ui-preferences/flexpair-early-seed.test.ts
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,147 @@
 +import fs from 'node:fs'
 +import os from 'node:os'
 +import path from 'node:path'
++
 +import { expect, it, vi } from 'vitest'
-+import { readUiPreferences, writeUiPreferences, parseUiPreferencesWrite } from '../../../electron/ui-preferences'
++
++import { parseUiPreferencesWrite, readUiPreferences, writeUiPreferences } from '../../../electron/ui-preferences'
++
++type UiPreferences = NonNullable<typeof window.hermesDesktop>['uiPreferences']
++
++async function withBridge<T>(
++  file: string,
++  overrides: Partial<UiPreferences>,
++  run: () => Promise<T>
++): Promise<T> {
++  const descriptor = Object.getOwnPropertyDescriptor(window, 'hermesDesktop')
++  const previous = window.hermesDesktop
++
++  const uiPreferences: UiPreferences = {
++    snapshot: readUiPreferences(file),
++    read: async () => readUiPreferences(file),
++    write: async payload => writeUiPreferences(file, parseUiPreferencesWrite(payload)),
++    ...overrides
++  }
++
++  Object.defineProperty(window, 'hermesDesktop', {
++    configurable: true, value: { ...previous, uiPreferences }
++  })
++
++  try {
++    return await run()
++  } finally {
++    if (descriptor) { Object.defineProperty(window, 'hermesDesktop', descriptor) }
++    else { Reflect.deleteProperty(window, 'hermesDesktop') }
++  }
++}
 +
 +it('does not seed old default keybinds before stores classify them as provisional', async () => {
++  vi.useFakeTimers()
 +  vi.resetModules()
 +  window.localStorage.clear()
 +  window.sessionStorage.clear()
@@ -807,23 +1084,20 @@ index 0000000000..b029af2db2
 +  const file = path.join(dir, 'prefs.json')
 +  const key = 'hermes.desktop.keybinds'
 +  window.localStorage.setItem(key, '{}')
-+  window.hermesDesktop = { uiPreferences: {
-+    snapshot: readUiPreferences(file),
-+    read: async () => readUiPreferences(file),
-+    write: async (payload: Parameters<typeof parseUiPreferencesWrite>[0]) =>
-+      writeUiPreferences(file, parseUiPreferencesWrite(payload))
-+  } } as unknown as typeof window.hermesDesktop
++
 +  try {
-+    const { bootRenderer } = await import('./boot')
-+    await bootRenderer(async () => {
-+      // Module loading can yield before keybinds evaluates.
-+      await new Promise(resolve => setTimeout(resolve, 100))
-+      await import('@/store/keybinds')
++    await withBridge(file, {}, async () => {
++      const { bootRenderer } = await import('./boot')
++      await bootRenderer(async () => {
++        // Module loading can yield before keybinds evaluates.
++        await vi.advanceTimersByTimeAsync(100)
++        await import('@/store/keybinds')
++      })
++      await vi.advanceTimersByTimeAsync(500)
++      expect(readUiPreferences(file).values[key]).toBeUndefined()
 +    })
-+    await new Promise(resolve => setTimeout(resolve, 500))
-+    expect(readUiPreferences(file).values[key]).toBeUndefined()
 +  } finally {
-+    Reflect.deleteProperty(window, 'hermesDesktop')
++    vi.useRealTimers()
 +    window.localStorage.clear()
 +    window.sessionStorage.clear()
 +    fs.rmSync(dir, { recursive: true, force: true })
@@ -831,6 +1105,7 @@ index 0000000000..b029af2db2
 +})
 +
 +it('queues startup writes and incoming changes until the app graph has loaded', async () => {
++  vi.useFakeTimers()
 +  vi.resetModules()
 +  window.localStorage.clear()
 +  window.sessionStorage.clear()
@@ -840,33 +1115,36 @@ index 0000000000..b029af2db2
 +  const profiles = 'hermes-desktop-profile-modes-v1'
 +  await writeUiPreferences(file, { values: { [mode]: 'light', [profiles]: '{"work":"light","peer":"light"}' } })
 +  let notify: (snapshot: ReturnType<typeof readUiPreferences>) => void = () => undefined
++
 +  const write = vi.fn(async (payload: Parameters<typeof parseUiPreferencesWrite>[0]) =>
 +    writeUiPreferences(file, parseUiPreferencesWrite(payload)))
-+  window.hermesDesktop = { uiPreferences: {
-+    snapshot: readUiPreferences(file),
-+    read: async () => readUiPreferences(file),
-+    write,
-+    onChanged: (listener: typeof notify) => { notify = listener; return () => undefined }
-+  } } as unknown as typeof window.hermesDesktop
 +
 +  try {
-+    const { bootRenderer } = await import('./boot')
-+    await bootRenderer(async () => {
-+      const { readKey, writeKey } = await import('../storage')
-+      readKey(profiles)
-+      writeKey(profiles, '{"work":"dark","peer":"light"}')
-+      writeKey(mode, 'dark')
-+      const peer = await writeUiPreferences(file, { values: { [profiles]: '{"work":"light","peer":"dark"}' } })
-+      notify(peer)
-+      await new Promise(resolve => setTimeout(resolve, 50))
-+      expect(window.localStorage.getItem(profiles)).toBe('{"work":"dark","peer":"light"}')
-+      expect(write).not.toHaveBeenCalled()
++    await withBridge(file, {
++      write,
++      onChanged: listener => { notify = listener;
++
++ return () => undefined }
++    }, async () => {
++      const { bootRenderer } = await import('./boot')
++      await bootRenderer(async () => {
++        const { readKey, writeKey } = await import('../storage')
++        readKey(profiles)
++        writeKey(profiles, '{"work":"dark","peer":"light"}')
++        writeKey(mode, 'dark')
++        const peer = await writeUiPreferences(file, { values: { [profiles]: '{"work":"light","peer":"dark"}' } })
++        notify(peer)
++        await vi.advanceTimersByTimeAsync(50)
++        expect(window.localStorage.getItem(profiles)).toBe('{"work":"dark","peer":"light"}')
++        expect(write).not.toHaveBeenCalled()
++      })
++      await vi.advanceTimersByTimeAsync(500)
++      await Promise.all(write.mock.results.map(result => result.value))
++      expect(readUiPreferences(file).values[mode]).toBe('dark')
++      expect(JSON.parse(readUiPreferences(file).values[profiles])).toEqual({ work: 'dark', peer: 'dark' })
 +    })
-+    await new Promise(resolve => setTimeout(resolve, 500))
-+    expect(readUiPreferences(file).values[mode]).toBe('dark')
-+    expect(JSON.parse(readUiPreferences(file).values[profiles])).toEqual({ work: 'dark', peer: 'dark' })
 +  } finally {
-+    Reflect.deleteProperty(window, 'hermesDesktop')
++    vi.useRealTimers()
 +    window.localStorage.clear()
 +    window.sessionStorage.clear()
 +    fs.rmSync(dir, { recursive: true, force: true })
@@ -874,51 +1152,124 @@ index 0000000000..b029af2db2
 +})
 +
 +it('stops listening without contacting the store if app loading fails', async () => {
++  vi.useFakeTimers()
 +  vi.resetModules()
 +  window.localStorage.clear()
 +  window.sessionStorage.clear()
 +  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'flexpair-failed-boot-'))
 +  const file = path.join(dir, 'prefs.json')
 +  const read = vi.fn(async () => readUiPreferences(file))
++
 +  const write = vi.fn(async (payload: Parameters<typeof parseUiPreferencesWrite>[0]) =>
 +    writeUiPreferences(file, parseUiPreferencesWrite(payload)))
++
 +  const unsubscribe = vi.fn()
-+  window.hermesDesktop = { uiPreferences: {
-+    snapshot: readUiPreferences(file), read, write, onChanged: () => unsubscribe
-+  } } as unknown as typeof window.hermesDesktop
 +
 +  try {
-+    const { bootRenderer } = await import('./boot')
-+    await expect(bootRenderer(async () => {
-+      const { writeKey } = await import('../storage')
-+      writeKey('hermes-desktop-mode-v1', 'dark')
-+      throw new Error('load failed')
-+    })).rejects.toThrow('load failed')
-+    await new Promise(resolve => setTimeout(resolve, 200))
-+    expect(unsubscribe).toHaveBeenCalledOnce()
-+    expect(read).not.toHaveBeenCalled()
-+    expect(write).not.toHaveBeenCalled()
++    await withBridge(file, { read, write, onChanged: () => unsubscribe }, async () => {
++      const { bootRenderer } = await import('./boot')
++      await expect(bootRenderer(async () => {
++        const { writeKey } = await import('../storage')
++        writeKey('hermes-desktop-mode-v1', 'dark')
++        throw new Error('load failed')
++      })).rejects.toThrow('load failed')
++      await vi.advanceTimersByTimeAsync(200)
++      expect(unsubscribe).toHaveBeenCalledOnce()
++      expect(read).not.toHaveBeenCalled()
++      expect(write).not.toHaveBeenCalled()
++    })
 +  } finally {
-+    Reflect.deleteProperty(window, 'hermesDesktop')
++    vi.useRealTimers()
 +    window.localStorage.clear()
 +    window.sessionStorage.clear()
 +    fs.rmSync(dir, { recursive: true, force: true })
 +  }
 +})
+diff --git a/apps/desktop/src/lib/ui-preferences/keys.ts b/apps/desktop/src/lib/ui-preferences/keys.ts
+index f99a4dda5f..5a119f7ed7 100644
+--- a/apps/desktop/src/lib/ui-preferences/keys.ts
++++ b/apps/desktop/src/lib/ui-preferences/keys.ts
+@@ -23,6 +23,7 @@ const SHARED_KEYS: ReadonlySet<string> = new Set([
+   'hermes-desktop-mode-v1',
+   'hermes-desktop-profile-themes-v1',
+   'hermes-desktop-profile-modes-v1',
++  'hermes-desktop-flexpair-palette-baseline-v1',
+   'hermes-desktop-user-themes-v1',
+   'hermes.desktop.backdrop.v1',
+   'hermes.desktop.chat-text-scale.v1',
 diff --git a/apps/desktop/src/lib/ui-preferences/sync.test.ts b/apps/desktop/src/lib/ui-preferences/sync.test.ts
-index 49790be21f..2866596214 100644
+index 49790be21f..c89191fd64 100644
 --- a/apps/desktop/src/lib/ui-preferences/sync.test.ts
 +++ b/apps/desktop/src/lib/ui-preferences/sync.test.ts
-@@ -37,7 +37,7 @@ function memoryStore(initial: null | Record<string, string>) {
+@@ -3,20 +3,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+ import { persistentAtom } from '../persisted'
+ import { writeKey } from '../storage'
+
++import { saveOutbox } from './outbox'
+ import { startUiPreferencesSync, type UiPreferencesBridge, type UiPreferencesSnapshot } from './sync'
+
+ // A bridge over an in-memory document with the store's semantics: per-key
+ // merge, null deletes, `seed` only adds the keys the store lacks.
+-function memoryStore(initial: null | Record<string, string>) {
++function memoryStore(initial: null | Record<string, string>, supportsConditional = true) {
+   let doc: null | UiPreferencesSnapshot = initial
+     ? { exists: true, generation: 'g1', revision: 1, values: { ...initial } }
+     : null
+
+-  const writes: { seed?: boolean; values: Record<string, null | string> }[] = []
++  const writes: { seed?: boolean; bases?: Record<string, null | string>; values: Record<string, null | string> }[] = []
+   const listeners = new Set<(snapshot: UiPreferencesSnapshot) => void>()
+-  const snapshot = (): UiPreferencesSnapshot => doc ?? { exists: false, revision: 0, values: {} }
++
++  const snapshot = (): UiPreferencesSnapshot => {
++    const current = doc ?? { exists: false, revision: 0, values: {} }
++
++    return supportsConditional ? { ...current, capabilities: { conditionalWrites: true } } : current
++  }
+
+   const bridge: UiPreferencesBridge = {
++    snapshot: snapshot(),
+     read: async () => snapshot(),
+     write: async payload => {
+       writes.push(payload)
+@@ -24,6 +31,10 @@ function memoryStore(initial: null | Record<string, string>) {
+       const values = { ...(doc?.values ?? {}) }
+
+       for (const [key, value] of Object.entries(payload.values)) {
++        if (supportsConditional && payload.bases && (values[key] ?? null) !== payload.bases[key]) {
++          continue
++        }
++
+         if (payload.seed) {
+           if (value !== null && !(key in values)) {
+             values[key] = value
+@@ -37,7 +48,7 @@ function memoryStore(initial: null | Record<string, string>) {
 
        doc = { exists: true, generation: doc?.generation ?? 'g1', revision: (doc?.revision ?? 0) + 1, values }
 
 -      return snapshot()
-+      return payload.bases ? { ...snapshot(), conditional: true as const } : snapshot()
++      return supportsConditional && payload.bases ? { ...snapshot(), conditional: true as const } : snapshot()
      },
      onChanged: callback => {
        listeners.add(callback)
-@@ -108,7 +108,7 @@ describe('machine UI preferences sync', () => {
+@@ -57,6 +68,8 @@ function memoryStore(initial: null | Record<string, string>) {
+ const DENSITY = 'hermes.desktop.sessionListDensity'
+ const MODE = 'hermes-desktop-mode-v1'
+ const DRAFT = 'hermes.desktop.composerQueue.v1'
++const FAVORITES = 'hermes.desktop.favorite-models'
++const JOINED = 'hermes:ui-preferences:generation'
+
+ describe('machine UI preferences sync', () => {
+   let stop: () => void = () => undefined
+@@ -68,6 +81,7 @@ describe('machine UI preferences sync', () => {
+
+   afterEach(() => {
+     stop()
++    saveOutbox(new Map())
+     vi.useRealTimers()
+   })
+
+@@ -108,7 +122,7 @@ describe('machine UI preferences sync', () => {
      writeKey(DRAFT, 'local only')
      await vi.runAllTimersAsync()
 
@@ -927,20 +1278,160 @@ index 49790be21f..2866596214 100644
      expect(store.snapshot().values).toEqual({ [DENSITY]: 'detailed', [MODE]: 'dark' })
 
      store.external({ [DENSITY]: 'comfortable', [MODE]: 'dark' })
+@@ -190,4 +204,126 @@ describe('machine UI preferences sync', () => {
+     expect(store.snapshot().values).toEqual({ [DENSITY]: 'detailed' })
+     expect(window.localStorage.getItem(MODE)).toBe('x'.repeat(10))
+   })
++
++  it('old store without capability: no write is sent, pending stays local, unrelated keys survive', async () => {
++    const store = memoryStore({ [DENSITY]: 'compact', [FAVORITES]: '["existing"]' }, false)
++    window.localStorage.setItem(JOINED, 'g1')
++
++    stop = startUiPreferencesSync(store.bridge)
++    await vi.runAllTimersAsync()
++    writeKey(DENSITY, 'detailed')
++    writeKey(FAVORITES, '["existing","new"]')
++    await vi.advanceTimersByTimeAsync(200)
++
++    expect(store.writes).toEqual([])
++    expect(window.localStorage.getItem(DENSITY)).toBe('detailed')
++    expect(window.localStorage.getItem(FAVORITES)).toBe('["existing","new"]')
++    expect(store.snapshot().values).toEqual({ [DENSITY]: 'compact', [FAVORITES]: '["existing"]' })
++  })
++
++  it('404 on /conditional does not discard the batch', async () => {
++    const store = memoryStore({ [DENSITY]: 'compact' })
++    window.localStorage.setItem(JOINED, 'g1')
++
++    store.bridge.write = async () => {
++      throw new Error('404: not found')
++    }
++
++    stop = startUiPreferencesSync(store.bridge)
++    await vi.runAllTimersAsync()
++    writeKey(DENSITY, 'detailed')
++    writeKey(FAVORITES, '["mine"]')
++    await vi.advanceTimersByTimeAsync(200)
++
++    expect(store.writes).toEqual([])
++    expect(window.localStorage.getItem(DENSITY)).toBe('detailed')
++    expect(window.localStorage.getItem(FAVORITES)).toBe('["mine"]')
++  })
++
++  it('capability becomes known after a read', async () => {
++    const store = memoryStore({ [DENSITY]: 'compact' })
++    window.localStorage.setItem(JOINED, 'g1')
++    store.bridge.snapshot = { exists: true, generation: 'g1', revision: 1, values: { [DENSITY]: 'compact' } }
++
++    stop = startUiPreferencesSync(store.bridge)
++    await vi.runAllTimersAsync()
++    writeKey(DENSITY, 'detailed')
++    await vi.advanceTimersByTimeAsync(200)
++
++    expect(store.writes).toEqual([{ bases: { [DENSITY]: 'compact' }, values: { [DENSITY]: 'detailed' } }])
++    expect(store.snapshot().values[DENSITY]).toBe('detailed')
++  })
++
++  it('peer scalar arriving within the flush delay wins', async () => {
++    const store = memoryStore({ [MODE]: 'light' })
++    window.localStorage.setItem(JOINED, 'g1')
++
++    stop = startUiPreferencesSync(store.bridge)
++    await vi.runAllTimersAsync()
++    writeKey(MODE, 'dark')
++    store.external({ [MODE]: 'system' })
++    await vi.runAllTimersAsync()
++
++    expect(store.writes.some(write => MODE in write.values)).toBe(false)
++    expect(window.localStorage.getItem(MODE)).toBe('system')
++  })
++
++  it('peer scalar arriving while in flight wins', async () => {
++    const store = memoryStore({ [MODE]: 'light' })
++    const write = store.bridge.write
++    let release: () => void = () => undefined
++    let started: () => void = () => undefined
++    const requestStarted = new Promise<void>(resolve => { started = resolve })
++    window.localStorage.setItem(JOINED, 'g1')
++    store.bridge.write = payload => new Promise(resolve => {
++      started()
++      release = () => resolve(write(payload))
++    })
++
++    stop = startUiPreferencesSync(store.bridge)
++    await vi.runAllTimersAsync()
++    writeKey(MODE, 'dark')
++    await vi.advanceTimersByTimeAsync(200)
++    await requestStarted
++    store.external({ [MODE]: 'system' })
++    release()
++    await vi.runAllTimersAsync()
++
++    expect(store.snapshot().values[MODE]).toBe('system')
++    expect(window.localStorage.getItem(MODE)).toBe('system')
++    expect(store.writes).toHaveLength(1)
++  })
++
++  it('local edit after a peer update wins', async () => {
++    const store = memoryStore({ [MODE]: 'light' })
++    window.localStorage.setItem(JOINED, 'g1')
++
++    stop = startUiPreferencesSync(store.bridge)
++    await vi.runAllTimersAsync()
++    store.external({ [MODE]: 'system' })
++    writeKey(MODE, 'light')
++    await vi.runAllTimersAsync()
++
++    expect(store.writes).toEqual([{ bases: { [MODE]: 'system' }, values: { [MODE]: 'light' } }])
++    expect(store.snapshot().values[MODE]).toBe('light')
++  })
++
++  it('JSON keys are merged key-wise', async () => {
++    const base = '{"a":"0","b":"1"}'
++    const local = '{"a":"1","b":"1"}'
++    const peer = '{"a":"0","b":"2","c":"3"}'
++    const merged = '{"a":"1","b":"2","c":"3"}'
++    const store = memoryStore({ [MODE]: base })
++    window.localStorage.setItem(JOINED, 'g1')
++
++    stop = startUiPreferencesSync(store.bridge)
++    await vi.runAllTimersAsync()
++    writeKey(MODE, local)
++    store.external({ [MODE]: peer })
++    await vi.runAllTimersAsync()
++
++    expect(store.writes).toEqual([{ bases: { [MODE]: peer }, values: { [MODE]: merged } }])
++    expect(window.localStorage.getItem(MODE)).toBe(merged)
++    expect(store.snapshot().values[MODE]).toBe(merged)
++  })
+ })
 diff --git a/apps/desktop/src/lib/ui-preferences/sync.ts b/apps/desktop/src/lib/ui-preferences/sync.ts
-index bde14ae332..a04d629b75 100644
+index bde14ae332..85f6fbd110 100644
 --- a/apps/desktop/src/lib/ui-preferences/sync.ts
 +++ b/apps/desktop/src/lib/ui-preferences/sync.ts
-@@ -154,7 +154,7 @@ export function hydrateFromSnapshot(snapshot: null | undefined | UiPreferencesSn
- function isRefusal(error: unknown): boolean {
-   const message = error instanceof Error ? error.message : String(error)
+@@ -24,6 +24,21 @@ const FLUSH_DELAY_MS = 150
+ const JOINED_KEY = 'hermes:ui-preferences:generation'
+ const RETRY_DELAY_MS = 5000
+ const MAX_RETRY_DELAY_MS = 60_000
++type PreferenceClaimsWindow = Window & { __hermesPreferenceClaims?: Map<string, string> }
++
++function releasePreferenceClaim(key: string): void {
++  if (typeof window !== 'undefined') {
++    (window as PreferenceClaimsWindow).__hermesPreferenceClaims?.delete(key)
++  }
++}
++
++export function getPreferenceClaim(key: string): null | string {
++  if (typeof window === 'undefined') {
++    return null
++  }
++
++  return (window as PreferenceClaimsWindow).__hermesPreferenceClaims?.get(key) ?? null
++}
 
--  return /^400:|unsupported preference|unsupported value|store is full/.test(message)
-+  return /^400:|^404:|unsupported preference|unsupported value|store is full/.test(message)
- }
-
- function announce(key: string, oldValue: null | string, newValue: null | string) {
-@@ -163,6 +163,82 @@ function announce(key: string, oldValue: null | string, newValue: null | string)
+ // The shared keys this window held before the app's module graph evaluated
+ // (`captureOwnPreferences`, run by boot.ts): this client's own data. Stores
+@@ -163,6 +178,19 @@ function announce(key: string, oldValue: null | string, newValue: null | string)
    window.dispatchEvent(new StorageEvent('storage', { key, newValue, oldValue }))
  }
 
@@ -957,125 +1448,244 @@ index bde14ae332..a04d629b75 100644
 +  return snapshot.values[key] ?? null
 +}
 +
-+function reconciledValue(
-+  count: number,
-+  changedHere: boolean,
-+  base: null | string,
-+  current: null | string,
-+  value: null | string,
-+  latest: null | string
-+): null | string {
-+  if (count > 1 && !changedHere) {
-+    return current
-+  }
-+  if (changedHere) {
-+    return rebaseWrite(base, current, latest)
-+  }
-+  return rebaseWrite(base, value, current)
-+}
-+
-+function reconcileWriteBatch(
-+  batch: Map<string, null | string>,
-+  bases: Map<string, null | string>,
-+  pending: Map<string, null | string>,
-+  pendingBase: Map<string, null | string>,
-+  conflicts: Map<string, number>,
-+  snapshot: UiPreferencesSnapshot,
-+  known: Map<string, null | string>,
-+  generation: null | string,
-+  revision: number
-+): void {
-+  for (const [key, value] of batch) {
-+    if (!pending.has(key)) {
-+      continue
-+    }
-+
-+    const current = reconciledCurrent(key, snapshot, known, generation, revision)
-+    const latest = pending.get(key) ?? null
-+    const changedHere = latest !== value
-+
-+    if (!changedHere && current === value) {
-+      pending.delete(key)
-+      pendingBase.delete(key)
-+      conflicts.delete(key)
-+      continue
-+    }
-+
-+    const count = (conflicts.get(key) ?? 0) + (current === value ? 0 : 1)
-+    const rebased = reconciledValue(count, changedHere, bases.get(key) ?? null, current, value, latest)
-+
-+    if (readRaw(key) === latest && rebased !== latest && writeRaw(key, rebased)) {
-+      announce(key, latest, rebased)
-+    }
-+
-+    if (rebased === current) {
-+      pending.delete(key)
-+      pendingBase.delete(key)
-+      conflicts.delete(key)
-+    } else {
-+      pending.set(key, rebased)
-+      pendingBase.set(key, current)
-+      conflicts.set(key, count)
-+    }
-+  }
-+}
-+
  /**
   * Keep this window's shared preferences and the machine store in step:
   * - first contact with a store generation (or with no store) imports this
-@@ -173,7 +249,7 @@ function announce(key: string, oldValue: null | string, newValue: null | string)
+@@ -173,7 +201,11 @@ function announce(key: string, oldValue: null | string, newValue: null | string)
   * - a change another window, tab or device made lands here live;
   * - a provisional value (a write marked `provisional`) never leaves this origin.
   */
 -export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | undefined): () => void {
-+export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | undefined, appReady?: Promise<void>): () => void {
++export function startUiPreferencesSync(
++  bridge: null | UiPreferencesBridge | undefined,
++  appReady?: Promise<void>,
++  claims?: (key: string) => null | string
++): () => void {
    if (!bridge) {
      return () => undefined
    }
-@@ -190,6 +266,8 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+@@ -190,22 +222,32 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
    const seenOf = (key: string) => (seen.has(key) ? (seen.get(key) ?? null) : (loaded.get(key) ?? null))
    // Values the store refused, kept in this window until changed again.
    const refused = new Map<string, null | string>()
-+  const conflicts = new Map<string, number>()
 +  let inFlight = new Set<string>()
    let revision = -1
    let generation: null | string = null
    let flushTimer: ReturnType<typeof setTimeout> | null = null
-@@ -229,7 +307,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
-       // A change made here and not yet stored outranks an older store value,
-       // rebased onto it so the store's other entries survive; so does one a
-       // sibling tab has not stored yet.
--      if (rebasePending(key, value)) {
-+      if (!inFlight.has(key) && rebasePending(key, value)) {
-         save()
-       } else if (!pending.has(key) && !siblings.has(key) && !(refused.has(key) && refused.get(key) === readRaw(key))) {
-         adopt(key, value, prune, live)
-@@ -298,13 +376,22 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+   let stopped = false
++  let conditionalSupported: boolean | null = null
++  let conditionalWarningLogged = false
+   // Nothing is written until first contact: a write that created the store
+   // ahead of the seed would make the seed see an existing store and skip the
+   // rest of this window's values.
+   let ready = false
+
+-  const apply = (snapshot: UiPreferencesSnapshot, { live }: { live: boolean }) => {
++  const apply = (
++    snapshot: UiPreferencesSnapshot,
++    { live, capabilityKnown = false }: { live: boolean; capabilityKnown?: boolean }
++  ) => {
+     // A replaced store (deleted, or corrupt and kept aside) starts a new
+     // generation at a low revision: follow it rather than wait for the count.
+     if (!snapshot.exists || (generationOf(snapshot) === generation && snapshot.revision < revision)) {
+       return
      }
 
-     const batch = new Map(pending)
-+    const bases = new Map([...batch.keys()].map(key => [key, pendingBase.get(key) ?? null]))
-+    inFlight = new Set(batch.keys())
++    if (capabilityKnown || snapshot.capabilities?.conditionalWrites === true) {
++      conditionalSupported = snapshot.capabilities?.conditionalWrites === true
++    }
++
+     revision = snapshot.revision
+     generation = generationOf(snapshot)
+     const prune = hasJoined(snapshot)
+@@ -226,13 +268,21 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+       const value = snapshot.values[key] ?? null
+       known.set(key, value)
+
+-      // A change made here and not yet stored outranks an older store value,
+-      // rebased onto it so the store's other entries survive; so does one a
+-      // sibling tab has not stored yet.
+-      if (rebasePending(key, value)) {
++      if (pending.has(key) && !inFlight.has(key)) {
++        const localValue = pending.get(key) ?? null
++        resolvePending(key, pendingBase.get(key) ?? null, value, localValue, false)
+         save()
+       } else if (!pending.has(key) && !siblings.has(key) && !(refused.has(key) && refused.get(key) === readRaw(key))) {
+-        adopt(key, value, prune, live)
++        const claim = claims?.(key) ?? null
++        const localValue = readRaw(key)
++
++        if (claim !== null && claim === localValue && value !== claim) {
++          pending.set(key, claim)
++          resolvePending(key, value, value, claim, false)
++          store()
++        } else {
++          adopt(key, value, prune, live)
++        }
+       }
+     }
+
+@@ -241,15 +291,75 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+     }
+   }
+
+-  function rebasePending(key: string, current: null | string): boolean {
+-    if (!pending.has(key) || !pendingBase.has(key) || pendingBase.get(key) === current) {
+-      return false
++  function resolveConflict(
++    base: null | string,
++    storeValue: null | string,
++    localValue: null | string,
++    changedHere: boolean
++  ): null | string {
++    if (storeValue === base || changedHere) {
++      return localValue
+     }
+
+-    pending.set(key, rebaseLocal(key, pendingBase.get(key) ?? null, current, pending.get(key) ?? null))
+-    pendingBase.set(key, current)
++    const isJsonObject = (value: null | string) => {
++      if (value === null) {
++        return false
++      }
+
+-    return true
++      try {
++        const parsed = JSON.parse(value) as unknown
++        return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
++      } catch {
++        return false
++      }
++    }
++
++    return isJsonObject(storeValue) && isJsonObject(localValue)
++      ? rebaseWrite(base, storeValue, localValue)
++      : storeValue
++  }
++
++  function resolvePending(
++    key: string,
++    base: null | string,
++    storeValue: null | string,
++    localValue: null | string,
++    changedHere: boolean
++  ): void {
++    const claim = claims?.(key) ?? null
++
++    const resolved = claim !== null && claim === localValue
++      ? localValue
++      : resolveConflict(base, storeValue, localValue, changedHere)
++
++    if (resolved === storeValue) {
++      pending.delete(key)
++      pendingBase.delete(key)
++    } else {
++      pending.set(key, resolved)
++      pendingBase.set(key, storeValue)
++    }
++
++    if (readRaw(key) === localValue && resolved !== localValue && writeRaw(key, resolved)) {
++      announce(key, localValue, resolved)
++    }
++  }
++
++  function reconcileWriteBatch(
++    batch: Map<string, null | string>,
++    bases: Map<string, null | string>,
++    snapshot: UiPreferencesSnapshot
++  ): void {
++    for (const [key, value] of batch) {
++      if (!pending.has(key)) {
++        continue
++      }
++
++      const current = reconciledCurrent(key, snapshot, known, generation, revision)
++      const latest = pending.get(key) ?? null
++      const changedHere = latest !== value
++      resolvePending(key, bases.get(key) ?? null, current, changedHere ? latest : value, changedHere)
++    }
+   }
+
+   // Another tab took this tab's unsent changes over (this one was frozen past
+@@ -265,7 +375,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+
+     if (ready && !stopped) {
+       void bridge.read().then(
+-        snapshot => !stopped && apply(snapshot, { live: true }),
++        snapshot => !stopped && apply(snapshot, { live: true, capabilityKnown: true }),
+         () => undefined
+       )
+     }
+@@ -282,6 +392,13 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+   let writing = false
+   let writeDelay = RETRY_DELAY_MS
+
++  const warnUnsupportedConditionalWrites = () => {
++    if (!conditionalWarningLogged) {
++      conditionalWarningLogged = true
++      console.warn('ui preferences: store does not support conditional writes; local edits are kept in this window')
++    }
++  }
++
+   const schedule = (delay: number) => {
+     if (flushTimer === null && !writing && ready && !stopped) {
+       flushTimer = setTimeout(() => void flush(), delay)
+@@ -297,18 +414,48 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+       return
+     }
+
+-    const batch = new Map(pending)
++    let batch = new Map<string, null | string>()
++    let bases = new Map<string, null | string>()
      let retryIn = FLUSH_DELAY_MS
      writing = true
 
      try {
 -      const snapshot = await bridge.write({ values: Object.fromEntries(batch) })
-+      const snapshot = await bridge.write({ values: Object.fromEntries(batch), bases: Object.fromEntries(bases) })
++      if (conditionalSupported === null) {
++        const snapshot = await bridge.read()
++        conditionalSupported = snapshot.capabilities?.conditionalWrites === true
++        apply(snapshot, { live: true, capabilityKnown: true })
++      }
 
 -      settle(batch)
-+      if (!snapshot.conditional) {
-+        throw new Error('unsupported preference conditional writes')
+-      writeDelay = RETRY_DELAY_MS
+-      apply(snapshot, { live: true })
++      if (conditionalSupported === false) {
++        warnUnsupportedConditionalWrites()
++        writeDelay = MAX_RETRY_DELAY_MS
++        retryIn = MAX_RETRY_DELAY_MS
++      } else if (!stopped && !takenOver() && pending.size > 0) {
++        batch = new Map(pending)
++        bases = new Map([...batch.keys()].map(key => [key, pendingBase.get(key) ?? null]))
++        inFlight = new Set(batch.keys())
++        const snapshot = await bridge.write({ values: Object.fromEntries(batch), bases: Object.fromEntries(bases) })
++
++        if (!snapshot.conditional) {
++          throw new Error('unsupported preference conditional writes')
++        }
++
++        reconcileWriteBatch(batch, bases, snapshot)
++
++        inFlight.clear()
++        save()
++        writeDelay = RETRY_DELAY_MS
++        apply(snapshot, { live: true })
 +      }
-+
-+      reconcileWriteBatch(batch, bases, pending, pendingBase, conflicts, snapshot, known, generation, revision)
-+
-+      inFlight.clear()
-+      save()
-       writeDelay = RETRY_DELAY_MS
-       apply(snapshot, { live: true })
      } catch (error) {
-@@ -319,6 +406,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+-      if (isRefusal(error)) {
++      const message = error instanceof Error ? error.message : String(error)
++
++      if (message.startsWith('404:')) {
++        conditionalSupported = false
++        warnUnsupportedConditionalWrites()
++        writeDelay = MAX_RETRY_DELAY_MS
++        retryIn = MAX_RETRY_DELAY_MS
++      } else if (isRefusal(error)) {
+         // The store refused this batch outright (oversized value, full store):
+         // it stays in this window only, and later changes are not held behind it.
+         console.warn('[ui-preferences] the machine store refused these preferences', [...batch.keys()], error)
+@@ -319,6 +466,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
          writeDelay = Math.min(writeDelay * 2, MAX_RETRY_DELAY_MS)
        }
      } finally {
@@ -1083,7 +1693,18 @@ index bde14ae332..a04d629b75 100644
        writing = false
      }
 
-@@ -366,10 +454,13 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+@@ -339,6 +487,10 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+   }
+
+   const stopListening = onPersistenceEvent(event => {
++    if (event.op !== 'read' && event.key === 'hermes-desktop-mode-v1' && event.value !== 'dark') {
++      releasePreferenceClaim(event.key)
++    }
++
+     if (!isSharedPreferenceKey(event.key)) {
+       return
+     }
+@@ -366,7 +518,9 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
      const value = rebaseLocal(event.key, base, current, event.value)
 
      if (!pendingBase.has(event.key)) {
@@ -1094,11 +1715,48 @@ index bde14ae332..a04d629b75 100644
      }
 
      refused.delete(event.key)
-+    conflicts.delete(event.key)
-     pending.set(event.key, value)
-     store()
-   })
-@@ -514,9 +605,29 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+@@ -404,7 +558,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+           }
+
+           if (ready && known.has(key)) {
+-            rebasePending(key, known.get(key) ?? null)
++            resolvePending(key, adopted.bases.get(key) ?? null, known.get(key) ?? null, value, false)
+           }
+         }
+       }
+@@ -480,14 +634,20 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+     connectTimer = null
+
+     void (initial ? Promise.resolve(initial) : bridge.read())
+-      .then(join)
++      .then(snapshot => {
++        if (!initial) {
++          conditionalSupported = snapshot.capabilities?.conditionalWrites === true
++        }
++
++        return join(snapshot)
++      })
+       .then(snapshot => {
+         if (stopped) {
+           return
+         }
+
+         ready = true
+-        apply(snapshot, { live: true })
++        apply(snapshot, { live: true, capabilityKnown: !initial })
+         schedule(FLUSH_DELAY_MS)
+       })
+       .catch(error => {
+@@ -501,7 +661,7 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
+           joinRefused = true
+           ready = true
+           void bridge.read().then(
+-            snapshot => apply(snapshot, { live: true }),
++            snapshot => apply(snapshot, { live: true, capabilityKnown: true }),
+             () => undefined
+           )
+           schedule(FLUSH_DELAY_MS)
+@@ -514,9 +674,29 @@ export function startUiPreferencesSync(bridge: null | UiPreferencesBridge | unde
        })
    }
 
@@ -1152,27 +1810,155 @@ index ce347fd14d..5aee073769 100644
  // The perf probe ships in dev, and in a production build ONLY when explicitly
  // opted in (VITE_PERF_PROBE=1) — this lets the perf harness measure a real,
 diff --git a/apps/desktop/src/plugins/flexpair-color-palette/README.md b/apps/desktop/src/plugins/flexpair-color-palette/README.md
-index 32eef2f174..7175efbf09 100644
+index 32eef2f174..cee60d622e 100644
 --- a/apps/desktop/src/plugins/flexpair-color-palette/README.md
 +++ b/apps/desktop/src/plugins/flexpair-color-palette/README.md
-@@ -6,6 +6,8 @@ Enabled by default. Every enabled registration sets the appearance preference to
+@@ -4,7 +4,11 @@ Reference: https://github.com/Flexpair/hermes-plugins.git at `78640444605766af17
 
- Fixed accents follow the painted mode. A plugin-owned persistent restoration baseline survives renderer restarts without disposal; a later non-dark manual preference becomes the next activation's baseline. Each activation broadcasts a plugin-scoped UUID presence request through the existing optional Electron window relay. Previously recorded owners that do not reply within 2 seconds are released; responding peers keep their profile and global baseline. Only owners present at discovery start are candidates, and late replies cannot revive them. The listener remains available to answer other windows until close or disposal, which cancels pending discovery. This is a single bounded handshake, not polling or a timer lease. Suspended or heavily delayed renderers can be falsely treated as closed; without a relay (or when sending fails), owners are conservatively retained and abandoned-owner recovery is unavailable. Renderer reload on the same window/profile replaces the same session-storage UUID slot. Legacy profile-name owners from older baseline records are migrated to synthetic `legacy:<profile>` owners and never expire automatically: their original renderer identity cannot be proven from a UUID reply, so the legacy baseline remains protected until manually cleared.
+ Enabled by default. Every enabled registration sets the appearance preference to dark, including a previously saved light preference. Synchronous bundled registration seeds the host's legacy zoom fallback and requests native 150% zoom before page load. Later manual mode and zoom changes remain available until the next activation or app restart; no timer, load listener or zoom notification reasserts the plugin defaults.
 
-+Mode changes use the host's mode-preference persistence door, so startup and restoration join machine preference sync. Choosing a different mode while active is respected; zoom is set only at activation and reset on disable.
+-Fixed accents follow the painted mode. A plugin-owned persistent restoration baseline survives renderer restarts without disposal; a later non-dark manual preference becomes the next activation's baseline. Each activation broadcasts a plugin-scoped UUID presence request through the existing optional Electron window relay. Previously recorded owners that do not reply within 2 seconds are released; responding peers keep their profile and global baseline. Only owners present at discovery start are candidates, and late replies cannot revive them. The listener remains available to answer other windows until close or disposal, which cancels pending discovery. This is a single bounded handshake, not polling or a timer lease. Suspended or heavily delayed renderers can be falsely treated as closed; without a relay (or when sending fails), owners are conservatively retained and abandoned-owner recovery is unavailable. Renderer reload on the same window/profile replaces the same session-storage UUID slot. Legacy profile-name owners from older baseline records are migrated to synthetic `legacy:<profile>` owners and never expire automatically: their original renderer identity cannot be proven from a UUID reply, so the legacy baseline remains protected until manually cleared.
++Fixed accents follow the painted mode. The restoration baseline and owner map live in the machine preference `hermes-desktop-flexpair-palette-baseline-v1` and are merged key-wise by shared-preference sync. Owner IDs are qualified by origin (`desktop:<uuid>` or `web:<uuid>`); legacy profile-name owners are migrated to `legacy:<profile>` and never expire automatically. A restore of global or profile modes happens only after a fresh baseline read finds no remaining owners. Owners from other origins are conservatively retained during discovery because the local window relay cannot prove their absence.
 +
++Each activation broadcasts a plugin-scoped UUID presence request through the existing optional Electron window relay. Previously recorded owners from the same origin that do not reply within 2 seconds are released; responding peers keep their baseline. Only owners present at discovery start are candidates, and late replies cannot revive them. The listener remains available to answer other windows until close or disposal, which cancels pending discovery. This is a single bounded handshake, not polling or a timer lease. Suspended or heavily delayed renderers can be falsely treated as closed; without a relay (or when sending fails), owners are conservatively retained and abandoned-owner recovery is unavailable. Renderer reload on the same window replaces the same session-storage UUID slot. The old origin-local baseline key is migrated once on first activation.
++
++Mode changes use the host's mode-preference persistence door, so startup and restoration join machine preference sync. Choosing a different mode while active is respected; zoom is set only at activation and reset on disable.
+
  Disposal and window close restore outstanding assignments only when no remaining owner needs them, preserving later manual edits and unrelated profiles. Window close never writes shared native zoom; explicit disposal resets host-default zoom once. Established SDK routing, including `host.activeConnectionId()` during reconnect, takes precedence over boot hints; only the initial default placeholder uses the pinned `?profile=` or Electron boot profile and saved fallback. The optional existing Electron zoom bridge is not a plugin SDK API; older hosts without it retain appearance behavior. SDK, theme implementation, Electron and plugin loading remain unchanged. These defaults are applied during initialization, not guaranteed before the first native window paint. Unavailable storage or native zoom cannot guarantee 150%.
 
- Official Vite bundled discovery enables fresh defaults; stored explicit disablement takes precedence across restarts and app updates.
 diff --git a/apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx b/apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx
-index 408ca49b59..4858c48438 100644
+index 408ca49b59..7a659c3b15 100644
 --- a/apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx
 +++ b/apps/desktop/src/plugins/flexpair-color-palette/plugin.tsx
-@@ -154,13 +154,12 @@ const plugin: HermesPlugin = {
+@@ -1,11 +1,25 @@
+ // Fixed Flexpair accent seeds; palette derivation remains Hermes core behavior.
+-import type { HermesPlugin } from '@hermes/plugin-sdk'
++import type { HermesPlugin, PluginContext } from '@hermes/plugin-sdk'
+ import { host, randomUuid, setAccentOverride } from '@hermes/plugin-sdk'
+
+ interface Baseline { global: string | null, profiles: Record<string, unknown>, owners?: Record<string, string>, generations?: Record<string, string> }
+ const legacyOwnerPrefix = 'legacy:'
++const baselineKey = 'hermes-desktop-flexpair-palette-baseline-v1'
++const legacyBaselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
++type PreferenceClaimsWindow = Window & { __hermesPreferenceClaims?: Map<string, string> }
++
++function claimPreference(window: Window, key: string, value: string): void {
++  const claimsWindow = window as PreferenceClaimsWindow
++  const claims = claimsWindow.__hermesPreferenceClaims ?? new Map<string, string>()
++  claimsWindow.__hermesPreferenceClaims = claims
++  claims.set(key, value)
++}
++
++function releasePreference(window: Window, key: string): void {
++  (window as PreferenceClaimsWindow).__hermesPreferenceClaims?.delete(key)
++}
+
+-function registrationOwner(window: Window, profile: string): string {
++function registrationOwner(window: Window): string {
+   const key = 'hermes-desktop-plugin-flexpair-color-palette-window-v1'
+   let windowId = window.sessionStorage.getItem(key)
+
+@@ -15,12 +29,12 @@ function registrationOwner(window: Window, profile: string): string {
+   }
+
+   // Session storage survives renderer reload/crash, but is separate per window.
+-  return `${windowId}:${profile}`
++  return `${window.hermesDesktop ? 'desktop' : 'web'}:${windowId}`
+ }
+
+-function readBaseline(window: Window, baselineKey: string): Baseline | undefined {
++function parseBaseline(raw: null | string): Baseline | undefined {
+   try {
+-    const saved = JSON.parse(window.localStorage.getItem(baselineKey) ?? 'null')
++    const saved = JSON.parse(raw ?? 'null')
+
+     if (saved && (saved.global === null || typeof saved.global === 'string')
+       && saved.profiles && typeof saved.profiles === 'object' && !Array.isArray(saved.profiles)) {
+@@ -31,6 +45,43 @@ function readBaseline(window: Window, baselineKey: string): Baseline | undefined
+   }
+ }
+
++function readBaseline(
++  window: Window,
++  ctx: PluginContext
++): Baseline | undefined {
++  const raw = ctx.modePreferences.read('baseline')
++
++  if (raw !== null) {
++    return parseBaseline(raw)
++  }
++
++  const saved = parseBaseline(window.localStorage.getItem(legacyBaselineKey))
++
++  if (!saved) { return }
++
++  const savedOwners = saved.owners && typeof saved.owners === 'object' ? saved.owners : {}
++
++  const owners = Object.fromEntries(
++    Object.entries(savedOwners).map(([id, profile]) => [
++      /^(desktop|web|legacy):/.test(id) ? id : `${legacyOwnerPrefix}${profile}`,
++      profile
++    ])
++  )
++
++  const migrated: Baseline = { ...saved, owners }
++
++  if (Array.isArray(saved.owners)) {
++    migrated.owners = Object.fromEntries(saved.owners
++      .filter((profile): profile is string => typeof profile === 'string')
++      .map(profile => [`${legacyOwnerPrefix}${profile}`, profile]))
++  }
++
++  ctx.modePreferences.write('baseline', JSON.stringify(migrated))
++  window.localStorage.removeItem(legacyBaselineKey)
++
++  return migrated
++}
++
+ // One discovery per activation, not a recurring lease. Suspended peers may miss it.
+ const presenceScope = 'flexpair-color-palette:presence:v1'
+ const presenceTimeoutMs = 2000
+@@ -100,6 +151,8 @@ const plugin: HermesPlugin = {
+
+     let stopReleaseNotifications = () => {}
+
++    let stopModePreferenceObservation = () => {}
++
+     // Serialize the complete shared baseline and mode transaction across renderers.
+     // Hosts without Web Locks retain the synchronous single-window path.
+     const withPaletteTransaction = (run: () => void) => {
+@@ -151,16 +204,39 @@ const plugin: HermesPlugin = {
+     // Each enabled registration starts in dark using the existing preference format.
+     // Later manual changes remain available until the next activation.
+     let restoreMode = () => {}
++    let ownedBaseline: Baseline | null = null
 
      try {
        const key = 'hermes-desktop-mode-v1'
 -      const profilesKey = 'hermes-desktop-profile-modes-v1'
++
++      const onModeStorage = (event: StorageEvent) => {
++        if (event.key === key && ctx.modePreferences.read('global') !== 'dark') {
++          releasePreference(window, key)
++        }
++
++        if (event.key === baselineKey) {
++          const raw = ctx.modePreferences.read('baseline')
++          const current = raw === null ? undefined : parseBaseline(raw)
++
++          if (current) {
++            ownedBaseline = current
++          } else if (!disposed && raw === null && ownedBaseline) {
++            ctx.modePreferences.write('baseline', JSON.stringify(ownedBaseline))
++          }
++        }
++      }
++
++      window.addEventListener('storage', onModeStorage)
++
++      stopModePreferenceObservation = () => {
++        window.removeEventListener('storage', onModeStorage)
++      }
 
        const readModes = (): Record<string, unknown> => {
          let saved: unknown
@@ -1183,40 +1969,120 @@ index 408ca49b59..4858c48438 100644
          } catch {
            // A failed preference read falls back to a fresh profile record.
            saved = {}
-@@ -198,7 +197,7 @@ const plugin: HermesPlugin = {
+@@ -187,9 +263,9 @@ const plugin: HermesPlugin = {
+         ? liveProfile : bootProfile)?.trim() || 'default'
+
+       const profiles = profile === 'default' ? [] : [profile]
+-      const baselineKey = 'hermes-desktop-plugin-flexpair-color-palette-mode-baseline-v1'
+       // Capture the renderer slot and route before the pending lock can yield.
+-      const owner = registrationOwner(window, profile)
++      const owner = registrationOwner(window)
++      const originTag = window.hermesDesktop ? 'desktop' : 'web'
+       const ownerGeneration = randomUuid()
+       const releasePrefix = `${baselineKey}:released:`
+       withPaletteTransaction(() => {
+@@ -197,8 +273,8 @@ const plugin: HermesPlugin = {
+
        try {
        const modes = readModes()
-       let baseline = readBaseline(window, baselineKey)
+-      let baseline = readBaseline(window, baselineKey)
 -      const currentMode = window.localStorage.getItem(key)
++      let baseline = readBaseline(window, ctx)
 +      const currentMode = ctx.modePreferences.read('global')
        baseline ??= { global: currentMode, profiles: {} }
 
        // Dark is our outstanding assignment. A different value is a later
-@@ -248,7 +247,7 @@ const plugin: HermesPlugin = {
+@@ -221,23 +297,27 @@ const plugin: HermesPlugin = {
+           .map(legacyProfile => [`${legacyOwnerPrefix}${legacyProfile}`, legacyProfile]))
+         : baseline.owners ?? {}
+
++      const hadOwners = Object.keys(owners).length > 0
++
+       const generations = baseline.generations ?? {}
+
+       const discoveryGenerations: Record<string, string | undefined> = Object.fromEntries(
+         Object.keys(owners)
+-          .filter(id => id !== owner && !id.startsWith(legacyOwnerPrefix))
++          .filter(id => id !== owner && id.startsWith(`${originTag}:`))
+           .map(id => [id, generations[id]])
+       )
+
+       baseline.owners = { ...owners, [owner]: profile }
+       baseline.generations = { ...generations, [owner]: ownerGeneration }
+-      window.localStorage.setItem(baselineKey, JSON.stringify(baseline))
++      ownedBaseline = baseline
++      ctx.modePreferences.write('baseline', JSON.stringify(baseline))
+
+-      const restoreProfiles = (remaining: Baseline, activeProfiles: string[], hasLegacyOwners: boolean) => {
++      const restoreProfiles = (remaining: Baseline) => {
++        releasePreference(window, key)
+         const currentModes = readModes()
+
+         for (const [profile, previous] of Object.entries(remaining.profiles)) {
+-          if (hasLegacyOwners || activeProfiles.includes(profile) || currentModes[profile] !== 'dark') {
++          if (currentModes[profile] !== 'dark') {
+             continue
+           }
+
+@@ -248,13 +328,7 @@ const plugin: HermesPlugin = {
            }
          }
 
 -        window.localStorage.setItem(profilesKey, JSON.stringify(currentModes))
+-
+-        for (const target of Object.keys(remaining.profiles)) {
+-          if (!hasLegacyOwners && !activeProfiles.includes(target)) {
+-            delete remaining.profiles[target]
+-          }
+-        }
 +        ctx.modePreferences.write('profiles', JSON.stringify(currentModes))
+       }
 
-         for (const target of Object.keys(remaining.profiles)) {
-           if (!hasLegacyOwners && !activeProfiles.includes(target)) {
-@@ -320,12 +319,8 @@ const plugin: HermesPlugin = {
-           const hasLegacyOwners = Object.keys(remaining.owners ?? {}).some(id => id.startsWith(legacyOwnerPrefix))
-           restoreProfiles(remaining, activeProfiles, hasLegacyOwners)
+       const collectReleaseMarkers = (
+@@ -294,7 +368,7 @@ const plugin: HermesPlugin = {
+         withPaletteTransaction(() => {
+         try {
+           // Re-read shared ownership before restoring the selected profile.
+-          const remaining = readBaseline(window, baselineKey)
++          const remaining = readBaseline(window, ctx)
+
+           if (!remaining) { return }
+           let removed = false
+@@ -316,25 +390,19 @@ const plugin: HermesPlugin = {
+             return
+           }
+
+-          const activeProfiles = Object.values(remaining.owners ?? {})
+-          const hasLegacyOwners = Object.keys(remaining.owners ?? {}).some(id => id.startsWith(legacyOwnerPrefix))
+-          restoreProfiles(remaining, activeProfiles, hasLegacyOwners)
++          if (Object.keys(remaining.owners ?? {}).length) {
++            ctx.modePreferences.write('baseline', JSON.stringify(remaining))
++          } else {
++            restoreProfiles(remaining)
 
 -          if (!activeProfiles.length && !hasLegacyOwners && window.localStorage.getItem(key) === 'dark') {
 -            if (remaining.global === null) {
 -              window.localStorage.removeItem(key)
 -            } else {
 -              window.localStorage.setItem(key, remaining.global)
--            }
-+          if (!activeProfiles.length && !hasLegacyOwners && ctx.modePreferences.read('global') === 'dark') {
-+            ctx.modePreferences.write('global', remaining.global)
++            if (ctx.modePreferences.read('global') === 'dark') {
++              ctx.modePreferences.write('global', remaining.global)
+             }
+-          }
+
+-          if (activeProfiles.length || hasLegacyOwners) {
+-            window.localStorage.setItem(baselineKey, JSON.stringify(remaining))
+-          } else {
+-            window.localStorage.removeItem(baselineKey)
++            ctx.modePreferences.write('baseline', null)
++            window.dispatchEvent(new StorageEvent('storage', { key, newValue: window.localStorage.getItem(key) }))
            }
 
-           if (activeProfiles.length || hasLegacyOwners) {
-@@ -346,8 +341,8 @@ const plugin: HermesPlugin = {
+-          window.dispatchEvent(new StorageEvent('storage', { key, newValue: window.localStorage.getItem(key) }))
+           markers.forEach(marker => window.localStorage.removeItem(marker))
+         } catch (error) {
+           console.error('[flexpair-color-palette] Could not restore appearance preferences', error)
+@@ -346,13 +414,22 @@ const plugin: HermesPlugin = {
          modes[profile] = 'dark'
        }
 
@@ -1224,9 +2090,31 @@ index 408ca49b59..4858c48438 100644
 -      window.localStorage.setItem(key, 'dark')
 +      ctx.modePreferences.write('profiles', JSON.stringify(modes))
 +      ctx.modePreferences.write('global', 'dark')
++
++      if (currentMode === 'dark' || !hadOwners) {
++        claimPreference(window, key, 'dark')
++      } else {
++        releasePreference(window, key)
++      }
        // Repaint even when the global fallback was already dark: the current
        // profile or in-memory manual selection may still be light.
++
        window.dispatchEvent(new StorageEvent('storage', { key, newValue: 'dark' }))
+
+       restoreMode = () => {
++        releasePreference(window, key)
++
+         try {
+           window.localStorage.setItem(`${releasePrefix}${ownerGeneration}`,
+             JSON.stringify({ owner, generation: ownerGeneration }))
+@@ -414,6 +491,7 @@ const plugin: HermesPlugin = {
+       disposed = true
+       stopPresence()
+       stopReleaseNotifications()
++      stopModePreferenceObservation()
+       lifecycleWindow.removeEventListener('pagehide', close)
+       lifecycleWindow.removeEventListener('beforeunload', close)
+       observer.disconnect()
 diff --git a/apps/desktop/src/sdk/plugin-contract.ts b/apps/desktop/src/sdk/plugin-contract.ts
 index 9a1ec06739..5b8a418649 100644
 --- a/apps/desktop/src/sdk/plugin-contract.ts
@@ -1240,9 +2128,18 @@ index 9a1ec06739..5b8a418649 100644
    PluginOs,
    PluginPet,
 diff --git a/hermes_cli/ui_preferences.py b/hermes_cli/ui_preferences.py
-index 966a59efac..5c7bea4374 100644
+index 966a59efac..c03b52dcbe 100644
 --- a/hermes_cli/ui_preferences.py
 +++ b/hermes_cli/ui_preferences.py
+@@ -113,7 +113,7 @@ def _read(path: Path) -> tuple[dict, bool]:
+ def read_preferences(path: Optional[Path] = None) -> dict:
+     """``{"exists", "revision", "values"[, "generation"]}`` for the store at *path* (the
+     machine's by default). Raises :class:`PreferencesBusy` when the file exists but cannot be read."""
+-    return _read(path or store_path())[0]
++    return dict(_read(path or store_path())[0], capabilities={"conditionalWrites": True})
+
+
+ def _validate(changes: Mapping[str, Optional[str]]) -> None:
 @@ -187,9 +187,12 @@ def _store_lock(path: Path) -> Iterator[Callable[[], bool]]:
              _release(lock_dir, token)
 
@@ -1257,7 +2154,7 @@ index 966a59efac..5c7bea4374 100644
          if seed:
              # A client's first contact: fill what the store lacks, never overwrite or delete.
              if value is not None:
-@@ -202,23 +205,31 @@ def _merge(current: Mapping[str, str], changes: Mapping[str, Optional[str]], see
+@@ -202,23 +205,34 @@ def _merge(current: Mapping[str, str], changes: Mapping[str, Optional[str]], see
 
 
  def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = False,
@@ -1288,16 +2185,25 @@ index 966a59efac..5c7bea4374 100644
              raise PreferencesError("preferences store is full")
          if values == current["values"] and (current["exists"] or not values):
 -            return current
-+            return dict(current, conditional=True) if bases is not None else current
++            result = dict(current, capabilities={"conditionalWrites": True})
++            if bases is not None:
++                result["conditional"] = True
++            return result
          revision = current["revision"] + 1
          generation = current.get("generation") or secrets.token_hex(8)
          if not still_ours():
-@@ -230,4 +241,7 @@ def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = Fals
+@@ -230,4 +244,13 @@ def write_preferences(changes: Mapping[str, Optional[str]], *, seed: bool = Fals
              shutil.copy2(path, path.with_name(f"{path.name}.corrupt-{int(time.time() * 1000)}"))
          atomic_json_write(path, {"version": 1, "generation": generation, "revision": revision,
                                   "values": values}, mode=0o600)
 -    return {"exists": True, "revision": revision, "values": values, "generation": generation}
-+    result = {"exists": True, "revision": revision, "values": values, "generation": generation}
++    result = {
++        "exists": True,
++        "revision": revision,
++        "values": values,
++        "generation": generation,
++        "capabilities": {"conditionalWrites": True},
++    }
 +    if bases is not None:
 +        result["conditional"] = True
 +    return result
@@ -1346,10 +2252,44 @@ index c3271076db..a9cc80b147 100644
 +    # A separate endpoint makes an older server reject rather than ignore bases.
 +    return patch_ui_preferences(body)
 diff --git a/tests/hermes_cli/test_ui_preferences.py b/tests/hermes_cli/test_ui_preferences.py
-index 9bfc575c3a..292e00d55e 100644
+index 9bfc575c3a..66e69248ab 100644
 --- a/tests/hermes_cli/test_ui_preferences.py
 +++ b/tests/hermes_cli/test_ui_preferences.py
-@@ -162,3 +162,38 @@ def test_the_route_exists_only_on_the_webapp(monkeypatch, webapp_state, surface)
+@@ -51,8 +51,14 @@ def test_the_seed_import_only_adds_keys_and_never_creates_an_empty_store(tmp_pat
+     second = ui_preferences.write_preferences({"hermes.desktop.sessionListDensity": "compact",
+                                                "hermes-desktop-mode-v1": "dark"}, seed=True, path=path)
+
+-    assert empty == {"exists": False, "revision": 0, "values": {}}
++    assert empty == {
++        "exists": False,
++        "revision": 0,
++        "values": {},
++        "capabilities": {"conditionalWrites": True},
++    }
+     assert first["values"] == {"hermes.desktop.sessionListDensity": "detailed"}
++    assert first["capabilities"]["conditionalWrites"] is True
+     assert second["values"] == {"hermes.desktop.sessionListDensity": "detailed", "hermes-desktop-mode-v1": "dark"}
+     assert second["generation"] == first["generation"]
+     assert json.loads(path.read_text())["values"] == second["values"]
+@@ -147,9 +153,16 @@ def test_the_webapp_reads_and_writes_the_machine_store_behind_the_session_gate(w
+     assert not store.exists()
+
+     tab = _client(token=True)
+-    assert tab.get("/api/ui-preferences").json() == {"exists": False, "revision": 0, "values": {}}
++    snapshot = tab.get("/api/ui-preferences").json()
++    assert snapshot == {
++        "exists": False,
++        "revision": 0,
++        "values": {},
++        "capabilities": {"conditionalWrites": True},
++    }
+     written = tab.patch("/api/ui-preferences", json={"values": {"hermes-desktop-mode-v1": "dark"}})
+     assert written.status_code == 200
++    assert written.json()["capabilities"]["conditionalWrites"] is True
+     assert json.loads(store.read_text())["values"] == {"hermes-desktop-mode-v1": "dark"}
+     assert tab.patch("/api/ui-preferences", json={"values": {"hermes.other": "x"}}).status_code == 400
+
+@@ -162,3 +175,39 @@ def test_the_route_exists_only_on_the_webapp(monkeypatch, webapp_state, surface)
          monkeypatch.setattr(web_server.app.state, "ui_surface", surface, raising=False)
 
      assert _client(token=True).get("/api/ui-preferences").status_code == 404
@@ -1363,6 +2303,7 @@ index 9bfc575c3a..292e00d55e 100644
 +        bases={"hermes-desktop-mode-v1": "light", "hermes.desktop.zoom": "125", "hermes.desktop.new": None}, path=path,
 +    )
 +    assert result["conditional"] is True
++    assert result["capabilities"]["conditionalWrites"] is True
 +    assert result["values"] == {"hermes-desktop-mode-v1": "system", "hermes.desktop.zoom": "150", "hermes.desktop.new": "yes"}
 +    assert ui_preferences.write_preferences({"hermes-desktop-mode-v1": "light"}, path=path)["values"]["hermes-desktop-mode-v1"] == "light"
 +    seeded = ui_preferences.write_preferences({"hermes-desktop-mode-v1": "dark", "hermes.desktop.seed": "ok"}, seed=True, path=path)
